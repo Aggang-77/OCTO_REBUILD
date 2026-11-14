@@ -40,6 +40,8 @@ func _exercise() -> void:
     var skin_image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
     skin_image.fill(Color(0.7, 0.5, 0.3))
     skin_source.albedo_texture = ImageTexture.create_from_image(skin_image)
+    skin_source.roughness_texture = skin_source.albedo_texture
+    skin_source.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
     skin_sphere.material = skin_source
     skin_mesh.mesh = skin_sphere
     skin_scene.add_child(skin_mesh)
@@ -55,6 +57,8 @@ func _exercise() -> void:
         return
     var converted: ShaderMaterial = skin_mesh.get_active_material(0)
     if not _check(converted.get_shader_parameter("albedo_tex") != null and
+            converted.get_shader_parameter("roughness_tex") != null and
+            int(converted.get_shader_parameter("roughness_channel")) == 1 and
             absf(float(converted.get_shader_parameter("base_roughness")) - 0.52) < 0.0001,
             "texture and authored roughness preserved"):
         return
@@ -69,7 +73,18 @@ func _exercise() -> void:
             skin_activity[1] > 0.4 and skin_compression[0] == 0.0,
             "live C++ tissue pressure maps to exact imported bone index"):
         return
-    print("GLB_VERTEX_SKIN_PASS surfaces=1 bone_map=true texture_preserved=true")
+    var override_mesh := MeshInstance3D.new()
+    override_mesh.mesh = SphereMesh.new()
+    override_mesh.material_override = skin_source
+    var override_scene := Node3D.new()
+    override_scene.add_child(override_mesh)
+    octo.add_child(override_scene)
+    var override_skin := octo.skin_deformer.install(override_scene, skin_rig, skin_bone_ids)
+    if not _check(override_skin.covered_surfaces == 1 and
+            override_mesh.material_override is ShaderMaterial,
+            "GLB mesh-level material overrides receive real GPU deformation"):
+        return
+    print("GLB_VERTEX_SKIN_PASS surfaces=1 bone_map=true textures_preserved=true overrides=true")
 
     # The prototype's real 3D shell surface is generated from physical
     # ring positions, not from a fixed circular centerline tube.
