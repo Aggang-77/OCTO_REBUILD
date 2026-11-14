@@ -148,3 +148,18 @@ until its model is split or painted with suitable vertex weights.
 This is a coarse shape/viscoelastic proxy, **not full FEM or
 Navier–Stokes slime fluid**; its discrete shell particles do not
 provide exact triangle-to-triangle surface collision.
+
+**GameReady combined mesh correction:** original recorded GLB has **193
+bones** (192 arm bones plus a shared torso root). In addition to
+separately named mantle meshes, the renderer now scales the **shared
+torso root bone** from the low-resolution shell's measured bounding
+axes and compensates the child arm bones with parent-space targets.
+This makes root-weighted mantle vertices deform even when the GLB is
+one combined mesh. Other vertices only deform according to their
+original skin weights, so full local mantle folds still require a
+re-rig or a multi-point weighted soft skin.
+
+A momentum-conserving internal dashpot damps shell-to-cage relative
+velocity before integrating particle positions, reducing rubbery
+oscillation without injecting external forces. The shell is only
+12 colliding mass points (not a watertight volumetric tetra mesh).
