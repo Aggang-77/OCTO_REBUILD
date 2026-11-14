@@ -4,7 +4,52 @@ $root=Split-Path $PSScriptRoot -Parent
 $server=Join-Path $root 'build/release-final/octo_server.exe'
 $asset=Join-Path $root 'game/assets/Octopus_GameReady_v5.glb'
 $godot='C:\Tools\Godot\godot.exe'
-if (-not (Test-Path $server)) { throw "Build the server first: tools/build.ps1 -NoTests" }
+# A pre-v1 binary can exist at this path and still reject Godot's
+# 'step2' operation with bad_operation. Recompile if code is newer,
+# then exercise the *real* protocol in a disposable server process.
+$buildScript = Join-Path $PSScriptRoot 'build.ps1'
+$probeScript = Join-Path $PSScriptRoot 'check-bridge.ps1'
+$nativeSources = @(
+    'bridge/server.cpp',
+    'core/world.cpp',
+    'include/octo/world.hpp',
+    'CMakeLists.txt'
+)
+$needsBuild = -not (Test-Path -LiteralPath $server -PathType Leaf)
+if (-not $needsBuild) {
+    $serverTime = (Get-Item -LiteralPath $server).LastWriteTimeUtc
+    foreach ($relativePath in $nativeSources) {
+        $sourceFile = Join-Path $root $relativePath
+        if ((Get-Item -LiteralPath $sourceFile).LastWriteTimeUtc -gt $serverTime) {
+            $needsBuild = $true
+            break
+        }
+    }
+}
+function Invoke-OCTOBuild {
+    Write-Host '[OCTO] Rebuilding native C++ server (controls v1.0)...'
+    & $buildScript -NoTests
+    if (-not (Test-Path -LiteralPath $server -PathType Leaf)) {
+        throw "Build succeeded without creating $server"
+    }
+}
+if ($needsBuild) {
+    Invoke-OCTOBuild
+}
+try {
+    & $probeScript -Server $server
+} catch {
+    if ($needsBuild) {
+        throw "Newly built C++ server failed controls v1.0 compatibility check: $_"
+    }
+    Write-Warning "[OCTO] Stale or incompatible C++ server: $_"
+    Invoke-OCTOBuild
+    try {
+        & $probeScript -Server $server
+    } catch {
+        throw "C++ server is still incompatible after a rebuild: $_"
+    }
+}
 if (-not (Test-Path $asset)) { throw "Copy the GameReady GLB to $asset" }
 if (-not (Test-Path $godot)) { throw "Godot executable missing: $godot" }
 $env:OCTO_SERVER=$server
