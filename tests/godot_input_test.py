@@ -16,7 +16,7 @@ for key, folder in (("APPDATA", "appdata"), ("LOCALAPPDATA", "localappdata")):
 
 result = subprocess.run(
     [str(godot), "--headless", "--path", str(game), "--", "--animals=2",
-     "--benchmark-ticks=120", "--test-input"],
+     "--benchmark-ticks=120", "--test-input", "--procedural"],
     env=environment, capture_output=True, text=True, timeout=40,
 )
 print(result.stdout)

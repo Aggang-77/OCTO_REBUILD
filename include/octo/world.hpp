@@ -15,7 +15,8 @@ struct MuscleCommand {
     double extension=1;          // rest-length ratio, clamp [0.65,1.35]
     double twist=0;              // rad/m
     double stiffness=0;          // [0,1]
-    bool attach=false;
+    bool attach=false;           // legacy explicit tip attachment
+    double sweep=0;              // [-1,+1]: forward (+60 deg) -> back (-60 deg), independent of extension
 };
 struct DragCommand {
     enum class Kind { None, Animal, ArmTip, Rigid };
@@ -33,6 +34,7 @@ struct WorldConfig {
     double idle_wriggle=0.0;       // [0,1], physical traveling-wave actuation, off for passive tests
     bool organic_profile=true;   // wider midarm, rounded tip taper; false for legacy cone
     std::uint32_t rigid_count=3;
+    bool auto_suction=false;      // enabled in control-v1 Godot demo; legacy fixtures remain passive
     bool collisions=true, floor=true;
 };
 struct ArmSnapshot {
@@ -79,6 +81,7 @@ public:
     void reset(const WorldConfig& config);
     bool command(const MuscleCommand& command);
     bool drag(const DragCommand& command);
+    void release_all_suckers(bool held); // Space, held suppresses reacquisition
     bool impulse_rigid(std::uint32_t index, Vec3 impulse); // N·s at the prop center, for controlled physical fixtures
     bool step();                 // exactly config.fixed_dt; false on invalid state
     RenderSnapshot snapshot() const;

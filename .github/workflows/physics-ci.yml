@@ -38,7 +38,7 @@ jobs:
       - name: Native tests
         run: ctest --test-dir build -C Release --output-on-failure
 
-  jelly-render:
+  fast-render:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -62,14 +62,14 @@ jobs:
         run: |
           "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
             --headless --editor --path game --import --quit
-      - name: Render two procedural jelly octopuses and verify screenshot
+      - name: Render shader-free two-animal controls-v1 demo and verify screenshot
         run: |
           export OCTO_SERVER="$PWD/build/octo_server"
           xvfb-run -a -s '-screen 0 1280x720x24' \
             env LIBGL_ALWAYS_SOFTWARE=1 timeout 60s \
             "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
             --rendering-driver opengl3 --audio-driver Dummy --disable-vsync --path game -- \
-            --animals=2 --procedural --test-jelly --benchmark-ticks=90 \
+            --animals=2 --procedural --test-controls --segments=16 --benchmark-ticks=90 \
             --screenshot="$RUNNER_TEMP/jelly_preview.png" \
             > "$RUNNER_TEMP/godot_jelly.log" 2>&1 || {
               cat "$RUNNER_TEMP/godot_jelly.log"
@@ -82,7 +82,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: jelly-preview-linux
+          name: fast-controls-preview-linux
           path: |
             ${{ runner.temp }}/jelly_preview.png
             ${{ runner.temp }}/godot_jelly.log
