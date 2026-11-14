@@ -31,6 +31,10 @@ struct WorldConfig {
     Vec3 gravity{0,-9.81,0};
     double fixed_dt=1.0/60.0, damping=0.4, friction=0.65;
     double spacing=2.2, spawn_height=0.75;
+    // Gameplay actuator and adhesion strength multipliers. Applied in the
+    // C++ shared world (not Godot forces or visual animation).
+    double arm_motor_strength=4.0;      // 4x previous stroke-force limit
+    double sucker_strength=3.0;         // 3x previous suction break threshold
     std::uint32_t rigid_count=3;
     bool auto_suction=false;      // enabled for gameplay; original native tests retain passive baseline
     bool collisions=true, floor=true;

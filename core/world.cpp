@@ -38,7 +38,9 @@ int particle(Vec3 x,double mass,double radius,int animal=-1,int arm=-1,int node=
 void edge(int a,int b,double compliance){d.push_back({a,b,norm(p[a].x-p[b].x),compliance});}
 double volume(const T&t)const{auto a=p[t.p[0]].x;return dot(p[t.p[1]].x-a,cross(p[t.p[2]].x-a,p[t.p[3]].x-a))/6;}
 explicit Impl(WorldConfig c):cfg(c){
-if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.iterations<1||c.iterations>100||!finite(c.gravity)||!std::isfinite(c.fixed_dt)||c.fixed_dt<=0||c.fixed_dt>.1||!std::isfinite(c.damping)||c.damping<0||!std::isfinite(c.friction)||c.friction<0||!std::isfinite(c.spacing)||c.spacing<0||!std::isfinite(c.spawn_height)||c.rigid_count>128)throw std::invalid_argument("Invalid WorldConfig");
+if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.iterations<1||c.iterations>100||!finite(c.gravity)||!std::isfinite(c.fixed_dt)||c.fixed_dt<=0||c.fixed_dt>.1||!std::isfinite(c.damping)||c.damping<0||!std::isfinite(c.friction)||c.friction<0||!std::isfinite(c.spacing)||c.spacing<0||!std::isfinite(c.spawn_height)||c.rigid_count>128||
+   !std::isfinite(c.arm_motor_strength)||c.arm_motor_strength<0.1||c.arm_motor_strength>12.0||
+   !std::isfinite(c.sucker_strength)||c.sucker_strength<0.1||c.sucker_strength>12.0)throw std::invalid_argument("Invalid WorldConfig");
 for(unsigned n=0;n<c.animals;++n){Animal a;Vec3 center{(double(n)-double(c.animals-1)/2)*c.spacing,c.spawn_height,0};
 for(Vec3 off:std::array<Vec3,7>{{{0,0,0},{.2,0,0},{-.2,0,0},{0,.24,0},{0,-.16,0},{0,0,.2},{0,0,-.2}}})a.body.push_back(particle(center+off,.12,.065,int(n)));
 for(int i=0;i<7;++i)for(int j=i+1;j<7;++j)edge(a.body[i],a.body[j],2e-5);
@@ -147,9 +149,10 @@ void sweep_motors(double h){
    for(unsigned j=std::max(2u,cfg.segments/3);j<=cfg.segments;++j){
     const double u=double(j)/cfg.segments;
     auto&site=p[ar.p[j]];
-    Vec3 force=(root+goal*(.9*u*ar.active.extension)-site.x)*1.3;
+    Vec3 force=(root+goal*(.9*u*ar.active.extension)-site.x)*(1.3*cfg.arm_motor_strength);
     const double mag=norm(force);
-    if(mag>.085)force=force*(.085/mag);
+    const double max_motor_force=.085*cfg.arm_motor_strength;
+    if(mag>max_motor_force)force=force*(max_motor_force/mag);
     site.x=site.x+force*(site.inv*h*h);
     for(int b:animal.body)p[b].x=p[b].x-force*(p[b].inv*h*h/animal.body.size());
    }
@@ -169,7 +172,7 @@ void suction_constraints(double h){
   const double w=node.inv+(s.attached>=0?p[s.attached].inv:0);
   const double lambda=error/(w+4e-7/(h*h));
   const double area_scale=std::max(.002,node.r/.035);
-  if(std::abs(lambda)/(h*h)>12.0*area_scale*area_scale){
+  if(std::abs(lambda)/(h*h)>12.0*cfg.sucker_strength*area_scale*area_scale){
    s.attached=-1;s.dwell=0;s.cooldown=.18;++diag.broken_attachments;continue;
   }
   const Vec3 move=delta*(lambda/len);
@@ -222,7 +225,7 @@ void update_suckers(double h){
 }
 
 void attachments(double h){for(auto&a:animals)for(auto&ar:a.arms){auto&tip=p[ar.p.back()];if(release_held||!ar.target.attach){ar.attached=-1;continue;}if(ar.attached==-1){if(cfg.floor&&tip.x.y-tip.r<.025){ar.attached=-2;ar.anchor={tip.x.x,tip.r,tip.x.z};}else for(size_t i=0;i<p.size();++i)if(p[i].rigid>=0&&norm(p[i].x-tip.x)<p[i].r+tip.r+.025){ar.attached=int(i);ar.attach_rest=norm(p[i].x-tip.x);break;}}
-if(ar.attached==-1)continue;Vec3 target=ar.attached==-2?ar.anchor:p[ar.attached].x;Vec3 delta=target-tip.x;double l=norm(delta);double rest=ar.attached==-2?0:ar.attach_rest;double w=tip.inv+(ar.attached>=0?p[ar.attached].inv:0);double impulse=(l-rest)/(w+1e-7/(h*h));if(std::abs(impulse)/(h*h)>8){ar.attached=-1;++diag.broken_attachments;continue;}if(l>1e-10){Vec3 correction=delta*(impulse/l);tip.x=tip.x+correction*tip.inv;if(ar.attached>=0)p[ar.attached].x=p[ar.attached].x-correction*p[ar.attached].inv;}}}
+if(ar.attached==-1)continue;Vec3 target=ar.attached==-2?ar.anchor:p[ar.attached].x;Vec3 delta=target-tip.x;double l=norm(delta);double rest=ar.attached==-2?0:ar.attach_rest;double w=tip.inv+(ar.attached>=0?p[ar.attached].inv:0);double impulse=(l-rest)/(w+1e-7/(h*h));if(std::abs(impulse)/(h*h)>8*cfg.sucker_strength){ar.attached=-1;++diag.broken_attachments;continue;}if(l>1e-10){Vec3 correction=delta*(impulse/l);tip.x=tip.x+correction*tip.inv;if(ar.attached>=0)p[ar.attached].x=p[ar.attached].x-correction*p[ar.attached].inv;}}}
 bool step(){auto start=std::chrono::steady_clock::now();diag={};double h=cfg.fixed_dt/cfg.substeps;
 for(unsigned sub=0;sub<cfg.substeps;++sub){for(auto&a:animals)for(auto&ar:a.arms){double f=1-std::exp(-h*12);auto blend=[&](double&v,double t){v+=(t-v)*f;};blend(ar.active.activation,ar.target.activation);blend(ar.active.curvature,ar.target.curvature);blend(ar.active.extension,ar.target.extension);blend(ar.active.stiffness,ar.target.stiffness);blend(ar.active.twist,ar.target.twist);blend(ar.active.sweep,ar.target.sweep);}
 for(auto&particle:p)particle.compression=0;
