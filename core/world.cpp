@@ -400,7 +400,7 @@ void tissue_dynamics(double h){
    const double material_load=std::clamp(pressure[j],0.,1.8);
    const double neighbor=before+after-2*tissue.transverse;
    const double strain_force=-cfg.tissue_relaxation*(tissue.transverse-1.0)
-                             -5.0*material_load +3.0*neighbor;
+                             -55.0*material_load +3.0*neighbor;
    tissue.rate=(tissue.rate+strain_force*h)*std::exp(-cfg.tissue_viscosity*h);
    tissue.transverse=std::clamp(tissue.transverse+tissue.rate*h,.40,1.50);
    if(tissue.transverse<=.40&&tissue.rate<0)tissue.rate=0;
