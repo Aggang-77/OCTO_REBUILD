@@ -19,6 +19,10 @@ jobs:
           cmake --build build --parallel 2
       - name: CTest native physics, bridge and control rules
         run: ctest --test-dir build --output-on-failure
+      - name: Benchmark CPU physics with viscoelastic tissue (2 and 10 animals)
+        run: |
+          ./build/octo_benchmark 2 120
+          ./build/octo_benchmark 10 120
 
   windows:
     runs-on: windows-latest
