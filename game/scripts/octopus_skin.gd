@@ -15,35 +15,60 @@ func install(scene: Node3D, skel: Skeleton3D, ids: Array) -> Dictionary:
         var instance := item as MeshInstance3D
         if instance.mesh == null:
             continue
-        for surface in range(instance.mesh.get_surface_count()):
+        var surface_count: int = instance.mesh.get_surface_count()
+        # Imported GLBs sometimes assign an entire mesh material_override.
+        # Setting only a surface override would then never be displayed.
+        if instance.material_override != null:
+            var converted := _convert_material(instance.material_override)
+            if converted != null:
+                instance.material_override = converted
+                result.materials.append(converted)
+                result.covered_surfaces += surface_count
+            else:
+                result.rejected_surfaces += surface_count
+            continue
+        for surface in range(surface_count):
             var original := instance.get_active_material(surface)
-            # Preserve unsupported custom shaders / cutout-translucent
-            # materials rather than overwriting eye or special effects.
-            if not original is StandardMaterial3D:
+            # Leave custom/transparent materials intact. They may contain
+            # special eye refraction or alpha-cutout logic.
+            var material := _convert_material(original)
+            if material == null:
                 result.rejected_surfaces += 1
                 continue
-            var standard := original as StandardMaterial3D
-            if standard.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
-                result.rejected_surfaces += 1
-                continue
-            var material := ShaderMaterial.new()
-            material.shader = SKIN_SHADER
-            material.set_shader_parameter("base_albedo", standard.albedo_color)
-            material.set_shader_parameter("base_roughness", standard.roughness)
-            material.set_shader_parameter("base_metallic", standard.metallic)
-            material.set_shader_parameter("has_albedo_tex", standard.albedo_texture != null)
-            if standard.albedo_texture != null:
-                material.set_shader_parameter("albedo_tex", standard.albedo_texture)
-            material.set_shader_parameter("has_normal_tex", standard.normal_texture != null)
-            if standard.normal_texture != null:
-                material.set_shader_parameter("normal_tex", standard.normal_texture)
-                material.set_shader_parameter("normal_strength", standard.normal_scale)
-            material.set_shader_parameter("bone_compression", _zeros())
-            material.set_shader_parameter("bone_activity", _zeros())
             instance.set_surface_override_material(surface, material)
             result.materials.append(material)
             result.covered_surfaces += 1
     return result
+
+func _convert_material(original: Material) -> ShaderMaterial:
+    if not original is StandardMaterial3D:
+        return null
+    var standard := original as StandardMaterial3D
+    if standard.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+        return null
+    var material := ShaderMaterial.new()
+    material.shader = SKIN_SHADER
+    material.set_shader_parameter("base_albedo", standard.albedo_color)
+    material.set_shader_parameter("base_roughness", standard.roughness)
+    material.set_shader_parameter("base_metallic", standard.metallic)
+    material.set_shader_parameter("has_albedo_tex", standard.albedo_texture != null)
+    if standard.albedo_texture != null:
+        material.set_shader_parameter("albedo_tex", standard.albedo_texture)
+    material.set_shader_parameter("has_normal_tex", standard.normal_texture != null)
+    if standard.normal_texture != null:
+        material.set_shader_parameter("normal_tex", standard.normal_texture)
+        material.set_shader_parameter("normal_strength", standard.normal_scale)
+    material.set_shader_parameter("has_roughness_tex", standard.roughness_texture != null)
+    material.set_shader_parameter("roughness_channel", int(standard.roughness_texture_channel))
+    if standard.roughness_texture != null:
+        material.set_shader_parameter("roughness_tex", standard.roughness_texture)
+    material.set_shader_parameter("has_metallic_tex", standard.metallic_texture != null)
+    material.set_shader_parameter("metallic_channel", int(standard.metallic_texture_channel))
+    if standard.metallic_texture != null:
+        material.set_shader_parameter("metallic_tex", standard.metallic_texture)
+    material.set_shader_parameter("bone_compression", _zeros())
+    material.set_shader_parameter("bone_activity", _zeros())
+    return material
 
 func _zeros() -> PackedFloat32Array:
     var values := PackedFloat32Array()
