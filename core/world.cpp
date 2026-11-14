@@ -37,8 +37,9 @@ struct Sucker{
  Vec3 contact_normal{0,1,0},contact_tangent{1,0,0},contact_binormal{0,0,1};
  double wrap_radius=0; // local object curvature estimate (metres)
 };
-struct Arm{std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
-struct Animal{std::vector<int> body;std::array<Arm,8> arms;};
+struct TissueSection{double transverse=1,rate=0,pressure=0;};
+struct Arm{std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
+struct Animal{std::vector<int> body;std::vector<int> shell;std::array<Arm,8> arms;};
 WorldConfig cfg;bool release_held=false;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;std::vector<Bounds> contact_bounds;std::vector<int> contact_order;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
 int particle(Vec3 x,double mass,double radius,int animal=-1,int arm=-1,int node=-1,int rigid=-1){p.push_back({x,x,{},1/mass,radius,animal,arm,node,rigid});return int(p.size()-1);}
 void edge(int a,int b,double compliance){d.push_back({a,b,norm(p[a].x-p[b].x),compliance});}
@@ -51,7 +52,9 @@ if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.ite
    !std::isfinite(c.upright_strength)||c.upright_strength<0||c.upright_strength>2.0||
    !std::isfinite(c.spawn_roll)||std::abs(c.spawn_roll)>std::acos(-1.0)||
    !std::isfinite(c.uncoil_speed)||c.uncoil_speed<0.1||c.uncoil_speed>5.0||
-   !std::isfinite(c.coil_curvature)||c.coil_curvature<0||c.coil_curvature>14.0)throw std::invalid_argument("Invalid WorldConfig");
+   !std::isfinite(c.coil_curvature)||c.coil_curvature<0||c.coil_curvature>14.0||
+   !std::isfinite(c.tissue_relaxation)||c.tissue_relaxation<.2||c.tissue_relaxation>20||
+   !std::isfinite(c.tissue_viscosity)||c.tissue_viscosity<.5||c.tissue_viscosity>40)throw std::invalid_argument("Invalid WorldConfig");
 for(unsigned n=0;n<c.animals;++n){Animal a;Vec3 center{(double(n)-double(c.animals-1)/2)*c.spacing,c.spawn_height,0};
 const double cr=std::cos(c.spawn_roll),sr=std::sin(c.spawn_roll);
 const auto rotate_spawn=[&](Vec3 v)->Vec3{
@@ -60,8 +63,30 @@ const auto rotate_spawn=[&](Vec3 v)->Vec3{
 for(Vec3 off:std::array<Vec3,7>{{{0,0,0},{.2,0,0},{-.2,0,0},{0,.24,0},{0,-.16,0},{0,0,.2},{0,0,-.2}}})a.body.push_back(particle(center+rotate_spawn(off),.12,.065,int(n)));
 for(int i=0;i<7;++i)for(int j=i+1;j<7;++j)edge(a.body[i],a.body[j],2e-5*c.softness);
 for(int x:{1,2})for(int y:{3,4})for(int z:{5,6}){T t{{a.body[0],a.body[x],a.body[y],a.body[z]},0};t.rest=volume(t);tetra.push_back(t);}
+ // Low-resolution deforming mantle tissue: two rings of six dynamic
+ // particles. Each particle collides with terrain/props and reacts
+ // through compliant strands to the existing volume-conserving cage.
+ // No per-frame render mesh allocation; cage remains the source of
+ // stable orientation, while the shell drives a mantle scale field.
+ for(int level=0;level<2;++level){
+  const double y=level==0?-.06:.19;
+  const double radius=level==0?.22:.16;
+  for(int k=0;k<6;++k){
+   const double phi=2*std::acos(-1.)*k/6.;
+   const Vec3 offset=rotate_spawn({radius*std::cos(phi),y,radius*std::sin(phi)});
+   const int idx=particle(center+offset,.010,.033,int(n),-1,7+level*6+k);
+   a.shell.push_back(idx);
+   edge(idx,a.body[0],8e-5*c.softness);
+   edge(idx,a.body[3],1.2e-4*c.softness);
+   edge(idx,a.body[4],1.2e-4*c.softness);
+   if(k>0)edge(idx,a.shell[level*6+k-1],1.2e-4*c.softness);
+  }
+  edge(a.shell[level*6],a.shell[level*6+5],1.2e-4*c.softness);
+ }
+ for(int k=0;k<6;++k)edge(a.shell[k],a.shell[6+k],1.0e-4*c.softness);
 for(int k=0;k<8;++k){auto& ar=a.arms[k];ar.arm_index=k;ar.uncoil_front=0;double angle=k*std::acos(-1.)/4;Vec3 radial=rotate_spawn({std::sin(angle),0,std::cos(angle)});for(unsigned j=0;j<=c.segments;++j){double u=double(j)/c.segments;double radius=.036*(1-.8*u);ar.radius.push_back(radius);ar.p.push_back(particle(center+radial*(.2+.9*u),.012,radius,int(n),k,int(j)));if(j)edge(ar.p[j-1],ar.p[j],3e-7*c.softness);}
 ar.squash.assign(c.segments,1.0);
+ar.tissue.resize(c.segments);
 for(unsigned j=0;j<c.segments;++j){const double radius=ar.radius[j],mass=.012;ar.roll.push_back({0,0,0,j?2.0/(mass*radius*radius):0,0});}
 for(unsigned j=0;j<c.segments;++j){const double length=.9/c.segments,radius=ar.radius[j];const double inertia=.012*(length*length+3*radius*radius)/12;Quat q=frame(radial);ar.directors.push_back({q,q,{},{},{},1/inertia});}
 ar.bend_lambda.resize(c.segments-1);
@@ -338,6 +363,37 @@ void suction_constraints(double h){
   if(s.attached>=0)p[s.attached].x=p[s.attached].x-move*p[s.attached].inv;
  }
 }
+void tissue_dynamics(double h){
+ // Each rod section stores independent, damped transverse strain. Contact
+ // pressures push strain; neighboring sections share it gradually. Axis
+ // product still follows the axial volume correction, so compression
+ // creates a lateral bulge rather than an unphysical volume loss.
+ for(auto& animal:animals)for(auto& arm:animal.arms){
+  std::vector<double> pressure(arm.tissue.size(),0);
+  for(size_t j=0;j<arm.tissue.size();++j){
+   const auto& a=p[arm.p[j]];
+   const auto& b=p[arm.p[j+1]];
+   const double r=std::max(.004,arm.radius[j]);
+   pressure[j]=std::clamp(std::max(a.compression,b.compression)/r,0.,2.5);
+  }
+  for(size_t j=0;j<arm.tissue.size();++j){
+   auto& tissue=arm.tissue[j];
+   const double before=j?arm.tissue[j-1].transverse:tissue.transverse;
+   const double after=j+1<arm.tissue.size()?arm.tissue[j+1].transverse:tissue.transverse;
+   // Contact acts on material state, not just on rendered thickness.
+   const double material_load=std::clamp(pressure[j],0.,1.8);
+   const double neighbor=before+after-2*tissue.transverse;
+   const double strain_force=-cfg.tissue_relaxation*(tissue.transverse-1.0)
+                             -5.0*material_load +3.0*neighbor;
+   tissue.rate=(tissue.rate+strain_force*h)*std::exp(-cfg.tissue_viscosity*h);
+   tissue.transverse=std::clamp(tissue.transverse+tissue.rate*h,.40,1.50);
+   if(tissue.transverse<=.40&&tissue.rate<0)tissue.rate=0;
+   if(tissue.transverse>=1.50&&tissue.rate>0)tissue.rate=0;
+   tissue.pressure=material_load;
+   arm.squash[j]=tissue.transverse;
+  }
+ }
+}
 void update_suckers(double h){
  if(!cfg.auto_suction)return;
  for(auto&animal:animals)for(auto&ar:animal.arms){
@@ -413,14 +469,15 @@ seek_floor_contact(h);
 rigid_center_sweeps();
 for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
 rigid_center_sweeps();
+tissue_dynamics(h);
 update_suckers(h);
-for(auto&a:animals)for(auto&ar:a.arms)for(unsigned j=0;j<cfg.segments;++j){double l=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);double pressure=std::max(p[ar.p[j]].compression,p[ar.p[j+1]].compression);double target=std::clamp(1-2*pressure/std::max(ar.radius[j],1e-5),.32,1.0);ar.squash[j]+=(target-ar.squash[j])*(1-std::exp(-h*15));p[ar.p[j]].r=ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(l,1e-5));p[ar.p[j]].r=std::min(.1,p[ar.p[j]].r);}
+for(auto&a:animals)for(auto&ar:a.arms)for(unsigned j=0;j<cfg.segments;++j){double l=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);double pressure=std::max(p[ar.p[j]].compression,p[ar.p[j+1]].compression);(void)pressure;p[ar.p[j]].r=ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(l,1e-5));p[ar.p[j]].r=std::min(.1,p[ar.p[j]].r);}
 for(auto&a:p){a.v=(a.x-a.old)/h;if(!finite(a.x)||!finite(a.v)){++diag.nonfinite_count;return false;}}
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&roll:ar.roll){roll.omega=(roll.angle-roll.old)/h;if(!std::isfinite(roll.angle)||!std::isfinite(roll.omega)){++diag.nonfinite_count;return false;}}
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&director:ar.directors){director.q=rod_math::normalize(director.q);director.omega=rod_math::mul(rod_math::log_rotation(rod_math::multiply(director.q,rod_math::inverse(director.old))),1/h);if(!finite(director.omega)||!std::isfinite(director.q.w)){++diag.nonfinite_count;return false;}}
 }
 for(auto&a:p){diag.linear_momentum=diag.linear_momentum+a.v/a.inv;diag.angular_momentum=diag.angular_momentum+cross(a.x,a.v/a.inv);diag.kinetic_energy+=.5*dot(a.v,a.v)/a.inv;}for(auto&a:animals)for(auto&ar:a.arms){Vec3 axis=unit(p[ar.p[1]].x-p[ar.p[0]].x);for(auto&roll:ar.roll)if(roll.inv_inertia>0){diag.kinetic_energy+=.5*roll.omega*roll.omega/roll.inv_inertia;diag.angular_momentum=diag.angular_momentum+axis*(roll.omega/roll.inv_inertia);}for(size_t j=0;j<ar.directors.size();++j){auto&director=ar.directors[j];diag.kinetic_energy+=.5*dot(director.omega,director.omega)/director.inv_inertia;diag.angular_momentum=diag.angular_momentum+director.omega/director.inv_inertia;Vec3 tangent=unit(p[ar.p[j+1]].x-p[ar.p[j]].x),material=rod_math::rotate(director.q,{0,0,1});diag.max_shear_error=std::max(diag.max_shear_error,norm(cross(tangent,material)));}}for(auto&t:tetra)diag.max_volume_error=std::max(diag.max_volume_error,std::abs((volume(t)-t.rest)/t.rest));for(auto&a:animals)for(auto&ar:a.arms){if(ar.attached!=-1)++diag.attachments;for(const auto& suction:ar.suckers)if(suction.attached!=-1)++diag.attachments;}++tick;time+=cfg.fixed_dt;diag.step_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();return true;}
-RenderSnapshot snapshot()const{RenderSnapshot s;s.tick=tick;s.time=time;s.diagnostics=diag;for(auto&a:animals){AnimalSnapshot as;as.center=p[a.body[0]].x;as.orientation=frame(p[a.body[5]].x-p[a.body[6]].x);for(int b:a.body)as.body_nodes.push_back(p[b].x);for(int k=0;k<8;++k){auto&ar=a.arms[k];auto&out=as.arms[k];out.uncoil_progress=ar.uncoil_front;for(int id:ar.p)out.nodes.push_back(p[id].x);for(unsigned j=0;j<cfg.segments;++j){Vec3 tangent=p[ar.p[j+1]].x-p[ar.p[j]].x;out.frames.push_back(roll_frame(ar.directors[j].q,ar.roll[j].angle));out.angular_velocities.push_back(ar.directors[j].omega);out.material_roll.push_back(ar.roll[j].angle);double r=std::min(.12,ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(norm(tangent),1e-6)));out.radii.push_back({std::min(.16,r/ar.squash[j]),r*ar.squash[j]});bool held=j==cfg.segments-1&&ar.attached!=-1;for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}}s.animals.push_back(as);}for(auto&ids:rigids){RigidSnapshot rs;for(int id:ids)rs.center=rs.center+p[id].x/8;rs.orientation=frame(p[ids[1]].x-p[ids[0]].x);s.rigids.push_back(rs);}return s;}
+RenderSnapshot snapshot()const{RenderSnapshot s;s.tick=tick;s.time=time;s.diagnostics=diag;for(auto&a:animals){AnimalSnapshot as;as.center=p[a.body[0]].x;as.orientation=frame(p[a.body[5]].x-p[a.body[6]].x);for(int b:a.body)as.body_nodes.push_back(p[b].x);for(int shell:a.shell)as.body_nodes.push_back(p[shell].x);for(int k=0;k<8;++k){auto&ar=a.arms[k];auto&out=as.arms[k];out.uncoil_progress=ar.uncoil_front;for(int id:ar.p)out.nodes.push_back(p[id].x);for(unsigned j=0;j<cfg.segments;++j){Vec3 tangent=p[ar.p[j+1]].x-p[ar.p[j]].x;out.frames.push_back(roll_frame(ar.directors[j].q,ar.roll[j].angle));out.angular_velocities.push_back(ar.directors[j].omega);out.material_roll.push_back(ar.roll[j].angle);double r=std::min(.12,ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(norm(tangent),1e-6)));out.radii.push_back({std::min(.16,r/ar.squash[j]),r*ar.squash[j]});out.tissue_strain.push_back({1.0/ar.squash[j],ar.squash[j]});bool held=j==cfg.segments-1&&ar.attached!=-1;for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}}s.animals.push_back(as);}for(auto&ids:rigids){RigidSnapshot rs;for(int id:ids)rs.center=rs.center+p[id].x/8;rs.orientation=frame(p[ids[1]].x-p[ids[0]].x);s.rigids.push_back(rs);}return s;}
 };
 PhysicsWorld::PhysicsWorld(const WorldConfig& c):impl_(std::make_unique<Impl>(c)){}
 PhysicsWorld::~PhysicsWorld()=default;PhysicsWorld::PhysicsWorld(PhysicsWorld&&) noexcept=default;PhysicsWorld&PhysicsWorld::operator=(PhysicsWorld&&) noexcept=default;

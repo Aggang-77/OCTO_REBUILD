@@ -114,7 +114,17 @@ func _ready() -> void:
                 rests.append(skel.get_bone_global_rest(id))
             bone_ids.append(ids)
             bone_rests.append(rests)
-        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids, "bone_rests": bone_rests})
+        # Optional imported independent mantle mesh: preserve its original
+        # material and vertex data, deform only its object transform from
+        # the low-resolution physical shell. Never deform a combined arm mesh.
+        var mantles: Array = []
+        for mesh_node in scene.find_children("*", "MeshInstance3D", true, false):
+            var mesh_part := mesh_node as MeshInstance3D
+            var lower := String(mesh_part.name).to_lower()
+            if lower.contains("mantle") or lower.contains("head") or lower.contains("hood"):
+                mantles.append({"node": mesh_part, "rest": mesh_part.transform})
+        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids, "bone_rests": bone_rests, "mantles": mantles})
+        print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d" % [i,mantles.size()])
     print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
     var server := OS.get_environment("OCTO_SERVER")
     if server.is_empty(): fail("Set OCTO_SERVER to the octo_server executable"); return
@@ -287,6 +297,30 @@ func update_scene() -> void:
         scene.position = center - orientation * Quaternion(Vector3.UP,MODEL_YAW) * (Vector3(0,.15,.1)*MODEL_SCALE)
         scene.quaternion = orientation * Quaternion(Vector3.UP,MODEL_YAW)
         var inverse := Quaternion(Vector3.UP,-MODEL_YAW) * orientation.inverse()
+        # A physical shell of 12 particles controls the gross mantle
+        # flattening/stretching if the GLB exposes a separate mantle mesh.
+        # GPU keeps its original vertices; no per-frame mesh allocations.
+        var tissue_nodes: Array = a.get("body_nodes", [])
+        if tissue_nodes.size() >= 19:
+            var minimum := Vector3(INF, INF, INF)
+            var maximum := Vector3(-INF, -INF, -INF)
+            for n in range(7, 19):
+                var local_point := inverse * (vec(tissue_nodes[n]) - center)
+                minimum = minimum.min(local_point)
+                maximum = maximum.max(local_point)
+            var span := maximum - minimum
+            # Rest shell spans x~0.44, y~0.25, z~0.38 m. Bound changes
+            # to keep imported bone transform and skinning well-conditioned.
+            var shape_scale := Vector3(
+                clampf(span.x / 0.44, 0.55, 1.55),
+                clampf(span.y / 0.25, 0.50, 1.65),
+                clampf(span.z / 0.38, 0.55, 1.55))
+            for mantle_entry in view.mantles:
+                var mantle: MeshInstance3D = mantle_entry.node
+                var rest_transform: Transform3D = mantle_entry.rest
+                mantle.transform = Transform3D(
+                    rest_transform.basis * Basis.from_scale(shape_scale),
+                    rest_transform.origin)
         for arm in 8:
             var nodes: Array = a.arms[arm].nodes
             var material_roll: Array = a.arms[arm].roll

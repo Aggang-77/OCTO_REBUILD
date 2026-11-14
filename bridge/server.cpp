@@ -19,8 +19,11 @@ static void snapshot(const RenderSnapshot& s){
 // Full physical state remains in PhysicsWorld::snapshot for diagnostics/tests.
 static void render_snapshot(const RenderSnapshot& s){
  std::cout<<"{\"tick\":"<<s.tick<<",\"time\":"<<s.time<<",\"animals\":[";
- for(size_t i=0;i<s.animals.size();++i){if(i)std::cout<<',';const auto& a=s.animals[i];std::cout<<"{\"center\":";v(a.center);std::cout<<",\"orientation\":";q(a.orientation);std::cout<<",\"arms\":[";
-  for(size_t k=0;k<8;++k){if(k)std::cout<<',';std::cout<<"{\"uncoil\":"<<a.arms[k].uncoil_progress<<",\"nodes\":[";const auto& nodes=a.arms[k].nodes;for(size_t j=0;j<nodes.size();++j){if(j)std::cout<<',';v(nodes[j]);}std::cout<<"],\"roll\":[";const auto& roll=a.arms[k].material_roll;for(size_t j=0;j<roll.size();++j){if(j)std::cout<<',';std::cout<<roll[j];}std::cout<<"],\"radii\":[";const auto& radii=a.arms[k].radii;for(size_t j=0;j<radii.size();++j){if(j)std::cout<<',';std::cout<<'['<<radii[j][0]<<','<<radii[j][1]<<']';}std::cout<<"],\"attached\":[";const auto& held=a.arms[k].attached;for(size_t j=0;j<held.size();++j){if(j)std::cout<<',';std::cout<<(held[j]?"true":"false");}std::cout<<"]}";}
+ for(size_t i=0;i<s.animals.size();++i){if(i)std::cout<<',';const auto& a=s.animals[i];std::cout<<"{\"center\":";v(a.center);std::cout<<",\"orientation\":";q(a.orientation);
+  std::cout<<",\"body_nodes\":[";for(size_t j=0;j<a.body_nodes.size();++j){if(j)std::cout<<',';v(a.body_nodes[j]);}
+  std::cout<<"],\"arms\":[";
+  for(size_t k=0;k<8;++k){if(k)std::cout<<',';std::cout<<"{\"uncoil\":"<<a.arms[k].uncoil_progress<<",\"nodes\":[";const auto& nodes=a.arms[k].nodes;for(size_t j=0;j<nodes.size();++j){if(j)std::cout<<',';v(nodes[j]);}std::cout<<"],\"roll\":[";const auto& roll=a.arms[k].material_roll;for(size_t j=0;j<roll.size();++j){if(j)std::cout<<',';std::cout<<roll[j];}std::cout<<"],\"radii\":[";const auto& radii=a.arms[k].radii;for(size_t j=0;j<radii.size();++j){if(j)std::cout<<',';std::cout<<'['<<radii[j][0]<<','<<radii[j][1]<<']';}std::cout<<"],\"tissue\":[";const auto& strain=a.arms[k].tissue_strain;for(size_t j=0;j<strain.size();++j){if(j)std::cout<<',';std::cout<<'['<<strain[j][0]<<','<<strain[j][1]<<']';}
+   std::cout<<"],\"attached\":[";const auto& held=a.arms[k].attached;for(size_t j=0;j<held.size();++j){if(j)std::cout<<',';std::cout<<(held[j]?"true":"false");}std::cout<<"]}";}
   std::cout<<"]}";}
  std::cout<<"],\"rigids\":[";
  for(size_t i=0;i<s.rigids.size();++i){if(i)std::cout<<',';const auto& r=s.rigids[i];std::cout<<"{\"center\":";v(r.center);std::cout<<",\"orientation\":";q(r.orientation);std::cout<<",\"half_extents\":";v(r.half_extents);std::cout<<'}';}

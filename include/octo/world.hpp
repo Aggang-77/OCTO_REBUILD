@@ -43,6 +43,9 @@ struct WorldConfig {
     double spawn_roll=0.0;            // radians: initial roll about world Z (test fixture; 0 by default)
     double uncoil_speed=2.0;            // length-fraction/second, progressive release front
     double coil_curvature=8.0;          // radians/metre in the coiled distal section
+    // Viscoelastic tissue; stronger dissipation means less rubbery bounce.
+    double tissue_relaxation=3.2;       // s^-1, slow local flesh recovery
+    double tissue_viscosity=10.0;       // s^-1, strain-rate dissipation
     bool reach_ground_on_extend=true;   // guide ungripped extended tips to contact
     std::uint32_t rigid_count=3;
     bool auto_suction=false;      // enabled for gameplay; original native tests retain passive baseline
@@ -54,13 +57,14 @@ struct ArmSnapshot {
     std::vector<Quat> frames;    // segments, local +Z is tangent
     std::vector<Vec3> angular_velocities; // 3D director angular velocity, world rad/s
     std::vector<double> material_roll; // segments, physically solved torsion angle (radians)
+    std::vector<std::array<double,2>> tissue_strain; // two dynamical transverse semiaxis scale factors
     std::vector<std::array<double,2>> radii; // segments, ellipse semiaxes metres
     std::vector<bool> attached;  // segments; physical attachment, not decoration
 };
 struct AnimalSnapshot {
     Vec3 center{};
     Quat orientation{};
-    std::vector<Vec3> body_nodes;
+    std::vector<Vec3> body_nodes; // first 7 cage vertices, then low-resolution tissue shell
     std::array<ArmSnapshot,8> arms;
 };
 struct RigidSnapshot { Vec3 center{}; Quat orientation{}; Vec3 half_extents{0.16,0.16,0.16}; };
