@@ -94,3 +94,28 @@ contact, mass, friction and the number of attached suckers also matter.
 The values are bounded in `WorldConfig` and checked by the native
 control regression suite. Rebuild the native server with
 `./tools/build.ps1 -NoTests` before running the Godot demo.
+
+## Slime surface, progressive uncoiling, anti-flip (2026-11-15)
+
+- Imported GameReady GLB materials receive a **lightweight wet PBR
+  finish** (roughness 0.20, clearcoat 0.68, clearcoat roughness 0.10).
+  Original albedo/normal textures stay intact; there is no animated
+  jelly shader, per-frame re-meshing or simulated mucus fluid.
+- Pressing an arm's extension key advances a continuous **base-to-tip
+  uncoil front**. Releasing the key coils the arm back progressively.
+  The distal sections retain target curvature until the front reaches
+  them, rather than instantly turning the whole rod straight.
+- A contacted rigid object/floor supplies a **contact-local frame**.
+  Nearby ungripped suction sites are steered toward the local surface;
+  adhesion itself still requires actual C++ contact and can break.
+- Torso upright bias applies capped, equal-and-opposite forces to
+  real torso mass nodes, reducing unintended flips without locking the
+  body or overriding collisions.
+- The previous overpowered arm motor 4.0 and suction 3.0 multipliers
+  are reduced to **2.2 / 2.2**. The eight dual-key pairs and Space
+  release semantics remain unchanged.
+
+**Fidelity note:** wrapped contact uses sphere-like local curvature
+around sampled rigid particles, not a true arbitrary-mesh surface
+geodesic; the wet appearance is PBR lighting, not a fluid layer.
+Real GameReady GLB visuals and feel remain subject to local testing.
