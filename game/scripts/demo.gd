@@ -297,6 +297,30 @@ func point(nodes: Array, u: float) -> Vector3:
     var f := u * float(nodes.size()-1); var i := mini(int(f),nodes.size()-2)
     return vec(nodes[i]).lerp(vec(nodes[i+1]), f-i)
 
+func mantle_scale_from_shell(nodes: Array, center: Vector3, inverse: Quaternion) -> Vector3:
+    # Only snapshot data: 7 internal cage nodes + 12 collision shell nodes.
+    if nodes.size() < 19:
+        return Vector3.ONE
+    var minimum := Vector3(INF, INF, INF)
+    var maximum := Vector3(-INF, -INF, -INF)
+    for n in range(7, 19):
+        var local_point := inverse * (vec(nodes[n]) - center)
+        minimum = minimum.min(local_point)
+        maximum = maximum.max(local_point)
+    var span := maximum - minimum
+    return Vector3(
+        clampf(span.x / 0.44, 0.55, 1.55),
+        clampf(span.y / 0.25, 0.50, 1.65),
+        clampf(span.z / 0.38, 0.55, 1.55))
+
+func apply_torso_root_skin(skel: Skeleton3D, root_id: int, rest: Transform3D, size: Vector3) -> void:
+    if root_id < 0:
+        return
+    var parent_id := skel.get_bone_parent(root_id)
+    var parent_rest := skel.get_bone_global_rest(parent_id) if parent_id >= 0 else Transform3D.IDENTITY
+    var global_target := Transform3D(rest.basis * Basis.from_scale(size), rest.origin)
+    skel.set_bone_pose(root_id, parent_rest.affine_inverse() * global_target)
+
 func update_scene() -> void:
     for i in current.animals.size():
         var a: Dictionary = current.animals[i]; var view: Dictionary = views[i]
@@ -310,27 +334,10 @@ func update_scene() -> void:
         # GPU keeps its original vertices; no per-frame mesh allocations.
         var tissue_nodes: Array = a.get("body_nodes", [])
         if tissue_nodes.size() >= 19:
-            var minimum := Vector3(INF, INF, INF)
-            var maximum := Vector3(-INF, -INF, -INF)
-            for n in range(7, 19):
-                var local_point := inverse * (vec(tissue_nodes[n]) - center)
-                minimum = minimum.min(local_point)
-                maximum = maximum.max(local_point)
-            var span := maximum - minimum
-            # Rest shell spans x~0.44, y~0.25, z~0.38 m. Bound changes
-            # to keep imported bone transform and skinning well-conditioned.
-            var shape_scale := Vector3(
-                clampf(span.x / 0.44, 0.55, 1.55),
-                clampf(span.y / 0.25, 0.50, 1.65),
-                clampf(span.z / 0.38, 0.55, 1.55))
+            var shape_scale := mantle_scale_from_shell(tissue_nodes, center, inverse)
             var root_id: int = view.torso_root
             if root_id >= 0:
-                var root_rest: Transform3D = view.torso_rest
-                var root_parent_id := skel.get_bone_parent(root_id)
-                var root_parent_rest := skel.get_bone_global_rest(root_parent_id) if root_parent_id >= 0 else Transform3D.IDENTITY
-                var body_target := Transform3D(
-                    root_rest.basis * Basis.from_scale(shape_scale), root_rest.origin)
-                skel.set_bone_pose(root_id, root_parent_rest.affine_inverse() * body_target)
+                apply_torso_root_skin(skel, root_id, view.torso_rest, shape_scale)
             if root_id < 0:
                 for mantle_entry in view.mantles:
                     var mantle: MeshInstance3D = mantle_entry.node

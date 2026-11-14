@@ -26,6 +26,31 @@ func _exercise() -> void:
     await process_frame
     octo.animals = 2
     octo.selected = 1
+    # Exercise GPU-bone mantle deformation independently of the private GLB:
+    # the real GameReady skeleton has one shared root and 192 arm bones.
+    var skeleton := Skeleton3D.new()
+    octo.add_child(skeleton)
+    skeleton.add_bone("BodyRoot")
+    skeleton.set_bone_rest(0, Transform3D.IDENTITY)
+    octo.apply_torso_root_skin(skeleton, 0, Transform3D.IDENTITY,
+        Vector3(0.76, 1.32, 1.12))
+    var root_scale := skeleton.get_bone_global_pose(0).basis.get_scale()
+    if not _check(root_scale.distance_to(Vector3(0.76,1.32,1.12)) < 0.001,
+            "imported torso root receives physical shell deformation"):
+        return
+    var faux_shell: Array = []
+    for i in 7:
+        faux_shell.append([0.0,0.0,0.0])
+    for i in 12:
+        var theta := float(i % 6) * PI / 3.0
+        faux_shell.append([0.18*cos(theta), 0.00 if i < 6 else 0.20,
+            0.14*sin(theta)])
+    var torso_scale := octo.mantle_scale_from_shell(faux_shell,
+        Vector3.ZERO, Quaternion.IDENTITY)
+    if not _check(torso_scale.x < 1.0 and torso_scale.y < 1.0,
+            "shell dimensions feed visible torso shape"):
+        return
+    print("TISSUE_GPU_SKIN_PASS root=true mantle_bounds=true no_cpu_remesh=true")
     # Apply the cheap PBR wet-look to a local mesh; no original private GLB
     # and no per-vertex jelly shader are needed for this regression.
     var sample_mesh := MeshInstance3D.new()
