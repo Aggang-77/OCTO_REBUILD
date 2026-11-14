@@ -163,10 +163,20 @@ void upright_motors(double h){
   const double span=norm(axis);
   if(span<1e-8)continue;
   const Vec3 world_up{0,1,0};
-  const Vec3 horizontal=axis-world_up*dot(axis,world_up);
+  const Vec3 axis_unit=axis/span;
+  // Project the desired up direction onto the local rotation tangent.
+  // Unlike simply dampening lateral offset, this makes inverted poses
+  // unstable instead of accidentally stabilizing an upside-down body.
+  Vec3 turn=world_up-axis_unit*dot(world_up,axis_unit);
+  if(dot(axis_unit,world_up)<-.97 && norm(turn)<.24){
+   Vec3 heading=p[animal.body[5]].x-p[animal.body[6]].x;
+   Vec3 side=cross(heading,world_up);
+   if(norm(side)<1e-6)side={1,0,0};
+   turn=unit(side)*.24;
+  }
   const Vec3 relative_v=top.v-bottom.v;
-  const Vec3 lateral_v=relative_v-world_up*dot(relative_v,world_up);
-  Vec3 force=(horizontal*(-9.0)-lateral_v*1.8)*cfg.upright_strength;
+  const Vec3 lateral_v=relative_v-axis_unit*dot(relative_v,axis_unit);
+  Vec3 force=(turn*(9.0*span)-lateral_v*1.8)*cfg.upright_strength;
   const double magnitude=norm(force);
   const double limit=2.5*cfg.upright_strength;
   if(magnitude>limit)force=force*(limit/magnitude);
