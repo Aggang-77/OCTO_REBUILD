@@ -13,9 +13,9 @@ static func material_for(phase: float, strength: float, mantle: bool = false) ->
     mat.set_shader_parameter("mantle_mode", mantle)
     mat.set_shader_parameter("recoil", 0.0)
     if mantle:
-        mat.set_shader_parameter("gel_color", Color(0.62, 0.29, 0.37, 0.95))
+        mat.set_shader_parameter("gel_color", Color(0.66, 0.31, 0.38, 0.98))
     else:
-        mat.set_shader_parameter("gel_color", Color(0.70, 0.34, 0.39, 0.94))
+        mat.set_shader_parameter("gel_color", Color(0.73, 0.38, 0.42, 0.98))
     return mat
 
 static func location(nodes: Array, u: float) -> Vector3:
@@ -45,6 +45,7 @@ static func build_arm_mesh(nodes: Array, radii: Array) -> ArrayMesh:
     var vertices := PackedVector3Array()
     var normals := PackedVector3Array()
     var uvs := PackedVector2Array()
+    var uv2s := PackedVector2Array()
     var indices := PackedInt32Array()
     var ring_count := (nodes.size() - 1) * RINGS_PER_SEGMENT + 1
     var previous_axis := Vector3.ZERO
@@ -68,7 +69,7 @@ static func build_arm_mesh(nodes: Array, radii: Array) -> ArrayMesh:
         var other := tangent.cross(side).normalized()
         previous_axis = side
 
-        var r := section_radius(radii, u)
+        var r := section_radius(radii, u) * 1.15
         for slice in range(RADIAL_SIDES + 1):
             var theta := float(slice) / float(RADIAL_SIDES) * TAU
             var co := cos(theta)
@@ -78,6 +79,7 @@ static func build_arm_mesh(nodes: Array, radii: Array) -> ArrayMesh:
             vertices.append(center + offset)
             normals.append(outward)
             uvs.append(Vector2(float(slice) / float(RADIAL_SIDES), u))
+            uv2s.append(Vector2(minf(r.x, r.y), 0.0))
 
     var stride := RADIAL_SIDES + 1
     for ring in range(ring_count - 1):
@@ -93,6 +95,7 @@ static func build_arm_mesh(nodes: Array, radii: Array) -> ArrayMesh:
     arrays[Mesh.ARRAY_VERTEX] = vertices
     arrays[Mesh.ARRAY_NORMAL] = normals
     arrays[Mesh.ARRAY_TEX_UV] = uvs
+    arrays[Mesh.ARRAY_TEX_UV2] = uv2s
     arrays[Mesh.ARRAY_INDEX] = indices
     mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
     return mesh

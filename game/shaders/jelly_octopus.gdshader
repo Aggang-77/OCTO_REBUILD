@@ -31,11 +31,11 @@ void vertex() {
     float wave = slow * 0.72 + compression * 0.36 + tremor * 0.11;
     float impulse = recoil * exp(-axial * 2.0)
                   * sin(tm * 13.0 - axial * 23.0 + phase);
+    // The membrane may ripple strongly but never folds through its small
+    // distal cross section. UV2.x carries the live C++ section radius.
+    float base_amplitude = mantle_mode ? 0.07 : max(0.0015, UV2.x * 0.22);
     float displacement = jelly_strength * envelope
-                       * (0.016 * wave + 0.010 * impulse);
-    if (mantle_mode) {
-        displacement *= 1.4;
-    }
+                       * base_amplitude * (wave * 0.68 + impulse * 0.25);
 
     // Only the rendered surface is displaced. The independent C++ simulation
     // still owns centerlines, radii, collisions, forces and authoritative state.
@@ -48,10 +48,10 @@ void fragment() {
     float rim = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 2.4);
     ALBEDO = flesh;
     METALLIC = 0.0;
-    SPECULAR = 0.8;
-    ROUGHNESS = mix(0.21, 0.38, 1.0 - gel_crest);
+    SPECULAR = 0.56;
+    ROUGHNESS = mix(0.3, 0.46, 1.0 - gel_crest);
     // A small warm internal glow suggests moist, translucent tissue
     // without depending on Forward+ SSS (project uses Compatibility/OpenGL).
-    EMISSION = vec3(0.12, 0.035, 0.048) * rim * 0.25;
+    EMISSION = vec3(0.12, 0.035, 0.048) * rim * 0.12;
     ALPHA = gel_color.a;
 }

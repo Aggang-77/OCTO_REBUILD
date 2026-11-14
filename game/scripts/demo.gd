@@ -241,14 +241,14 @@ func make_stage() -> void:
     var floor_node := MeshInstance3D.new(); var floor_mesh := PlaneMesh.new(); floor_mesh.size = Vector2(30,30); floor_node.mesh = floor_mesh
     var mat := StandardMaterial3D.new(); mat.albedo_color = Color("304953"); mat.roughness = 0.9; floor_node.material_override = mat; add_child(floor_node)
     camera = Camera3D.new(); camera.fov = 48; add_child(camera)
-    distance = 7.0 + maxf(0, animals - 2) * 0.7
+    distance = 5.7 + maxf(0, animals - 2) * 0.7
     update_camera()
     var layer := CanvasLayer.new(); add_child(layer)
-    var panel := PanelContainer.new(); panel.position = Vector2(20,20); panel.custom_minimum_size = Vector2(450,0); panel.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(panel)
+    var panel := PanelContainer.new(); panel.position = Vector2(12,12); panel.custom_minimum_size = Vector2(335,0); panel.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(panel)
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
-    var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
-    label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nJELLY skin: extreme GPU membrane ripple + C++ rod geometry.\nPageUp/PageDown: jelly +/-   F6: show/hide jelly.\n--procedural runs WITHOUT GameReady GLB.\nCosmetic shader does not change C++ collisions."; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 18); box.add_child(title)
+    label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 12); box.add_child(label)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nJELLY skin: extreme GPU membrane ripple + C++ rod geometry.\nPageUp/PageDown: jelly +/-   F6: show/hide jelly.\n--procedural runs WITHOUT GameReady GLB.\nCosmetic shader does not change C++ collisions."; help.add_theme_font_size_override("font_size", 11); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
