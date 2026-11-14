@@ -272,3 +272,23 @@ Actual GameReady GUI rendering is still unverified in CI because the
 private source GLB is not stored in Git. Screenshots should be checked
 for residual skinning mismatches against the now-correct floor-laying
 centerline physics.
+
+## Flexible arm-to-mantle junction (2026-11-15)
+
+The prior solver anchored each arm root to **all seven stiff body
+cage vertices**, effectively creating a rigid internal hub even if
+arm tissue parameters were soft. Default grounded gameplay now uses
+an outer **deformable mantle-shell attachment**: three neighboring
+shell particles plus a softer one-node deep tissue connection and a
+secondary strand from the next arm segment. The arm's load now
+physically deforms its attached mantle region. The core 7-node volume
+cage continues to conserve body volume. The original world and 16-key
+input protocol are unchanged; the older root constraints remain for
+legacy non-grounded physics regression scenarios only.
+
+A high-force native pull fixture confirms that the arm root moves
+relative to the body cage and carries the actual mantle shell along.
+This improvement does **not** imply that the private GLB's skin weights
+now create a completely smooth arm-to-body visual junction; vertex
+weight painting/re-rigging may still be needed after inspecting the
+source asset on the user's PC.
