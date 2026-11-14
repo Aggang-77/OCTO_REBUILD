@@ -443,6 +443,17 @@ func update_scene() -> void:
         var r: Dictionary = current.rigids[i]; props[i].position = vec(r.center); props[i].quaternion = quat(r.orientation); props[i].scale = vec(r.half_extents)*2.0
     if current.tick == 0 or current.tick == 1: print("SNAPSHOT tick=%d animals=%d arms=%d first_node=%s" % [current.tick,current.animals.size(),current.animals[0].arms.size(),str(current.animals[0].arms[0].nodes[0])])
 
+func idle_arm_shape(animal: int, arm: int) -> Dictionary:
+    # A real octopus does not continuously contract all eight arms into
+    # identical tight scrolls. Deterministic offsets produce asymmetric
+    # lightly coiled, ground-draped postures with no jitter or random
+    # forces that would break repeatable native physics tests.
+    var phase := float(arm) * 2.37 + float(animal) * 1.31
+    return {"extension": 0.88 + 0.07 * sin(phase),
+            "curvature": 1.65 + 0.58 * cos(phase * 1.2),
+            "activation": 0.40,
+            "sweep": 0.0}
+
 func step_command() -> String:
     # The C++ step2 protocol carries independent extension/sweep and global
     # Space release. Neither channel writes positions directly.
@@ -454,12 +465,14 @@ func step_command() -> String:
                 controlled and Input.is_physical_key_pressed(EXTEND_KEYS[arm]))
             var paddle := test_all_active or (
                 controlled and Input.is_physical_key_pressed(STROKE_KEYS[arm]))
-            var extension := 1.48 if reach else 0.58
-            var curvature := 0.0 if reach else 3.6
-            var sweep := 1.0 if paddle else -1.0
+            var idle := idle_arm_shape(i, arm)
+            var extension: float = 1.48 if reach else (1.05 if paddle else idle.extension)
+            var curvature: float = 0.0 if reach else (1.1 if paddle else idle.curvature)
+            var sweep: float = 1.0 if paddle else 0.0
+            var activation: float = 1.0 if reach or paddle else idle.activation
             var twist := 3.0 if test_actuation and i == 0 and arm == 0 else 0.0
             out += " %d %d %f %f %f %f %f %d %f" % [
-                i, arm, 1.0, curvature, extension, twist, 0.02, 0, sweep]
+                i, arm, activation, curvature, extension, twist, 0.02, 0, sweep]
     out += " %d %d 0 %f %f %f 30 20 %d" % [
         drag_kind if dragging else 0, drag_index,
         drag_target.x, drag_target.y, drag_target.z,
