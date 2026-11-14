@@ -12,7 +12,7 @@ def main() -> int:
     assert "CONTROL_V1_READY arms=8" in log, log[-4000:]
     assert "CONTROL_V1_CHECK animals=2 arm_segments=16 no_shader=true" in log, log[-4000:]
     assert "CONTROL_KEYS_CHECK simultaneous=true spring_return=true space_override=true" in log, log[-4000:]
-    assert "KEYMAP_ALL16_CHECK passed=true" in log, log[-4000:]
+    assert "KEYMAP_ALL16_CHECK injected_sequential=true passed=true" in log, log[-4000:]
     assert "SMOKE_OK" in log, log[-4000:]
     assert re.search(r"SCREENSHOT path=.*error=0", log), log[-4000:]
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
