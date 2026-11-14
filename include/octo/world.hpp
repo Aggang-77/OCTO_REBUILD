@@ -33,18 +33,22 @@ struct WorldConfig {
     double spacing=2.2, spawn_height=0.75;
     // Gameplay actuator and adhesion strength multipliers. Applied in the
     // C++ shared world (not Godot forces or visual animation).
-    double arm_motor_strength=4.0;      // 4x previous stroke-force limit
-    double sucker_strength=3.0;         // 3x previous suction break threshold
+    double arm_motor_strength=2.2;      // moderated from the overpowered 4.0 profile
+    double sucker_strength=2.2;         // grips persist but do not lock the whole body rigidly
     // Greater compliance = softer, more shape change under the same load.
     // Keep volume compliance lower than body shape compliance so the
     // octopus deforms without turning into an unconstrained point cloud.
-    double softness=5.0;                // body/arm bending/shear/rest shape
+    double softness=5.0;                // preserve highly deformable XPBD flesh
+    double upright_strength=0.45;       // capped anti-roll/anti-pitch torso torque
+    double uncoil_speed=2.0;            // length-fraction/second, progressive release front
+    double coil_curvature=8.0;          // radians/metre in the coiled distal section
     bool reach_ground_on_extend=true;   // guide ungripped extended tips to contact
     std::uint32_t rigid_count=3;
     bool auto_suction=false;      // enabled for gameplay; original native tests retain passive baseline
     bool collisions=true, floor=true;
 };
 struct ArmSnapshot {
+    double uncoil_progress=0;      // base-to-tip unwound fraction [0,1]
     std::vector<Vec3> nodes;     // segments+1, root -> tip, world metres
     std::vector<Quat> frames;    // segments, local +Z is tangent
     std::vector<Vec3> angular_velocities; // 3D director angular velocity, world rad/s

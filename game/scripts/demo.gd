@@ -93,6 +93,10 @@ func _ready() -> void:
     for i in animals:
         var scene := packed.instantiate() as Node3D
         add_child(scene)
+        # Preserve the imported GLB texture/normal maps. Only alter
+        # inexpensive built-in PBR parameters; no jelly vertex shader.
+        var coated_surfaces := apply_slime_finish(scene)
+        print("SLIME_FINISH animal=%d coated_surfaces=%d shader=none" % [i,coated_surfaces])
         scene.scale = Vector3.ONE * MODEL_SCALE
         scene.rotation.y = MODEL_YAW
         var skels := scene.find_children("*", "Skeleton3D", true, false)
@@ -174,6 +178,27 @@ func read_pipe() -> void:
                     reader_phase = "request_written"
                 inbox_lock.unlock()
             newline = pending_bytes.find(10)
+
+func apply_slime_finish(scene: Node3D) -> int:
+    var applied := 0
+    for node in scene.find_children("*", "MeshInstance3D", true, false):
+        var instance := node as MeshInstance3D
+        if instance.mesh == null:
+            continue
+        for surface in range(instance.mesh.get_surface_count()):
+            var original := instance.get_active_material(surface)
+            if original is StandardMaterial3D:
+                # Duplicating avoids global/shared material mutations;
+                # imported albedo/normal/roughness textures stay bound.
+                var wet := original.duplicate() as StandardMaterial3D
+                wet.roughness = 0.20
+                wet.specular = 0.78
+                wet.clearcoat_enabled = true
+                wet.clearcoat = 0.68
+                wet.clearcoat_roughness = 0.10
+                instance.set_surface_override_material(surface, wet)
+                applied += 1
+    return applied
 
 func make_stage() -> void:
     var env := WorldEnvironment.new(); var e := Environment.new()

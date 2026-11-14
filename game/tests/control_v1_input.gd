@@ -26,6 +26,23 @@ func _exercise() -> void:
     await process_frame
     octo.animals = 2
     octo.selected = 1
+    # Apply the cheap PBR wet-look to a local mesh; no original private GLB
+    # and no per-vertex jelly shader are needed for this regression.
+    var sample_mesh := MeshInstance3D.new()
+    sample_mesh.mesh = SphereMesh.new()
+    sample_mesh.material_override = StandardMaterial3D.new()
+    var mock := Node3D.new()
+    mock.add_child(sample_mesh)
+    octo.add_child(mock)
+    var surfaces := octo.apply_slime_finish(mock)
+    if not _check(surfaces == 1, "slime finish created from base material"):
+        return
+    var wet := sample_mesh.get_active_material(0) as StandardMaterial3D
+    if not _check(wet != null and wet.clearcoat_enabled and
+            absf(wet.roughness - 0.20) < 0.001, "cheap slimy PBR coating"):
+        return
+    print("SLIME_PBR_PASS shader=false coat=true")
+
     # Old/native-in-flight render snapshots can omit the new HUD-only
     # attached field; this must never throw or stop player controls.
     var legacy_snapshot: Dictionary = {

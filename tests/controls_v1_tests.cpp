@@ -102,6 +102,41 @@ int main(){try{
    require(reaching.snapshot().diagnostics.attachments==0,
            "Space overrides reach-for-floor adhesion");
   }
+  // Coil/uncoil progresses through the rod over time instead of
+  // instantaneously resizing a straight tube.
+  {auto c=isolated;c.auto_suction=false;c.coil_curvature=8.0;c.uncoil_speed=2.0;
+   PhysicsWorld coiling(c);
+   const double start=coiling.snapshot().animals[0].arms[0].uncoil_progress;
+   require(start==0.0,"arm starts with an unreleased coil");
+   MuscleCommand extend;extend.arm=0;extend.activation=1;
+   extend.extension=1.48;extend.curvature=0;extend.sweep=0;
+   require(coiling.command(extend),"uncoil command accepted");
+   for(int i=0;i<15;++i)require(coiling.step(),"uncoiling is finite");
+   const double mid=coiling.snapshot().animals[0].arms[0].uncoil_progress;
+   require(mid>.35&&mid<.65,"base-to-tip uncoil wave travels gradually");
+   for(int i=0;i<20;++i)require(coiling.step(),"uncoil reaches distal end");
+   const double extended=coiling.snapshot().animals[0].arms[0].uncoil_progress;
+   require(extended>.98,"whole arm uncoils after sufficient time");
+   extend.extension=.58;extend.curvature=3.6;
+   require(coiling.command(extend),"recoil command accepted");
+   for(int i=0;i<15;++i)require(coiling.step(),"recoiling stays finite");
+   const double returned=coiling.snapshot().animals[0].arms[0].uncoil_progress;
+   require(returned<extended-.35,"recoil front retreats when key released");
+   std::cout<<"UNCOIL_PASS start="<<start<<" mid="<<mid
+            <<" extended="<<extended<<" returned="<<returned<<"\n";
+  }
+  // Upright correction is a physical field, not a graphics transform.
+  // It must stay finite with collisions and gravity in the shared world.
+  {auto c=floor;c.upright_strength=.45;c.arm_motor_strength=2.2;
+   PhysicsWorld stable(c);
+   for(int i=0;i<240;++i)require(stable.step(),"upright field remains stable");
+   require(stable.snapshot().diagnostics.nonfinite_count==0,
+           "upright constraint has finite physical state");
+  }
+  {auto invalid=isolated;invalid.upright_strength=3.0;
+   bool rejected=false;try{PhysicsWorld no(invalid);}catch(const std::invalid_argument&){rejected=true;}
+   require(rejected,"unbounded stabilization torque must be rejected");
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
