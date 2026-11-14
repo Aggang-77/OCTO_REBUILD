@@ -170,3 +170,20 @@ The bridge exports `body_nodes` (19 positions) and
 arm skin responds through section bone scales. Only separately
 named mantle/head meshes can receive the optional bulk shell
 scaling without replacing the original imported asset.
+
+## 2026-11-15: reducing rubber-like rebound
+
+The local two-axis flesh response no longer integrates a second-order
+spring/damped oscillator. Pressure-driven flattening and return now
+use a first-order overdamped material response: it flattens quickly
+against contacted objects but recovers substantially more slowly after
+contact ends, without building hidden tissue-spring momentum.
+
+In addition, `WorldConfig::arm_internal_viscosity=14.0` applies
+symmetric pairwise relative-velocity damping to adjacent arm particles
+after XPBD projections. This targets the actual springy *rod* motion
+while conserving internal linear momentum. It does not simply increase
+the global damping of props or artificially lock the octopus in place.
+An impulse-matched native regression now requires the damped world to
+have less cumulative kinetic energy than a spring-only world. These
+changes still stop short of full creep/plasticity or fluid dynamics.
