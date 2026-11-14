@@ -147,3 +147,26 @@ Existing GameReady surface textures get lower roughness and built-in
 clearcoat at load time for a moist look, with no new custom shader.
 This is **not simulated mucus fluid**, and actual cloth/skin volume
 and exact contact patch integration remain future research.
+
+## Viscoelastic tissue v1: dynamic shape, not just lower stiffness
+
+The body has 12 new actual shell masses connected by compliant
+strands to the existing seven-node, tetra-volume-constrained cage.
+All shell masses are part of the global C++ collision world and
+respond to the floor, rigid boxes, and other octopuses.
+
+Each arm axial interval now stores transverse strain and strain
+rate in `Arm::tissue`; contact compression drives the strain
+and adjacent intervals exchange strain. A viscous term damps
+oscillation, while a slower relaxation returns the arm toward its
+rest shape. The two principal cross-sectional scales are
+`(1/q, q)`, making their product 1 (area maintained for a given
+centerline length). The existing axial length correction preserves
+an approximately constant local section volume. It is a numerical
+viscoelastic proxy, not a calibrated constitutive law.
+
+The bridge exports `body_nodes` (19 positions) and
+`arms[].tissue` (one pair per interval). Imported GameReady
+arm skin responds through section bone scales. Only separately
+named mantle/head meshes can receive the optional bulk shell
+scaling without replacing the original imported asset.
