@@ -124,3 +124,7 @@ Actions Linux build / CTest 3/3 PASS; 2 spread-active solver mean/p95
 1.770/1.825 ms, 10 dense-active 15.054/16.014 ms, no nonfinite.
 Performance measurements exclude Godot; no 60 FPS claim. Godot GUI
 validation and Windows MSVC test still pending.
+
+2026-11-15 Windows CI: MSVC Release build and native CTest 3/3 PASS
+on d80aefe (GitHub Actions run 43624588378). Godot original-asset
+visual assessment and 60 Hz end-to-end GPU test remain open.

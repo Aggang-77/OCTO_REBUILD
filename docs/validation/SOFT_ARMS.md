@@ -27,3 +27,10 @@ GitHub Actions run: https://github.com/songhh06/OCTO_REBUILD/actions/runs/436243
 - 10-animal dense-active physics benchmark (120 measured ticks, 120 warm-up): **mean 15.054 ms, p95 16.014 ms** per fixed step, no reported nonfinite values.
 - Measurements are from a GitHub-hosted Linux VM, not the Windows Ryzen 5 5600X machine. They exclude bridge transfer, Godot scene update and GPU frame time. Do **not** infer a 60 FPS rendering guarantee.
 - Physical leg quality and motion aesthetics still need an interactive Godot visual review.
+
+## Windows native verification (commit d80aefe)
+
+- GitHub Actions: https://github.com/songhh06/OCTO_REBUILD/actions/runs/43624588378
+- Windows hosted runner, MSVC Release build: **PASS**.
+- CTest: **3/3 PASS** (physics.unit, bridge.protocol, physics.integration).
+- This is a native/bridge check, not a Godot graphics test. The GameReady GLB is untracked, so visual animation and the GPU FPS target remain unverified.
