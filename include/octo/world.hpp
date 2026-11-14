@@ -46,6 +46,7 @@ struct WorldConfig {
     // Viscoelastic tissue; stronger dissipation means less rubbery bounce.
     double tissue_relaxation=3.2;       // s^-1, slow local flesh recovery
     double tissue_viscosity=10.0;       // s^-1, strain-rate dissipation
+    double arm_internal_viscosity=14.0;  // s^-1, relative-velocity dissipation along rods
     bool reach_ground_on_extend=true;   // guide ungripped extended tips to contact
     std::uint32_t rigid_count=3;
     bool auto_suction=false;      // enabled for gameplay; original native tests retain passive baseline

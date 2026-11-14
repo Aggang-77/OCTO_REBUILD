@@ -54,7 +54,8 @@ if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.ite
    !std::isfinite(c.uncoil_speed)||c.uncoil_speed<0.1||c.uncoil_speed>5.0||
    !std::isfinite(c.coil_curvature)||c.coil_curvature<0||c.coil_curvature>14.0||
    !std::isfinite(c.tissue_relaxation)||c.tissue_relaxation<.2||c.tissue_relaxation>20||
-   !std::isfinite(c.tissue_viscosity)||c.tissue_viscosity<.5||c.tissue_viscosity>40)throw std::invalid_argument("Invalid WorldConfig");
+   !std::isfinite(c.tissue_viscosity)||c.tissue_viscosity<.5||c.tissue_viscosity>40||
+   !std::isfinite(c.arm_internal_viscosity)||c.arm_internal_viscosity<0||c.arm_internal_viscosity>40)throw std::invalid_argument("Invalid WorldConfig");
 for(unsigned n=0;n<c.animals;++n){Animal a;Vec3 center{(double(n)-double(c.animals-1)/2)*c.spacing,c.spawn_height,0};
 const double cr=std::cos(c.spawn_roll),sr=std::sin(c.spawn_roll);
 const auto rotate_spawn=[&](Vec3 v)->Vec3{
@@ -379,6 +380,24 @@ void damp_mantle_tissue(double h){
   }
  }
 }
+void damp_arm_relative_velocities(double h){
+ // XPBD rest-length/bend projections otherwise regenerate a large
+ // relative particle velocity every tick, felt as a stiff spring.
+ // Internal pairwise impulses suppress only relative motion and cancel
+ // exactly, preserving the total linear momentum of the whole world.
+ const double factor=1.-std::exp(-cfg.arm_internal_viscosity*h);
+ if(factor<=0)return;
+ for(auto& animal:animals)for(auto& arm:animal.arms){
+  for(size_t j=1;j<arm.p.size();++j){
+   auto& a=p[arm.p[j-1]];
+   auto& b=p[arm.p[j]];
+   const Vec3 relative=b.v-a.v;
+   const Vec3 impulse=relative*(factor/(a.inv+b.inv));
+   a.v=a.v+impulse*a.inv;
+   b.v=b.v-impulse*b.inv;
+  }
+ }
+}
 void tissue_dynamics(double h){
  // Each rod section stores independent, damped transverse strain. Contact
  // pressures push strain; neighboring sections share it gradually. Axis
@@ -399,12 +418,18 @@ void tissue_dynamics(double h){
    // Contact acts on material state, not just on rendered thickness.
    const double material_load=std::clamp(pressure[j],0.,1.8);
    const double neighbor=before+after-2*tissue.transverse;
-   const double strain_force=-cfg.tissue_relaxation*(tissue.transverse-1.0)
-                             -55.0*material_load +3.0*neighbor;
-   tissue.rate=(tissue.rate+strain_force*h)*std::exp(-cfg.tissue_viscosity*h);
-   tissue.transverse=std::clamp(tissue.transverse+tissue.rate*h,.40,1.50);
-   if(tissue.transverse<=.40&&tissue.rate<0)tissue.rate=0;
-   if(tissue.transverse>=1.50&&tissue.rate>0)tissue.rate=0;
+   // Overdamped Maxwell-like relaxation instead of a mass-on-spring:
+   // compression changes local shape without storing oscillatory
+   // 'tissue.rate' energy. Recovery is deliberately much slower than
+   // pressure-driven flattening, so contact releases do not ping back.
+   const double desired=std::clamp(1.0-1.6*material_load+
+                              .16*neighbor,.40,1.50);
+   const double rate=desired<tissue.transverse
+                         ?cfg.tissue_viscosity:cfg.tissue_relaxation*.35;
+   const double response=1.0-std::exp(-rate*h);
+   const double previous=tissue.transverse;
+   tissue.transverse=std::clamp(previous+(desired-previous)*response,.40,1.50);
+   tissue.rate=(tissue.transverse-previous)/h;
    tissue.pressure=material_load;
    arm.squash[j]=tissue.transverse;
   }
@@ -491,6 +516,7 @@ tissue_dynamics(h);
 update_suckers(h);
 for(auto&a:animals)for(auto&ar:a.arms)for(unsigned j=0;j<cfg.segments;++j){double l=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);double pressure=std::max(p[ar.p[j]].compression,p[ar.p[j+1]].compression);(void)pressure;p[ar.p[j]].r=ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(l,1e-5));p[ar.p[j]].r=std::min(.1,p[ar.p[j]].r);}
 for(auto&a:p){a.v=(a.x-a.old)/h;if(!finite(a.x)||!finite(a.v)){++diag.nonfinite_count;return false;}}
+damp_arm_relative_velocities(h);
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&roll:ar.roll){roll.omega=(roll.angle-roll.old)/h;if(!std::isfinite(roll.angle)||!std::isfinite(roll.omega)){++diag.nonfinite_count;return false;}}
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&director:ar.directors){director.q=rod_math::normalize(director.q);director.omega=rod_math::mul(rod_math::log_rotation(rod_math::multiply(director.q,rod_math::inverse(director.old))),1/h);if(!finite(director.omega)||!std::isfinite(director.q.w)){++diag.nonfinite_count;return false;}}
 }
