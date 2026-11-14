@@ -8,10 +8,10 @@ with 200 microsecond pipe polling instead of 1 ms yielded one timeout and one
 success (57.383 ticks/s); it did not improve throughput and was reverted.
 
 The extra timeout message identified one concrete stalled state: last displayed
-simulation tick 433, request ID 435 already sent, response ID 434 last
+simulation tick 433, request ID 435 allocated, response ID 434 last
 validated, `pending=false`. That flag can be overwritten by the main thread
 while the reader schedules the next request, so its value alone does not
-prove the request was not in flight. The timeout now also reports reader-thread
+prove the request was not in flight or that bytes were written. The timeout now also reports reader-thread
 and child-process liveness. Another timeout in the restored 1 ms polling
 configuration recorded tick 276, request 278, response 277, with both the
 reader thread and child process alive. The pending flag now reflects whether
