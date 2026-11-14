@@ -129,7 +129,18 @@ func _ready() -> void:
         # follow this bone, while arm bones are re-targeted below.
         var torso_root: int = skel.get_bone_parent(bone_ids[0][0])
         var torso_rest := skel.get_bone_global_rest(torso_root) if torso_root >= 0 else Transform3D.IDENTITY
-        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids,
+        var volume_preview: MeshInstance3D = null
+        if OS.get_environment("OCTO_VOLUME_ARM") == "1":
+            volume_preview = MeshInstance3D.new()
+            volume_preview.name = "PhysicalArmShellPreview"
+            var preview_material := StandardMaterial3D.new()
+            preview_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+            preview_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+            preview_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+            preview_material.albedo_color = Color(0.15, 0.9, 0.7, 0.35)
+            volume_preview.material_override = preview_material
+            add_child(volume_preview)
+        views.append({"volume_preview": volume_preview, "scene": scene, "skel": skel, "bone_ids": bone_ids,
             "bone_rests": bone_rests, "mantles": mantles,
             "torso_root": torso_root, "torso_rest": torso_rest})
         print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d torso_root=%d" % [i,mantles.size(),torso_root])
@@ -325,6 +336,34 @@ func apply_torso_root_skin(skel: Skeleton3D, root_id: int, rest: Transform3D, si
     var global_target := Transform3D(rest.basis * Basis.from_scale(size), rest.origin)
     skel.set_bone_pose(root_id, parent_rest.affine_inverse() * global_target)
 
+func create_volumetric_preview_mesh(rings: Array) -> ArrayMesh:
+    # Explicit experimental 36-vertex physical surface visualizer.
+    # Only the *one-arm prototype* uses this compact per-tick mesh;
+    # the production GameReady model still uses GPU skeleton skinning.
+    var mesh := ArrayMesh.new()
+    if rings.size() < 2:
+        return mesh
+    var vertices := PackedVector3Array()
+    for ring in rings:
+        if not ring is Array or ring.size() != 4:
+            return mesh
+        for vertex in ring:
+            vertices.append(vec(vertex))
+    var indices := PackedInt32Array()
+    for j in range(rings.size() - 1):
+        for k in 4:
+            var a := j * 4 + k
+            var b := j * 4 + (k + 1) % 4
+            var c := (j + 1) * 4 + k
+            var d := (j + 1) * 4 + (k + 1) % 4
+            indices.append_array(PackedInt32Array([a, b, d, a, d, c]))
+    var arrays := []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_INDEX] = indices
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    return mesh
+
 func update_scene() -> void:
     for i in current.animals.size():
         var a: Dictionary = current.animals[i]; var view: Dictionary = views[i]
@@ -382,6 +421,12 @@ func update_scene() -> void:
                 skel.set_bone_pose(id,parent_global.affine_inverse()*target); globals[id] = target
     while props.size() < current.rigids.size():
         var mesh := MeshInstance3D.new(); mesh.mesh = BoxMesh.new(); var mat := StandardMaterial3D.new(); mat.albedo_color = Color("42a4c4"); mat.roughness = 0.4; mesh.material_override = mat; add_child(mesh); props.append(mesh)
+    if OS.get_environment("OCTO_VOLUME_ARM") == "1":
+        for i in current.animals.size():
+            var candidate: MeshInstance3D = views[i].volume_preview
+            if candidate != null:
+                candidate.mesh = create_volumetric_preview_mesh(
+                    current.animals[i].arms[0].get("volume_rings", []))
     for i in current.rigids.size():
         var r: Dictionary = current.rigids[i]; props[i].position = vec(r.center); props[i].quaternion = quat(r.orientation); props[i].scale = vec(r.half_extents)*2.0
     if current.tick == 0 or current.tick == 1: print("SNAPSHOT tick=%d animals=%d arms=%d first_node=%s" % [current.tick,current.animals.size(),current.animals[0].arms.size(),str(current.animals[0].arms[0].nodes[0])])
