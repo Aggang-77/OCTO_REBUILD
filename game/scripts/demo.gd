@@ -208,7 +208,7 @@ func poll() -> void:
             update_scene()
             skin_ms = float(Time.get_ticks_usec()-skin_start)/1000.0
     if auto_step and last_progress_usec > 0 and Time.get_ticks_usec()-last_progress_usec > 15000000:
-        fail("Native solver stopped responding for 15 seconds"); return
+        fail("Native solver stopped responding for 15 seconds (tick=%d, request=%d, response=%d, pending=%s)" % [int(current.get("tick", -1)),request_id,last_response_id,str(pending)]); return
     if not auto_step and pending and Time.get_ticks_usec()-sent_at > 15000000:
         fail("Native solver timed out during reset"); return
     if child.has("pid") and not OS.is_process_running(child.pid) and not quitting: fail("Native solver exited")

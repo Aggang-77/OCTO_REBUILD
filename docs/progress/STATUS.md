@@ -76,3 +76,14 @@ Ten-animal dense active native 600-tick mean/p95 6.587/7.024 ms; Godot GPU
 600 ticks exited zero with screenshot, but 56.081 simulation ticks/s misses
 the 60 Hz target. See docs/validation/SWEPT_CONTACT.md. Next: robust TOI
 response/whole-shape collision, dense contact/skin optimization, tissue model.
+
+2026-11-15 dynamic prop sweep guard: an enclosing-sphere center sweep and
+post-constraint center separation now make the 400 N s two-prop straight-line
+regression PASS for order, center gap and total momentum. Parallel near miss
+PASS, Release CTest 3/3 PASS, 2-animal 10,000-tick and 10-animal 600-tick
+native runs have zero nonfinite. Godot 10-animal dense active 600-tick runs
+twice succeeded at 58.611 and 58.544 ticks/s, but two earlier runs hit the
+15-second response watchdog. Runtime reliability and 60 Hz remain open.
+Watchdog errors now include last tick/request/response IDs. This proxy does
+not constitute exact oriented-box or deforming-surface CCD. See
+docs/validation/RIGID_SWEEP_GUARD.md.

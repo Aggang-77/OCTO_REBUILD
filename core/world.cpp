@@ -59,6 +59,20 @@ auto&top=p[a.body[3]];auto&bottom=p[a.body[4]];Vec3 span=top.x-bottom.x;double v
 if(den>1e-8){const double body_angle=std::atan2(lateral,vertical);Vec3 grad=(side*vertical-up*lateral)/den;auto&first=ar.roll[1];double error=first.angle-body_angle-desired;double weight=first.inv_inertia+(top.inv+bottom.inv)*dot(grad,grad);double delta=(-error-alpha*first.lambda)/(weight+alpha);first.lambda+=delta;first.angle+=first.inv_inertia*delta;top.x=top.x-grad*(top.inv*delta);bottom.x=bottom.x+grad*(bottom.inv*delta);span=top.x-bottom.x;ar.roll[0].angle=std::atan2(dot(span,side),dot(span,up));}
 for(size_t j=2;j<ar.roll.size();++j){auto&left=ar.roll[j-1];auto&right=ar.roll[j];const double error=right.angle-left.angle-desired;const double delta=(-error-alpha*right.lambda)/(left.inv_inertia+right.inv_inertia+alpha);right.lambda+=delta;left.angle-=left.inv_inertia*delta;right.angle+=right.inv_inertia*delta;}}}
 bool excluded(const P&a,const P&b){if(a.rigid>=0&&a.rigid==b.rigid)return true;if(a.animal>=0&&a.animal==b.animal){if(a.arm<0&&b.arm<0)return true;if(a.arm==b.arm&&std::abs(a.node-b.node)<=2)return true;if(a.arm<0&&b.node<=2)return true;if(b.arm<0&&a.node<=2)return true;if(a.node<=2&&b.node<=2)return true;}return false;}
+// A coarse whole-prop guard catches center paths that cross before individual
+// corner constraints can resolve the coherent body's translation.
+void rigid_center_sweeps(){if(!cfg.collisions)return;const double diameter=2*.16*std::sqrt(3.0);
+for(size_t i=0;i<rigids.size();++i)for(size_t j=i+1;j<rigids.size();++j){Vec3 a0{},a1{},b0{},b1{};
+for(int id:rigids[i]){a0=a0+p[id].old/8;a1=a1+p[id].x/8;}
+for(int id:rigids[j]){b0=b0+p[id].old/8;b1=b1+p[id].x/8;}
+auto hit=swept_sphere_toi(a0,a1,b0,b1,diameter);
+Vec3 n=hit?hit->normal:unit(b1-a1);
+if(!hit&&norm(b1-a1)>=diameter)continue;
+double correction=diameter-dot(b1-a1,n);if(correction<=0)continue;
+for(int id:rigids[i])p[id].x=p[id].x-n*(correction*.5);
+for(int id:rigids[j])p[id].x=p[id].x+n*(correction*.5);
+++diag.swept_contacts;
+}}
 void contacts(){if(cfg.floor)for(auto&a:p)if(a.x.y<a.r){double depth=a.r-a.x.y;diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=a.r;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,cfg.friction*depth)/l);}
 if(!cfg.collisions)return;
 // Swept AABB broadphase includes both endpoints so fast crossing paths remain candidates.
@@ -92,7 +106,9 @@ for(auto&a:animals)for(auto&ar:a.arms)std::fill(ar.bend_lambda.begin(),ar.bend_l
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&roll:ar.roll){roll.lambda=0;roll.old=roll.angle;roll.omega*=std::exp(-cfg.damping*h);roll.angle+=roll.omega*h;}
 int dragged=-1;if(drag.kind==DragCommand::Kind::Animal)dragged=animals[drag.index].body[0];if(drag.kind==DragCommand::Kind::ArmTip)dragged=animals[drag.index].arms[drag.arm].p.back();if(drag.kind==DragCommand::Kind::Rigid)dragged=rigids[drag.index][0];
 for(size_t i=0;i<p.size();++i){auto&a=p[i];a.old=a.x;Vec3 force{};if(int(i)==dragged){force=(drag.target-a.x)*drag.stiffness;double l=norm(force);if(l>drag.max_force)force=force*(drag.max_force/l);}a.v=(a.v+(cfg.gravity+force*a.inv)*h)*std::exp(-cfg.damping*h);a.x=a.x+a.v*h;}
+rigid_center_sweeps();
 for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);bending(h);torsion(h);attachments(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
+rigid_center_sweeps();
 for(auto&a:animals)for(auto&ar:a.arms)for(unsigned j=0;j<cfg.segments;++j){double l=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);p[ar.p[j]].r=ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(l,1e-5));p[ar.p[j]].r=std::min(.1,p[ar.p[j]].r);}
 for(auto&a:p){a.v=(a.x-a.old)/h;if(!finite(a.x)||!finite(a.v)){++diag.nonfinite_count;return false;}}
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&roll:ar.roll){roll.omega=(roll.angle-roll.old)/h;if(!std::isfinite(roll.angle)||!std::isfinite(roll.omega)){++diag.nonfinite_count;return false;}}
