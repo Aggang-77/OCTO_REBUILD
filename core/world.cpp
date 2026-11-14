@@ -143,6 +143,12 @@ if(c.volumetric_arm_prototype&&k==0&&c.segments>=4){
   ar.volume_rings.push_back(ring);
  }
 }
+// Preserve original rigid-root physics fixtures when the new
+// grounded gameplay tissue profile is disabled. The player's octopus
+// uses the compliant mantle junction below.
+if(!c.grounded_rest){
+ for(int body_vertex:a.body)edge(ar.p[0],body_vertex,1e-7*c.softness);
+}else{
 // Hydrostatically deformable arm-to-mantle junction. Previously root
 // node 0 was tied to all seven cage nodes with nearly rigid links.
 // Only the local outer mantle shell should transmit attachment stresses.
@@ -162,6 +168,7 @@ edge(ar.p[0],shell_right,c.arm_root_shell_compliance*c.softness*1.8);
 // Widen the attachment across one adjoining rod segment; no hard hinge.
 edge(ar.p[1],shell_center,c.arm_root_shell_compliance*c.softness*3.0);
 edge(ar.p[0],a.body[0],c.arm_root_center_compliance*c.softness);
+}
 }
 animals.push_back(a);}
 // Adapt only arm axial and soft mantle-shell edges. Rigid prop
