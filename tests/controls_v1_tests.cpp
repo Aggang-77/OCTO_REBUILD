@@ -227,6 +227,36 @@ int main(){try{
    require(viscous_energy<spring_energy,
            "viscous arms must dissipate more energy than spring-only rods");
   }
+  // Native world integration: a held load must evolve actual rod
+  // rest-shape memory rather than merely changing a render material.
+  {WorldConfig c=isolated;
+   c.coil_curvature=0;c.upright_strength=0;c.gravity={0,0,0};
+   c.auto_suction=false;c.creep_rate=1.2;c.creep_recovery=.04;
+   PhysicsWorld loaded(c);
+   DragCommand drag;drag.kind=DragCommand::Kind::ArmTip;
+   drag.index=0;drag.arm=0;drag.target={0,.75,2.0};
+   drag.stiffness=100;drag.max_force=35;
+   require(loaded.drag(drag),"constant-load creep drag accepted");
+   double max_creep=0,max_elastic=0;
+   for(int tick=0;tick<240;++tick){
+    require(loaded.step(),"native creep under sustained load stays finite");
+    const auto& arm=loaded.snapshot().animals[0].arms[0];
+    require(arm.creep_strain.size()==c.segments &&
+            arm.elastic_strain.size()==c.segments,
+            "creep state exposed for each rod segment");
+    for(unsigned j=0;j<c.segments;++j){
+     require(std::isfinite(arm.creep_strain[j])&&
+             std::isfinite(arm.elastic_strain[j]),"stress/creep state finite");
+     require(std::abs(arm.creep_strain[j])<=c.max_creep_strain+1e-10,
+             "material creep stays bounded");
+     max_creep=std::max(max_creep,std::abs(arm.creep_strain[j]));
+     max_elastic=std::max(max_elastic,std::abs(arm.elastic_strain[j]));
+    }
+   }
+   std::cout<<"NATIVE_CREEP max_memory="<<max_creep
+            <<" max_elastic="<<max_elastic<<"\n";
+   require(max_creep>1e-5,"sustained force must change physical rest-shape memory");
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
