@@ -1,4 +1,4 @@
-param([ValidateSet(1,2,5,10)][int]$Animals=2,[switch]$Benchmark,[string]$Screenshot='', [switch]$Headless,[ValidateRange(8,64)][int]$Segments=24,[switch]$NoWriggle,[switch]$LegacyProfile,[switch]$Procedural,[switch]$NoJelly,[switch]$Jelly,[ValidateRange(0.0,3.0)][double]$JellyStrength=2.2)
+param([ValidateSet(1,2,5,10)][int]$Animals=2,[switch]$Benchmark,[string]$Screenshot='', [switch]$Headless,[ValidateRange(8,64)][int]$Segments=24,[switch]$NoWriggle,[switch]$LegacyProfile,[switch]$Procedural,[switch]$NoJelly,[switch]$Jelly,[ValidateRange(0.0,3.0)][double]$JellyStrength=2.2,[ValidateRange(0.8,2.6)][double]$JellyThickness=1.50,[switch]$NoWebbing)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $server=Join-Path $root 'build/release-final/octo_server.exe'
@@ -22,6 +22,8 @@ if ($Procedural) { $argsList+= '--procedural' }
 if ($NoJelly) { $argsList+= '--no-jelly' }
 if ($Jelly) { $argsList+= '--jelly' }
 $argsList+= "--jelly-strength=$JellyStrength"
+$argsList+= "--jelly-thickness=$JellyThickness"
+if ($NoWebbing) { $argsList+= '--no-webbing' }
 if ($Benchmark) { $argsList+= '--benchmark' }
 if ($Screenshot) { $argsList+= "--screenshot=$Screenshot" }
 $windowStyle=if ($Headless) { 'Hidden' } else { 'Normal' }

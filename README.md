@@ -51,3 +51,21 @@ unchanged by the shader. In scenes with more than two octopuses, jelly layers
 are disabled by default to protect throughput; pass `-Jelly` to force them
 on. See `docs/validation/JELLY_MEMBRANE.md` for GPU screenshot proof,
 profiling, and known visual/physical limitations.
+
+### Thick tentacles and interbrachial webbing
+
+The jelly preview now defaults to **1.50× visual sleeve thickness**, with
+extra flesh at the base, and adds **eight scalloped interbrachial membranes
+per octopus**, connecting adjacent arms including the 7→0 seam. Each web is
+a closed two-sided fleshy panel with a concave distal lip and a soft sag
+driven by the distance between the two moving physical arms. The GPU shader
+applies slow interior waves that vanish at both arm seams.
+
+```powershell
+.\tools\run-demo.ps1 -Animals 2 -Procedural -JellyThickness 1.70 -JellyStrength 3
+.\tools\run-demo.ps1 -Animals 2 -Procedural -NoWebbing
+```
+
+Use **[ / ]** during play to adjust thickness (0.8–2.6),
+**PageUp/PageDown** for wave intensity, and **F6** to hide all cosmetic
+jelly meshes. See `docs/validation/INTERBRACHIAL_WEB.md`.

@@ -152,3 +152,10 @@ Godot 4.6.2 OpenGL llvmpipe under Xvfb successfully rendered two animals
 and a 1280x720 screenshot (CI run 43628842241); actual original-GLB
 overlay remains unverified. Software GL preview measured ~35.4 sim
 ticks/s, *not* a real-GPU 60 FPS result. See docs/validation/JELLY_MEMBRANE.md.
+
+2026-11-15 interbrachial webbing pass: the visual tentacles are thickened
+and 8 scalloped, closed, double-sided membranes per animal connect the
+moving adjacent arms, including the wraparound seam. The web droops with
+the C++ arm separation and uses slower shader flutter with seam-locked
+displacement. Geometry and screenshot tests added. This is cosmetic,
+not a C++ collision mesh or tensile constraint.

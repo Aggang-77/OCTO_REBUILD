@@ -6,6 +6,7 @@ uniform float jelly_strength : hint_range(0.0, 3.0) = 2.2;
 uniform float arm_phase = 0.0;
 uniform float recoil : hint_range(0.0, 1.0) = 0.0;
 uniform bool mantle_mode = false;
+uniform bool web_mode = false;
 
 varying float gel_crest;
 
@@ -27,13 +28,23 @@ void vertex() {
         // A mantle is a soft bulb, not a tentacle: deform the whole surface.
         envelope = 0.7 + 0.3 * sin(axial * 3.14159265);
     }
+    if (web_mode) {
+        // Lower frequency membrane flutter; displacement vanishes at
+        // both moving arm seams so the web remains visibly attached.
+        float across = clamp(UV.x, 0.0, 1.0);
+        envelope = pow(max(sin(across * 3.14159265), 0.0), 1.15)
+                 * smoothstep(0.01, 0.25, axial);
+        slow = sin(tm * 2.0 - axial * 10.0 + phase);
+        compression = sin(tm * 3.5 - axial * 17.0 + across * 8.0 + phase);
+        tremor = sin(tm * 6.0 + axial * 24.0 - across * 10.0 + phase);
+    }
 
     float wave = slow * 0.72 + compression * 0.36 + tremor * 0.11;
     float impulse = recoil * exp(-axial * 2.0)
                   * sin(tm * 13.0 - axial * 23.0 + phase);
     // The membrane may ripple strongly but never folds through its small
     // distal cross section. UV2.x carries the live C++ section radius.
-    float base_amplitude = mantle_mode ? 0.07 : max(0.0015, UV2.x * 0.22);
+    float base_amplitude = mantle_mode ? 0.07 : (web_mode ? UV2.x * 0.22 : max(0.0015, UV2.x * 0.22));
     float displacement = jelly_strength * envelope
                        * base_amplitude * (wave * 0.68 + impulse * 0.25);
 

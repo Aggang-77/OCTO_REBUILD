@@ -16,6 +16,9 @@ def main() -> int:
     match = re.search(r"JELLY_CHECK animals=2 arms=8 vertices_per_arm=(\d+)", log)
     assert match, log[-3000:]
     assert int(match.group(1)) >= 300, match.group(0)
+    web = re.search(r"WEBBING_CHECK animals=2 panels_per_animal=8 vertices_per_web=(\d+) triangles_per_web=(\d+)", log)
+    assert web, f"missing eight-panel interbrachial membrane: {log[-3000:]}"
+    assert int(web.group(1)) >= 400 and int(web.group(2)) >= 400, web.group(0)
     assert "SMOKE_OK" in log, log[-3000:]
     assert "SCREENSHOT path=" in log and "error=0" in log, log[-3000:]
     for error in ("SCRIPT ERROR", "SHADER ERROR", "Parse Error", "Invalid call.", "ERROR:"):
@@ -25,7 +28,7 @@ def main() -> int:
     assert png[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
     width, height = unpack(">II", png[16:24])
     assert width >= 640 and height >= 360, (width, height)
-    print(f"JELLY_RENDER_PASS vertices_per_arm={match.group(1)} screenshot={width}x{height}")
+    print(f"JELLY_RENDER_PASS vertices_per_arm={match.group(1)} web_panels=8 web_vertices={web.group(1)} screenshot={width}x{height}")
     return 0
 
 

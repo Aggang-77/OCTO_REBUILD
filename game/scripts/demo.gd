@@ -54,6 +54,8 @@ var jelly_enabled := true
 var jelly_explicit := false
 var jelly_visible := true
 var jelly_strength := 2.2
+var jelly_thickness := 1.50
+var webbing_enabled := true
 var test_jelly := false
 var screenshot := ""
 var label: Label
@@ -92,6 +94,8 @@ func _ready() -> void:
         if arg == "--legacy-profile": organic_profile = false
         if arg == "--procedural": procedural_mode = true
         if arg == "--no-jelly": jelly_enabled = false
+        if arg == "--no-webbing": webbing_enabled = false
+        if arg.begins_with("--jelly-thickness="): jelly_thickness = float(arg.get_slice("=", 1))
         if arg == "--jelly": jelly_enabled = true; jelly_explicit = true
         if arg == "--test-jelly": test_jelly = true; smoke = true
         if arg.begins_with("--jelly-strength="): jelly_strength = float(arg.get_slice("=", 1))
@@ -100,6 +104,8 @@ func _ready() -> void:
     if arm_segments < 8 or arm_segments > 64: fail("Choose --segments between 8 and 64"); return
     if jelly_strength < 0.0 or jelly_strength > 3.0 or not is_finite(jelly_strength):
         fail("Choose --jelly-strength between 0 and 3"); return
+    if jelly_thickness < 0.8 or jelly_thickness > 2.6 or not is_finite(jelly_thickness):
+        fail("Choose --jelly-thickness between 0.8 and 2.6"); return
     if procedural_mode and not jelly_enabled: fail("--procedural requires jelly rendering"); return
     if animals > 2 and not jelly_explicit and not procedural_mode:
         jelly_enabled = false # High-density benchmark stays comparable.
@@ -111,7 +117,7 @@ func _ready() -> void:
     for i in animals:
         var view := {
             "scene": null, "skel": null, "bone_ids": [], "bone_rests": [],
-            "jelly_arms": [], "jelly_head": null, "jelly_materials": [],
+            "jelly_arms": [], "jelly_webs": [], "jelly_head": null, "jelly_materials": [],
             "last_tips": [], "recoil": 0.0
         }
         if not procedural_mode:
@@ -148,6 +154,17 @@ func _ready() -> void:
                 add_child(sleeve)
                 view.jelly_arms.append(sleeve)
                 view.jelly_materials.append(gel_mat)
+            if webbing_enabled:
+                for arm in 8:
+                    var web := MeshInstance3D.new()
+                    web.name = "InterbrachialWeb_%d_%d_%d" % [i, arm, (arm + 1) % 8]
+                    web.extra_cull_margin = 0.15
+                    var web_mat: ShaderMaterial = JELLY_SURFACE.material_for(
+                        float(i) * 1.7 + float(arm) * 0.71, jelly_strength, false, true)
+                    web.material_override = web_mat
+                    add_child(web)
+                    view.jelly_webs.append(web)
+                    view.jelly_materials.append(web_mat)
             var head := MeshInstance3D.new()
             head.name = "JellyMantle_%d" % i
             var sphere := SphereMesh.new()
@@ -172,6 +189,7 @@ func _ready() -> void:
         print("PROCEDURAL_JELLY animals=%d model_not_required=true" % animals)
     if jelly_enabled:
         print("JELLY_RENDERER_ON animals=%d strength=%.2f sleeves_per_animal=8" % [animals, jelly_strength])
+        print("WEBBING_ON panels_per_animal=%d thickness=%.2f" % [8 if webbing_enabled else 0, jelly_thickness])
     var server := OS.get_environment("OCTO_SERVER")
     if server.is_empty(): fail("Set OCTO_SERVER to the octo_server executable"); return
     child = OS.execute_with_pipe(server, [], false)
@@ -251,7 +269,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 18); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 12); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nJELLY skin: extreme GPU membrane ripple + C++ rod geometry.\nPageUp/PageDown: jelly +/-   F6: show/hide jelly.\n--procedural runs WITHOUT GameReady GLB.\nCosmetic shader does not change C++ collisions."; help.add_theme_font_size_override("font_size", 11); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nJELLY skin: extreme GPU membrane ripple + C++ rod geometry.\nPageUp/PageDown: jelly +/-   F6: show/hide jelly.\n[ / ]: arm thickness +/-; inter-arm webbing follows arms.\n--procedural runs WITHOUT GameReady GLB.\nCosmetic shader does not change C++ collisions."; help.add_theme_font_size_override("font_size", 11); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -324,12 +342,20 @@ func update_jelly(i: int, animal: Dictionary, view: Dictionary) -> void:
     for arm in 8:
         var state: Dictionary = animal.arms[arm]
         var sleeve: MeshInstance3D = view.jelly_arms[arm]
-        sleeve.mesh = JELLY_SURFACE.build_arm_mesh(state.nodes, state.radii)
+        sleeve.mesh = JELLY_SURFACE.build_arm_mesh(state.nodes, state.radii, jelly_thickness)
         var tip := vec(state.nodes[-1])
         if view.last_tips.size() == 8:
             tip_motion = maxf(tip_motion, tip.distance_to(view.last_tips[arm]))
         next_tips.append(tip)
     view.last_tips = next_tips
+    if webbing_enabled:
+        for arm in 8:
+            var next_arm := (arm + 1) % 8
+            var a: Dictionary = animal.arms[arm]
+            var b: Dictionary = animal.arms[next_arm]
+            var web: MeshInstance3D = view.jelly_webs[arm]
+            web.mesh = JELLY_SURFACE.build_web_mesh(
+                a.nodes, a.radii, b.nodes, b.radii, jelly_thickness)
     var head: MeshInstance3D = view.jelly_head
     head.position = vec(animal.center) + Vector3(0.0, 0.14, 0.0)
     head.quaternion = quat(animal.orientation)
@@ -340,6 +366,11 @@ func update_jelly(i: int, animal: Dictionary, view: Dictionary) -> void:
     view.recoil = maxf(impulse, float(view.recoil) * 0.89)
     for mat in view.jelly_materials:
         (mat as ShaderMaterial).set_shader_parameter("recoil", view.recoil)
+
+func set_jelly_thickness(value: float) -> void:
+    jelly_thickness = clampf(value, 0.8, 2.6)
+    if not current.is_empty() and jelly_enabled and jelly_visible:
+        update_scene()
 
 func set_jelly_strength(value: float) -> void:
     jelly_strength = clampf(value, 0.0, 3.0)
@@ -473,7 +504,7 @@ func _process(delta: float) -> void:
         inbox_lock.unlock()
     if first_tick_usec > 0 and current.tick > 1: frame_wall_ms.append(delta*1000.0)
     update_camera()
-    label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms\nJelly %s (%.1f)" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,parse_ms,skin_ms,command_ms,"ON" if jelly_visible and jelly_enabled else "OFF",jelly_strength]
+    label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms\nJelly %s (%.1f)  Thickness %.2f  Webs %d" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,parse_ms,skin_ms,command_ms,"ON" if jelly_visible and jelly_enabled else "OFF",jelly_strength,jelly_thickness,views[0].jelly_webs.size() if jelly_enabled else 0]
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
@@ -497,6 +528,21 @@ func _process(delta: float) -> void:
             if vertex_count < 300 or not test_sleeve.material_override is ShaderMaterial:
                 fail("Jelly sleeve shader not active"); return
             print("JELLY_CHECK animals=%d arms=8 vertices_per_arm=%d strength=%.2f" % [animals, vertex_count, jelly_strength])
+            if webbing_enabled:
+                if views[0].jelly_webs.size() != 8:
+                    fail("Webbing must have eight adjacent-arm panels"); return
+                var test_web: MeshInstance3D = views[0].jelly_webs[0]
+                if test_web.mesh == null or test_web.mesh.get_surface_count() != 1:
+                    fail("Jelly web surface missing"); return
+                var web_data: Array = test_web.mesh.surface_get_arrays(0)
+                var web_vertices: PackedVector3Array = web_data[Mesh.ARRAY_VERTEX]
+                var web_indices: PackedInt32Array = web_data[Mesh.ARRAY_INDEX]
+                if web_vertices.size() < 400 or web_indices.size() < 1800:
+                    fail("Inter-arm web is not a closed, subdivided mesh"); return
+                var web_bounds := test_web.mesh.get_aabb()
+                if web_bounds.size.length() < 0.15:
+                    fail("Inter-arm web has degenerate world geometry"); return
+                print("WEBBING_CHECK animals=%d panels_per_animal=8 vertices_per_web=%d triangles_per_web=%d thickness=%.2f" % [animals, web_vertices.size(), web_indices.size()/3, jelly_thickness])
         if test_input:
             print("INPUT_CHECK selected=%d arm=%s drag=%s phase=%d arm_delta_m=%.5f center_delta_m=%.5f" % [selected,str(input_arm_seen),str(input_drag_seen),input_phase,input_arm_delta,input_center_delta])
             if not input_arm_seen or not input_drag_seen or input_arm_delta < .005 or input_center_delta < .002: fail("Key or mouse input did not produce physical response"); return
@@ -524,12 +570,15 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_TAB: selected = (selected+1)%animals
+        if event.keycode == KEY_BRACKETLEFT: set_jelly_thickness(jelly_thickness - 0.1)
+        if event.keycode == KEY_BRACKETRIGHT: set_jelly_thickness(jelly_thickness + 0.1)
         if event.keycode == KEY_PAGEUP: set_jelly_strength(jelly_strength + 0.3)
         if event.keycode == KEY_PAGEDOWN: set_jelly_strength(jelly_strength - 0.3)
         if event.keycode == KEY_F6 and jelly_enabled:
             jelly_visible = not jelly_visible
             for view in views:
                 for sleeve in view.jelly_arms: (sleeve as MeshInstance3D).visible = jelly_visible
+                for web in view.jelly_webs: (web as MeshInstance3D).visible = jelly_visible
                 (view.jelly_head as MeshInstance3D).visible = jelly_visible and procedural_mode
         if event.keycode == KEY_F5:
             inbox_lock.lock()
