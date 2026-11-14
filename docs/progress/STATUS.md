@@ -169,3 +169,13 @@ mesh rebuild. A separately named mantle mesh is optionally scaled
 from physical shell extents; merged GLB mantle remains visually
 unresolved. Native 19-node/suction/tissue tests and bridge contract
 added; Windows, Linux and Godot CI should gate regressions.
+
+2026-11-15 combined GameReady torso fix: all 193 GLB bones include a
+shared torso root; its root-weighted surface receives C++ 12-shell
+bulk deformation via Godot root bone pose, with arm child transforms
+recomputed against the deformed parent. A synthetic Godot Skeleton3D
+root test verifies finite/nonidentity scaling without private GLB.
+Internal mantle-to-center velocity dashpots now exchange equal and
+opposite impulses to damp bouncy oscillation while conserving total
+linear momentum in free space. Renderer still uses existing GPU skin,
+not the former CPU rebuilt jelly skin or a high-cost custom shader.
