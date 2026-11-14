@@ -87,3 +87,19 @@ twice succeeded at 58.611 and 58.544 ticks/s, but two earlier runs hit the
 Watchdog errors now include last tick/request/response IDs. This proxy does
 not constitute exact oriented-box or deforming-surface CCD. See
 docs/validation/RIGID_SWEEP_GUARD.md.
+
+2026-11-15 bridge stall trace: 4/4 additional 10-animal 600-tick GPU runs
+exited zero at 57.544–58.772 ticks/s. A 200 microsecond polling trial had
+one 15-second watchdog failure at displayed tick 433 (request 435, response
+434) and one successful run; polling change reverted. Blocking `get_line()`
+trial failed at two-animal reset and was reverted. Three direct C++ server
+600-tick active streams passed (~97 ticks/s). Reader and child liveness are
+now included in future watchdog errors. Root cause remains unresolved; see
+docs/validation/BRIDGE_STALL_TRACE.md.
+
+Additional bridge evidence: one later 10-animal 600-tick run timed out at
+tick 276, with request 278 outstanding and both the Godot reader thread and
+C++ child alive. Pending bookkeeping was corrected; reader phase and byte
+availability are recorded on future watchdog failures. Six instrumented
+repeats then passed, 56.833–58.547 ticks/s. No phase-level failure captured;
+reliability and sustained 60 Hz both remain failing gates in these tests.

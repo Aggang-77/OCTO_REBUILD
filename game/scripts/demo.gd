@@ -11,6 +11,8 @@ var inbox_lock := Mutex.new()
 var inbox: Array[String] = []
 var inbox_times: Array[float] = []
 var stop_reader := false
+var reader_phase := "starting"
+var reader_available := -1
 var auto_step := false
 var latest_command := ""
 var reset_requested := false
@@ -109,12 +111,17 @@ func read_pipe() -> void:
     # to the main thread; physics and scene nodes remain on the main thread.
     var pending_bytes := PackedByteArray()
     while not stop_reader:
+        reader_phase = "checking_child"
         if child.has("pid") and not OS.is_process_running(child.pid):
             break
+        reader_phase = "checking_output"
         var available := pipe.get_length()
+        reader_available = available
         if available <= 0:
+            reader_phase = "waiting_output"
             OS.delay_msec(1)
             continue
+        reader_phase = "reading_output"
         pending_bytes.append_array(pipe.get_buffer(mini(available, 1048576)))
         if pending_bytes.size() > 4194304:
             inbox_lock.lock()
@@ -132,6 +139,7 @@ func read_pipe() -> void:
             var continuing := auto_step and complete.contains('"ok":true') and not stop_reader
             inbox_lock.unlock()
             if continuing:
+                reader_phase = "waiting_due"
                 while not stop_reader and Time.get_ticks_usec() < next_due_usec:
                     if next_due_usec-Time.get_ticks_usec() > 1500:
                         OS.delay_msec(1)
@@ -143,8 +151,10 @@ func read_pipe() -> void:
                     pending = true
                     sent_at = Time.get_ticks_usec()
                     next_due_usec = maxi(next_due_usec + 16667, sent_at)
+                    reader_phase = "writing_request"
                     pipe.store_string("1 %d %s\n" % [request_id,command])
                     pipe.flush()
+                    reader_phase = "request_written"
                 inbox_lock.unlock()
             newline = pending_bytes.find(10)
 
@@ -196,7 +206,10 @@ func poll() -> void:
         if not parsed is Dictionary or int(parsed.get("id", -1)) != last_response_id+1 or int(parsed.get("version", 0)) != 1: fail("Invalid or stale bridge response"); return
         last_response_id += 1
         last_progress_usec = Time.get_ticks_usec()
-        pending = false; rpc_ms = line_rpc_ms
+        inbox_lock.lock()
+        pending = request_id > last_response_id
+        inbox_lock.unlock()
+        rpc_ms = line_rpc_ms
         if not parsed.get("ok", false): fail("Bridge: " + str(parsed.get("error", "unknown"))); return
         if parsed.has("snapshot"):
             current = parsed.snapshot
@@ -208,7 +221,7 @@ func poll() -> void:
             update_scene()
             skin_ms = float(Time.get_ticks_usec()-skin_start)/1000.0
     if auto_step and last_progress_usec > 0 and Time.get_ticks_usec()-last_progress_usec > 15000000:
-        fail("Native solver stopped responding for 15 seconds (tick=%d, request=%d, response=%d, pending=%s)" % [int(current.get("tick", -1)),request_id,last_response_id,str(pending)]); return
+        fail("Native solver stopped responding for 15 seconds (tick=%d, request=%d, response=%d, pending=%s, reader=%s, child=%s, phase=%s, available=%d)" % [int(current.get("tick", -1)),request_id,last_response_id,str(pending),str(reader.is_alive()),str(OS.is_process_running(child.pid)),reader_phase,reader_available]); return
     if not auto_step and pending and Time.get_ticks_usec()-sent_at > 15000000:
         fail("Native solver timed out during reset"); return
     if child.has("pid") and not OS.is_process_running(child.pid) and not quitting: fail("Native solver exited")
