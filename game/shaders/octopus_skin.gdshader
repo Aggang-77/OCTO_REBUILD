@@ -71,7 +71,12 @@ void fragment() {
     float mottling = sin(original_position.x * 57.0 +
                          original_position.z * 22.0) *
                      sin(original_position.y * 39.0);
-    ALBEDO = pigment * (0.94 + 0.06 * mottling);
+    // Chromatophore-inspired modulation: slow (not a jittering surface
+    // wave) and stronger near active tissue. Imported pigment stays primary.
+    float chroma = 0.028 * local_activity *
+                   sin(TIME * 0.38 + original_position.x * 6.2
+                       - original_position.z * 4.6);
+    ALBEDO = pigment * (0.94 + 0.06 * mottling + chroma);
     METALLIC = base_metallic;
     ROUGHNESS = clamp(base_roughness * 0.78 +
                       0.055 * mottling - 0.065 * local_load, 0.17, 0.75);
