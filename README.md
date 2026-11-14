@@ -163,3 +163,19 @@ A momentum-conserving internal dashpot damps shell-to-cage relative
 velocity before integrating particle positions, reducing rubbery
 oscillation without injecting external forces. The shell is only
 12 colliding mass points (not a watertight volumetric tetra mesh).
+
+## Delayed material creep and stress relaxation
+
+When you hold an arm against the terrain or pull it with the mouse,
+C++ now slowly adapts the stress-free arm length/bend shape and the
+mantle-shell strand rest lengths. This reduces the mechanical tendency
+to snap immediately back to the originally rigged rest pose.
+It is distinct from the previous viscous damping: **viscosity** removes
+oscillations; **creep** changes internal rest shape under sustained
+strain, and **stress relaxation** reduces the remaining elastic strain
+under constant deformation. On release, slow recovery acts instead
+of permanently freezing the octopus's shape. Per-segment measurements
+are available in the bridge as `creep` and `elastic_strain`.
+All calculations remain in the shared C++ world; GPU skinning remains
+unchanged. This is an approximate and bounded gameplay material,
+not a measured biological viscoelastic constitutive model.
