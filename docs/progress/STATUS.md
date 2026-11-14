@@ -159,3 +159,18 @@ moving adjacent arms, including the wraparound seam. The web droops with
 the C++ arm separation and uses slower shader flutter with seam-locked
 displacement. Geometry and screenshot tests added. This is cosmetic,
 not a C++ collision mesh or tensile constraint.
+
+2026-11-15 CONTROL V1 / FAST RENDER pass: user superseded the prior
+jelly shader and inter-arm cosmetic membrane due to performance.
+Custom jelly shader and per-frame tube/web mesh generator removed.
+Original GLB is now skeletal-only; missing-GLB fallback uses
+MultiMesh instanced static spheres rather than rebuilding geometry.
+Interactive segment count defaults to 16 instead of 24.
+New dual-key extend/stroke pairs: F/D J/K S/A L/; R/E U/I W/Q O/P
+and Space for all sucker release. The C++ simulation now includes
+independently filtered extension/retraction and yaw-sweep muscle
+targets plus approximate discrete adhesion candidate nodes per arm.
+Floor contacts peel on retraction, prop grips persist until release
+or failure, and Space enforces a timed re-grip cooldown.
+These are discrete node/normal/velocity approximations, not exact
+surface sucker or guaranteed ±60° kinematics.
