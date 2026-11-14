@@ -179,3 +179,44 @@ are available in the bridge as `creep` and `elastic_strain`.
 All calculations remain in the shared C++ world; GPU skinning remains
 unchanged. This is an approximate and bounded gameplay material,
 not a measured biological viscoelastic constitutive model.
+
+## Experimental true 3D arm — isolated preview
+
+Run `PLAY_VOLUMETRIC_DEMO.cmd` after pulling `main` and placing the
+private GameReady GLB in `game/assets/Octopus_GameReady_v5.glb`.
+The normal `PLAY_DEMO.cmd` is unchanged and keeps the experimental
+feature **off**. A new `OCTO_VOLUME_ARM=1` environment flag enables
+one physical arm (arm index 0) on each octopus via an optional fourth
+argument to the native `reset` protocol. See
+`tests/volumetric_arm_tests.cpp` for the live C++ stability fixture.
+
+The new physical arm contains **nine rings of four independent 3D mass
+nodes**, connected to its original rod by compliant cross-sectional,
+longitudinal and diagonal strands. Every pair of adjacent rings has
+XPBD signed-volume tetrahedra. Ring masses collide with the world;
+separately enforced projected area constraints allow irregular
+flattening with sideways bulging. The two other existing systems
+(Cosserat muscle drive and C++ sucker contacts) still use the same
+shared physics world. The native bridge transmits real surface points
+in `arms[0].volume_rings`. The Godot pilot overlays a translucent,
+**36-vertex dynamically built surface** on the original GLB arm so
+these true non-elliptical section movements can be seen independently
+of its existing bone weights. This small CPU mesh update is **only an
+experimental visualization** and is NOT the final GPU-skinned surface.
+
+**Important limitation:** this prototype is not ready for global
+default enablement or expansion to eight arms. In the current two-animal
+rigid-prop/floor CI fixture, the original torso volume residual stays
+bounded (maximum about 0.016), but the maximum **individual arm
+soft-tetra relative volume residual is still about 3.41**. In other
+words, there is real volumetric geometry and contacts but high
+local volume errors: local incompressibility and inversion stability
+have *not* been solved. Further work must improve tet quality and
+contact-constrained volume projection before replacing the production
+rendering. Neither the GameReady GLB frame time nor realistic slime
+appearance has been verified by the CI environment.
+
+The instrumented Linux CI run for **two octopuses** reported physics
+step mean 2.45 ms with the pilot versus 1.97 ms without (same runner;
+not a hardware-independent claim). The global Godot frame time,
+rendering and original GameReady visual realism remain unmeasured.
