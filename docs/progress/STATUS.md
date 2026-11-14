@@ -127,3 +127,17 @@ Exposed bounded C++ WorldConfig multipliers and added a weak-vs-strong
 stroke displacement regression test. This does not modify rendering or
 control key bindings. Real GameReady play-feel/60Hz with new forces
 remains to be validated locally; CI physics and integration pass.
+
+2026-11-15 softer body/arms and seek-to-grip pass: XPBD structural
+compliance multiplied by 5 for torso edges and arm axial, root,
+bending/shear/twist constraints; torso volume loosened by sqrt(5).
+Godot held extend now requests rest-length 1.48 instead of 1.28,
+release 0.58 instead of 0.70; C++ clamp extended to 0.55..1.50.
+No new shader or full volumetric mantle skin is implemented. When
+an arm is extended with no active sucker, distal nodes receive
+bounded downward forces towards reachable floor, then adhesive
+contacts are created ONLY after physical contact. Automatic grip
+prefers movable rigid props first and floor second, with a shorter
+dwell threshold. Absence of reachable surfaces or held Space prevents
+attachment. New control regression exercises extended-floor search,
+actual grip and global Space release.
