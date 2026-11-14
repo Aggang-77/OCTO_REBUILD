@@ -35,6 +35,11 @@ struct WorldConfig {
     // C++ shared world (not Godot forces or visual animation).
     double arm_motor_strength=4.0;      // 4x previous stroke-force limit
     double sucker_strength=3.0;         // 3x previous suction break threshold
+    // Greater compliance = softer, more shape change under the same load.
+    // Keep volume compliance lower than body shape compliance so the
+    // octopus deforms without turning into an unconstrained point cloud.
+    double softness=5.0;                // body/arm bending/shear/rest shape
+    bool reach_ground_on_extend=true;   // guide ungripped extended tips to contact
     std::uint32_t rigid_count=3;
     bool auto_suction=false;      // enabled for gameplay; original native tests retain passive baseline
     bool collisions=true, floor=true;

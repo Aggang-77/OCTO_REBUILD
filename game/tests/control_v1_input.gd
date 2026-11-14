@@ -61,7 +61,7 @@ func _exercise() -> void:
         for j in range(8):
             var begin := 2 + (8 + j) * 9
             var actual := float(parts[begin + 4])
-            if not _check(absf(actual - (1.28 if j == arm else 0.70)) < 0.001, "extend arm %d vs %d" % [j, arm]):
+            if not _check(absf(actual - (1.48 if j == arm else 0.58)) < 0.001, "extend arm %d vs %d" % [j, arm]):
                 return
         _key(extension, false)
         _key(stroke, true)
@@ -79,13 +79,13 @@ func _exercise() -> void:
     await process_frame
     var parts := octo.step_command().split(" ")
     var arm7 := 2 + (8 + 7) * 9
-    if not _check(absf(float(parts[arm7 + 4])-1.28)<0.001 and absf(float(parts[arm7 + 8])-1.0)<0.001, "simultaneous F+D"):
+    if not _check(absf(float(parts[arm7 + 4])-1.48)<0.001 and absf(float(parts[arm7 + 8])-1.0)<0.001, "simultaneous F+D"):
         return
     _key(KEY_F, false)
     _key(KEY_D, false)
     await process_frame
     parts = octo.step_command().split(" ")
-    if not _check(absf(float(parts[arm7 + 4])-0.70)<0.001 and absf(float(parts[arm7 + 8])+1.0)<0.001, "release returns"):
+    if not _check(absf(float(parts[arm7 + 4])-0.58)<0.001 and absf(float(parts[arm7 + 8])+1.0)<0.001, "release returns"):
         return
     _key(KEY_SPACE, true)
     await process_frame

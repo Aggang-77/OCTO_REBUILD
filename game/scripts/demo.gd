@@ -306,12 +306,12 @@ func step_command() -> String:
                 controlled and Input.is_physical_key_pressed(EXTEND_KEYS[arm]))
             var paddle := test_all_active or (
                 controlled and Input.is_physical_key_pressed(STROKE_KEYS[arm]))
-            var extension := 1.28 if reach else 0.70
+            var extension := 1.48 if reach else 0.58
             var curvature := 0.0 if reach else 3.6
             var sweep := 1.0 if paddle else -1.0
             var twist := 3.0 if test_actuation and i == 0 and arm == 0 else 0.0
             out += " %d %d %f %f %f %f %f %d %f" % [
-                i, arm, 1.0, curvature, extension, twist, 0.15, 0, sweep]
+                i, arm, 1.0, curvature, extension, twist, 0.02, 0, sweep]
     out += " %d %d 0 %f %f %f 30 20 %d" % [
         drag_kind if dragging else 0, drag_index,
         drag_target.x, drag_target.y, drag_target.z,
