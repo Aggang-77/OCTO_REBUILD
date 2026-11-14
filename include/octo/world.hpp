@@ -40,6 +40,7 @@ struct WorldConfig {
     // octopus deforms without turning into an unconstrained point cloud.
     double softness=5.0;                // preserve highly deformable XPBD flesh
     double upright_strength=0.45;       // capped anti-roll/anti-pitch torso torque
+    double spawn_roll=0.0;            // radians: initial roll about world Z (test fixture; 0 by default)
     double uncoil_speed=2.0;            // length-fraction/second, progressive release front
     double coil_curvature=8.0;          // radians/metre in the coiled distal section
     bool reach_ground_on_extend=true;   // guide ungripped extended tips to contact
