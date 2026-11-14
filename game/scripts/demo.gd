@@ -159,6 +159,9 @@ func _ready() -> void:
             head.extra_cull_margin = 0.12
             var head_mat: ShaderMaterial = JELLY_SURFACE.material_for(float(i) * 2.0, jelly_strength, true)
             head.material_override = head_mat
+            # Preserve the original GameReady mantle/eyes when the GLB exists.
+            # The standalone procedural mode needs this complete jelly body.
+            head.visible = procedural_mode
             add_child(head)
             view.jelly_head = head
             view.jelly_materials.append(head_mat)
@@ -527,7 +530,7 @@ func _unhandled_input(event: InputEvent) -> void:
             jelly_visible = not jelly_visible
             for view in views:
                 for sleeve in view.jelly_arms: (sleeve as MeshInstance3D).visible = jelly_visible
-                (view.jelly_head as MeshInstance3D).visible = jelly_visible
+                (view.jelly_head as MeshInstance3D).visible = jelly_visible and procedural_mode
         if event.keycode == KEY_F5:
             inbox_lock.lock()
             reset_requested = true
