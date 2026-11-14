@@ -24,3 +24,5 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Two-animal physics benchmark smoke
         run: ./build/octo_benchmark 2 60
+      - name: Ten-animal dense physics benchmark smoke
+        run: ./build/octo_benchmark 10 120 dense

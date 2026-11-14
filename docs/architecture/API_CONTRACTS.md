@@ -4,7 +4,7 @@
 right-handed coordinates, +Y up, gravity (0,-9.81,0), floor y=0. Animals have stable
 indices, exactly eight arms. Arm 0 points +Z and angles increase toward +X.
 Initial arm length should fit GameReady after documented uniform scaling, about
-0.9m from a 0.2m root ring. 16 segments by default; resolution changes must be reported.
+0.9m from a 0.2m root ring. 24 segments by default since the soft-arm slice; resolution changes must be reported.
 
 One world owns body cage, rods, dynamic props, contacts and attachments. A step is
 1/60 s and internally uses four 1/240 s substeps, eight solver sweeps initially.

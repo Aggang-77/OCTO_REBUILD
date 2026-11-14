@@ -110,3 +110,11 @@ Display-only UI mouse interception was fixed. Release CTest 4/4 PASS;
 120-tick run measured arm relative-tip divergence 0.164 m and horizontal
 body motion during drag 0.774 m. This covers the synthetic two-animal path,
 not a manual playability/attachment audit. See docs/validation/GODOT_INPUT_PATH.md.
+
+2026-11-15 soft arms draft PR #1: increased C++ rod default 16 -> 24,
+made section masses resolution-aware, relaxed position/director bend,
+and added solver-side phased 3D idle curvature waves with manual-input
+suppression. Godot demo enables the waves by reset protocol, with
+--no-wriggle/--segments=N controls. First GitHub Actions Linux Release
+build/CTest/two-animal benchmark PASS on 3026df96. Windows Godot visual
+and sustained 10-animal 60 Hz remain unverified for the new settings.
