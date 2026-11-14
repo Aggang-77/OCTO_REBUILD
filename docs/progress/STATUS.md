@@ -141,3 +141,17 @@ prefers movable rigid props first and floor second, with a shorter
 dwell threshold. Absence of reachable surfaces or held Space prevents
 attachment. New control regression exercises extended-floor search,
 actual grip and global Space release.
+
+2026-11-15 uncoiling/slime/upright follow-up on main: added per-arm
+uncoil front sampled in both centerline bending and director targets,
+base-to-tip release and reverse recoiling, plus snapshot 'uncoil'
+progress for Godot/bridge inspection. Contacted suckers record local
+surface frames; a C++ surface-follow motor guides adjacent suction
+candidate nodes around a contact rather than teleporting grip. Added
+weak capped physical upright body torque (two dynamic torso nodes),
+reduced arm_motor_strength 4.0->2.2 and sucker_strength 3.0->2.2.
+A lightweight imported StandardMaterial3D PBR finish with low roughness
+and clearcoat makes the existing model look wet without a jelly shader.
+No full mucus simulation, arbitrary mesh wrapping, or GLB hardware
+render benchmark claimed. CI regression: uncoil progress/recoil,
+forces, grip/Space, old director fixtures and Godot shader-free PBR.
