@@ -157,6 +157,48 @@ animals.push_back(a);}
  for(unsigned k=0;k<c.rigid_count;++k){std::vector<int> ids;Vec3 center{double(k)*.65-.65,.32,1.35};for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})ids.push_back(particle(center+Vec3{x*.16,y*.16,z*.16},.125,.08,-1,-1,-1,int(k)));for(int i=0;i<8;++i)for(int j=i+1;j<8;++j)edge(ids[i],ids[j],1e-9);rigids.push_back(ids);}}
 void distance(D& e,double h){auto&a=p[e.a];auto&b=p[e.b];Vec3 delta=b.x-a.x;double l=norm(delta);if(l<1e-12)return;double alpha=e.compliance/(h*h),dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);e.lambda+=dl;Vec3 impulse=delta*(dl/l);a.x=a.x-impulse*a.inv;b.x=b.x+impulse*b.inv;}
 void volumes(double h){for(auto&t:tetra){auto a=p[t.p[0]].x,b=p[t.p[1]].x,c=p[t.p[2]].x,e=p[t.p[3]].x;std::array<Vec3,4> g;g[1]=cross(c-a,e-a)/6;g[2]=cross(e-a,b-a)/6;g[3]=cross(b-a,c-a)/6;g[0]=(g[1]+g[2]+g[3])*(-1);double alpha=(t.soft_volume?cfg.volumetric_compliance:1e-10*std::sqrt(cfg.softness))/(h*h),den=alpha;for(int i=0;i<4;++i)den+=p[t.p[i]].inv*dot(g[i],g[i]);double dl=(-(volume(t)-t.rest)-alpha*t.lambda)/den;t.lambda+=dl;for(int i=0;i<4;++i){auto&v=p[t.p[i]];v.x=v.x+g[i]*(v.inv*dl);}}}
+void section_area_constraints(double h){
+ // Four independently moving perimeter masses enclose each local
+ // 3D cross-section. Constrain only the projected *area*, not the
+ // shape or aspect ratio, so floor contact can create a flat face
+ // and push the remaining flesh sideways.
+ if(!cfg.volumetric_arm_prototype)return;
+ for(auto& animal:animals)for(auto& arm:animal.arms){
+  if(arm.volume_rings.empty())continue;
+  for(size_t j=0;j<arm.volume_rings.size();++j){
+   const auto& ring=arm.volume_rings[j];
+   const unsigned center_index=unsigned(j)*2;
+   const unsigned next_index=std::min(cfg.segments,center_index+2);
+   const unsigned previous_index=center_index>0?center_index-2:0;
+   const Vec3 axis=p[arm.p[next_index]].x-p[arm.p[previous_index]].x;
+   const Vec3 tangent=unit(axis);
+   Vec3 points[4];
+   for(int k=0;k<4;++k)points[k]=p[ring[k]].x;
+   double area=0;
+   for(int k=0;k<4;++k)
+    area+=.5*dot(cross(points[k],points[(k+1)%4]),tangent);
+   const double u=double(center_index)/cfg.segments;
+   const double r0=.036*(1-.8*u);
+   const double anatomical_area=2*r0*r0;
+   // Nominal axial stretch of the centerline changes the necessary
+   // section area for approximately conserved material volume.
+   const double rest_span=.9/double(cfg.segments)*2*arm.active.extension;
+   const double actual_span=norm(p[arm.p[next_index]].x-p[arm.p[previous_index]].x);
+   const double target=anatomical_area*std::clamp(rest_span/std::max(actual_span,1e-5),.55,1.8);
+   Vec3 gradients[4];
+   double weight=0;
+   for(int k=0;k<4;++k){
+    gradients[k]=cross(points[(k+1)%4]-points[(k+3)%4],tangent)*.5;
+    weight+=p[ring[k]].inv*dot(gradients[k],gradients[k]);
+   }
+   const double alpha=2e-11/(h*h);
+   if(weight+alpha<=1e-20)continue;
+   const double correction=(target-area)/(weight+alpha);
+   for(int k=0;k<4;++k)
+    p[ring[k]].x=p[ring[k]].x+gradients[k]*(correction*p[ring[k]].inv);
+  }
+ }
+}
 Vec3 coil_direction(const Arm& ar,unsigned joint)const{
  // A physically held prop gives a local bend-in direction; terrain
  // stays free to curl upwards. This is not a remote grasp or skin force.
@@ -619,7 +661,7 @@ upright_motors(h);
 follow_surface(h);
 seek_floor_contact(h);
 rigid_center_sweeps();
-for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
+for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);section_area_constraints(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
 rigid_center_sweeps();
 update_creep_memory(h);
 tissue_dynamics(h);
