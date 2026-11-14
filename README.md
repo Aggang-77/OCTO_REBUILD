@@ -59,3 +59,26 @@ GitHub Actions also tests Linux, Windows, and a native Godot
 synthetic-key input path. The original GameReady model is not stored
 in Git, so final visual/gameplay acceptance and FPS with the original
 asset require a local Windows demo run.
+
+
+## C++ bridge version mismatch (`bad_operation`)
+
+Controls v1.0 sends `step2`; an `octo_server.exe` compiled before this
+protocol existed will reply `bad_operation` even if `reset` succeeds.
+`PLAY_DEMO.cmd` / `tools/run-demo.ps1` now detects outdated native
+binaries, rebuilds them when necessary, and probes a disposable native
+server using a real `step2` request before launching Godot.
+
+For a manual rebuild or when launching Godot independently:
+
+```powershell
+.\tools\build.ps1
+.\tools\check-bridge.ps1 -Server .\build\release-final\octo_server.exe
+.\PLAY_DEMO.cmd
+```
+
+Close any older running Godot/server process first, since Windows may
+prevent replacing an executable while it is running. The expected
+probe output begins with `BRIDGE_V1_PREFLIGHT_PASS`. If validation
+fails even after recompilation, check `OCTO_SERVER` is pointing to
+the repository's newly built executable.
