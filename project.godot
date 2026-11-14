@@ -1,0 +1,48 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Octopus_simulator"
+run/main_scene="res://scenes/octopus_game.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=1440
+window/size/viewport_height=900
+window/size/window_width_override=1440
+window/size/window_height_override=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[layer_names]
+
+3d_physics/layer_1="Environment"
+3d_physics/layer_2="Hunter controller"
+3d_physics/layer_3="Hunter hitboxes"
+3d_physics/layer_4="Octopus tentacles"
+3d_physics/layer_5="Movable environment props"
+3d_physics/layer_6="Combat attack hitboxes"
+3d_physics/layer_7="Combat body hurtboxes"
+3d_physics/layer_8="Combat dodge threat snapshots"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+jolt_physics_3d/simulation/velocity_steps=24
+jolt_physics_3d/simulation/position_steps=20
+
+[rendering]
+
+rendering_device/driver.windows="d3d12"
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

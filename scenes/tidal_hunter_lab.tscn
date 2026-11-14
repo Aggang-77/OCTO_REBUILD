@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/map/tidal_hunter_lab.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/tidal_colosseum_environment.tscn" id="2"]
+
+[node name="TidalHunterLab" type="Node3D"]
+script = ExtResource("1")
+
+[node name="TidalColosseum" parent="." instance=ExtResource("2")]
+process_mode = 1
+prop_collision_layer = 17

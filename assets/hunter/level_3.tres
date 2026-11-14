@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="HunterProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/hunter/hunter_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+level = 3
+title = "03 / COUNTERATTACK"
+move_speed = 4.4
+acceleration = 10.0
+turn_speed = 11.0
+reaction_time = 0.15
+preferred_distance = 4.5
+elbow_enabled = true
+sword_enabled = true
+sword_cooldown = 0.55
+run_stamina_cost = 7.0
+capture_seconds = 16.0

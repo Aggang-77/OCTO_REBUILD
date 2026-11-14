@@ -1,0 +1,72 @@
+{
+  "idle": {
+    "source": "Idle.fbx",
+    "frames": 121,
+    "seconds": 4.0,
+    "mapped_bones": 53
+  },
+  "jog": {
+    "source": "Jogging.fbx",
+    "frames": 31,
+    "seconds": 1.0,
+    "mapped_bones": 53
+  },
+  "sprint": {
+    "source": "Sprint.fbx",
+    "frames": 17,
+    "seconds": 0.5333333333333333,
+    "mapped_bones": 53
+  },
+  "look": {
+    "source": "Look Around.fbx",
+    "frames": 121,
+    "seconds": 4.0,
+    "mapped_bones": 53
+  },
+  "elbow": {
+    "source": "Illegal Elbow Punch.fbx",
+    "frames": 55,
+    "seconds": 1.8,
+    "mapped_bones": 53
+  },
+  "slash": {
+    "source": "Stable Sword Inward Slash.fbx",
+    "frames": 52,
+    "seconds": 1.7,
+    "mapped_bones": 53
+  },
+  "combo": {
+    "source": "One Hand Sword Combo.fbx",
+    "frames": 100,
+    "seconds": 3.3,
+    "mapped_bones": 53
+  },
+  "stop": {
+    "source": "Run To Stop.fbx",
+    "frames": 28,
+    "seconds": 0.9,
+    "mapped_bones": 53
+  },
+  "turn_run": {
+    "source": "Turn To Running.fbx",
+    "frames": 49,
+    "seconds": 1.6,
+    "mapped_bones": 53
+  },
+  "fall": {
+    "source": "Falling Down.fbx",
+    "frames": 69,
+    "seconds": 2.2666666666666666,
+    "mapped_bones": 53
+  },
+  "get_up": {
+    "source": "Getting Up.fbx",
+    "frames": 82,
+    "seconds": 2.7,
+    "mapped_bones": 53
+  },
+  "captured": {
+    "source": "Idle.fbx + defensive breathing pose",
+    "seconds": 2.0
+  }
+}

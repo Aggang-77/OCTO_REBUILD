@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="HunterProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/hunter/hunter_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+level = 2
+title = "02 / BREAKAWAY"
+move_speed = 5.0
+acceleration = 8.0
+turn_speed = 8.0
+reaction_time = 0.3
+elbow_enabled = true
+run_stamina_cost = 9.0
+capture_seconds = 12.0
