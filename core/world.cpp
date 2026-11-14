@@ -61,7 +61,9 @@ if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.ite
    !std::isfinite(c.creep_recovery)||c.creep_recovery<0||c.creep_recovery>2||
    !std::isfinite(c.max_creep_strain)||c.max_creep_strain<0||c.max_creep_strain>.5||
    !std::isfinite(c.bend_creep_rate)||c.bend_creep_rate<0||c.bend_creep_rate>5||
-   !std::isfinite(c.volumetric_compliance)||c.volumetric_compliance<0||c.volumetric_compliance>1e-4)throw std::invalid_argument("Invalid WorldConfig");
+   !std::isfinite(c.volumetric_compliance)||c.volumetric_compliance<0||c.volumetric_compliance>1e-4||
+   !std::isfinite(c.visual_arm_floor_radius)||c.visual_arm_floor_radius<0||c.visual_arm_floor_radius>.2||
+   !std::isfinite(c.visual_mantle_floor_radius)||c.visual_mantle_floor_radius<0||c.visual_mantle_floor_radius>.2)throw std::invalid_argument("Invalid WorldConfig");
 for(unsigned n=0;n<c.animals;++n){Animal a;Vec3 center{(double(n)-double(c.animals-1)/2)*c.spacing,c.spawn_height,0};
 const double cr=std::cos(c.spawn_roll),sr=std::sin(c.spawn_roll);
 const auto rotate_spawn=[&](Vec3 v)->Vec3{
@@ -322,7 +324,26 @@ for(int id:rigids[i])p[id].x=p[id].x-n*(correction*.5);
 for(int id:rigids[j])p[id].x=p[id].x+n*(correction*.5);
 ++diag.swept_contacts;
 }}
-void contacts(){if(cfg.floor)for(auto&a:p)if(a.x.y<a.r){double depth=a.r-a.x.y;a.compression=std::max(a.compression,depth);diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=a.r;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,cfg.friction*depth)/l);}
+double floor_surface_radius(const P& particle)const{
+ double radius=particle.r;
+ if(!cfg.grounded_rest||particle.animal<0)return radius;
+ if(particle.arm>=0&&particle.node>=0&&particle.node<=int(cfg.segments)){
+  // The GameReady surface, including protruding suckers, extends beyond
+  // the thin XPBD centerline. Floor collision needs that *visual*
+  // envelope rather than solely the nominal .036m axial radius.
+  const double t=double(particle.node)/cfg.segments;
+  radius=std::max(radius,cfg.visual_arm_floor_radius*(1.-.38*t));
+ }else if(particle.arm==-1&&particle.node>=0&&particle.node<7){
+  // Preserve genuine mantle/cage contact instead of passing a tiny
+  // centerline sphere through the seabed.
+  radius=std::max(radius,cfg.visual_mantle_floor_radius);
+ }
+ return radius;
+}
+void contacts(){if(cfg.floor)for(auto&a:p){
+ const double surface_radius=floor_surface_radius(a);
+ if(a.x.y<surface_radius){double depth=surface_radius-a.x.y;a.compression=std::max(a.compression,depth);diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=surface_radius;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,cfg.friction*depth)/l);}
+}
 if(!cfg.collisions)return;
 // Swept AABB broadphase includes both endpoints so fast crossing paths remain candidates.
 contact_bounds.resize(p.size());contact_order.resize(p.size());
