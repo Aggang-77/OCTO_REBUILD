@@ -227,7 +227,13 @@ func poll() -> void:
         pending = request_id > last_response_id
         inbox_lock.unlock()
         rpc_ms = line_rpc_ms
-        if not parsed.get("ok", false): fail("Bridge: " + str(parsed.get("error", "unknown"))); return
+        if not parsed.get("ok", false):
+            var bridge_error := str(parsed.get("error", "unknown"))
+            if bridge_error == "bad_operation":
+                fail("C++ server cannot handle controls-v1 'step2'. Close the game, run tools/build.ps1 and relaunch PLAY_DEMO.cmd. Server: " + OS.get_environment("OCTO_SERVER"))
+            else:
+                fail("Bridge: " + bridge_error)
+            return
         if parsed.has("snapshot"):
             current = parsed.snapshot
             if current.tick == 0 and reset_issued: reset_observed = true
