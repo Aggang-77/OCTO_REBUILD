@@ -220,7 +220,10 @@ void bending(double h){for(auto&a:animals){Vec3 up=unit(p[a.body[3]].x-p[a.body[
  const double coil=phase*phase*(3.-2.*phase);
  const double wanted=(ar.active.curvature+cfg.coil_curvature*coil)*ar.active.activation;
  const Vec3 curl=coil>0.02?coil_direction(ar,j):up;
- Vec3 target=curl*(wanted*length*length)+ar.bend_creep[j-1];Vec3 error=l.x-m.x*2+r.x-target;double alpha=(2e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
+ Vec3 target=curl*(wanted*length*length)+ar.bend_creep[j-1];Vec3 error=l.x-m.x*2+r.x-target;// Muscle-off hydrostat bending offers very little resistance under
+ // gravity: the *inactive* arm must not behave like a loaded spring.
+ const double passive=cfg.grounded_rest?1.0+7.0*(1.0-ar.active.activation)*u*u:1.0;
+ double alpha=(2e-5*cfg.softness*(1-.9*ar.active.stiffness)*passive)/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
 void update_creep_memory(double h){
  // Internal SLS-style delayed rest-shape adaptation: q relaxes toward
  // the current total strain under sustained load, with a slower
@@ -273,7 +276,9 @@ if(den>1e-8){const double body_angle=std::atan2(lateral,vertical);Vec3 grad=(sid
 for(size_t j=2;j<ar.roll.size();++j){auto&left=ar.roll[j-1];auto&right=ar.roll[j];const double error=right.angle-left.angle-desired;const double delta=(-error-alpha*right.lambda)/(left.inv_inertia+right.inv_inertia+alpha);right.lambda+=delta;left.angle-=left.inv_inertia*delta;right.angle+=right.inv_inertia*delta;}}}
 void director_constraints(double h){namespace rm=rod_math;
 for(auto&a:animals)for(auto&ar:a.arms){const double segment_length=.9/cfg.segments*ar.active.extension;
-const double shear_alpha=2e-6*cfg.softness/(h*h),bend_alpha=2e-5*cfg.softness*(1-.9*ar.active.stiffness)/(h*h);
+const double shear_alpha=2e-6*cfg.softness/(h*h);
+ const double muscle_off=cfg.grounded_rest?1.0+7.0*(1.0-ar.active.activation):1.0;
+ const double bend_alpha=2e-5*cfg.softness*(1-.9*ar.active.stiffness)*muscle_off/(h*h);
 for(size_t j=0;j<ar.directors.size();++j){auto&director=ar.directors[j];auto&left=p[ar.p[j]];auto&right=p[ar.p[j+1]];
 Vec3 e=rm::rotate(director.q,{0,0,1}),span=right.x-left.x;
 Vec3 error=rm::sub(span,rm::mul(e,rm::dot(span,e)));
