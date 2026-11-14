@@ -38,3 +38,16 @@ handling in the shared C++ world. The denser visual mesh also
 adds skin rebuild cost. Ten-animal real-time performance is not
 validated; for >2 animals jelly is disabled by default unless
 explicitly enabled.
+
+
+## Verified run (2026-11-15)
+
+GitHub Actions:
+https://github.com/songhh06/OCTO_REBUILD/actions/runs/43631066957
+
+- Linux native C++ build/tests: PASS.
+- Windows MSVC native build/tests: PASS.
+- Godot 4.6.2 OpenGL Compatibility/Xvfb two-animal jelly render: PASS.
+- Test log: `WEBBING_CHECK animals=2 panels_per_animal=8 vertices_per_web=442 triangles_per_web=880 thickness=1.50`.
+- PNG screenshot: 1280x720 (uploaded in the `jelly-preview-linux` run artifact).
+- Software-rendered preview: 90 simulation ticks in 6,758 ms (~13.17 ticks/s); `skin_ms` ~44.70 ms per displayed snapshot. This is too slow to claim 60 FPS on the CI software renderer. Real GPU, input playability and original-asset overlays are not assessed by this run.
