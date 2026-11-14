@@ -23,6 +23,7 @@ jobs:
         run: |
           ./build/octo_controls_v1_tests
           ./build/octo_volumetric_arm_tests
+          ./build/octo_benchmark 2 120 volumetric
           ./build/octo_benchmark 2 120
           ./build/octo_benchmark 10 120
 
