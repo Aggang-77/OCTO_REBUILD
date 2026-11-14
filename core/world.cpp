@@ -30,23 +30,23 @@ struct D{int a,b;double rest,compliance,lambda=0;};
 struct T{std::array<int,4> p;double rest,lambda=0;};
 struct Roll{double angle=0,old=0,omega=0,inv_inertia=0,lambda=0;};
 struct Director{Quat q{},old{};Vec3 omega{},bend_lambda{},shear_lambda{};double inv_inertia=0;};
-struct Arm{std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
+struct Arm{std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda,preferred_curvature;MuscleCommand target{},active{};unsigned arm_index=0,animal_index=0;int attached=-1;Vec3 anchor{};double attach_rest=0;};
 struct Animal{std::vector<int> body;std::array<Arm,8> arms;};
 WorldConfig cfg;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;std::vector<Bounds> contact_bounds;std::vector<int> contact_order;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
 int particle(Vec3 x,double mass,double radius,int animal=-1,int arm=-1,int node=-1,int rigid=-1){p.push_back({x,x,{},1/mass,radius,animal,arm,node,rigid});return int(p.size()-1);}
 void edge(int a,int b,double compliance){d.push_back({a,b,norm(p[a].x-p[b].x),compliance});}
 double volume(const T&t)const{auto a=p[t.p[0]].x;return dot(p[t.p[1]].x-a,cross(p[t.p[2]].x-a,p[t.p[3]].x-a))/6;}
 explicit Impl(WorldConfig c):cfg(c){
-if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.iterations<1||c.iterations>100||!finite(c.gravity)||!std::isfinite(c.fixed_dt)||c.fixed_dt<=0||c.fixed_dt>.1||!std::isfinite(c.damping)||c.damping<0||!std::isfinite(c.friction)||c.friction<0||!std::isfinite(c.spacing)||c.spacing<0||!std::isfinite(c.spawn_height)||c.rigid_count>128)throw std::invalid_argument("Invalid WorldConfig");
+if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.iterations<1||c.iterations>100||!finite(c.gravity)||!std::isfinite(c.fixed_dt)||c.fixed_dt<=0||c.fixed_dt>.1||!std::isfinite(c.damping)||c.damping<0||!std::isfinite(c.friction)||c.friction<0||!std::isfinite(c.spacing)||c.spacing<0||!std::isfinite(c.spawn_height)||!std::isfinite(c.idle_wriggle)||c.idle_wriggle<0||c.idle_wriggle>1||c.rigid_count>128)throw std::invalid_argument("Invalid WorldConfig");
 for(unsigned n=0;n<c.animals;++n){Animal a;Vec3 center{(double(n)-double(c.animals-1)/2)*c.spacing,c.spawn_height,0};
 for(Vec3 off:std::array<Vec3,7>{{{0,0,0},{.2,0,0},{-.2,0,0},{0,.24,0},{0,-.16,0},{0,0,.2},{0,0,-.2}}})a.body.push_back(particle(center+off,.12,.065,int(n)));
 for(int i=0;i<7;++i)for(int j=i+1;j<7;++j)edge(a.body[i],a.body[j],2e-5);
 for(int x:{1,2})for(int y:{3,4})for(int z:{5,6}){T t{{a.body[0],a.body[x],a.body[y],a.body[z]},0};t.rest=volume(t);tetra.push_back(t);}
-for(int k=0;k<8;++k){auto& ar=a.arms[k];double angle=k*std::acos(-1.)/4;Vec3 radial{std::sin(angle),0,std::cos(angle)};for(unsigned j=0;j<=c.segments;++j){double u=double(j)/c.segments;double radius=.036*(1-.8*u);ar.radius.push_back(radius);ar.p.push_back(particle(center+radial*(.2+.9*u),.012,radius,int(n),k,int(j)));if(j)edge(ar.p[j-1],ar.p[j],3e-7);}
+for(int k=0;k<8;++k){auto& ar=a.arms[k];ar.arm_index=k;ar.animal_index=n;double angle=k*std::acos(-1.)/4;Vec3 radial{std::sin(angle),0,std::cos(angle)};for(unsigned j=0;j<=c.segments;++j){double u=double(j)/c.segments;double radius=.036*(1-.8*u);ar.radius.push_back(radius);ar.p.push_back(particle(center+radial*(.2+.9*u),.012*16.0/c.segments,radius,int(n),k,int(j)));if(j)edge(ar.p[j-1],ar.p[j],3e-7);}
 ar.squash.assign(c.segments,1.0);
-for(unsigned j=0;j<c.segments;++j){const double radius=ar.radius[j],mass=.012;ar.roll.push_back({0,0,0,j?2.0/(mass*radius*radius):0,0});}
-for(unsigned j=0;j<c.segments;++j){const double length=.9/c.segments,radius=ar.radius[j];const double inertia=.012*(length*length+3*radius*radius)/12;Quat q=frame(radial);ar.directors.push_back({q,q,{},{},{},1/inertia});}
-ar.bend_lambda.resize(c.segments-1);
+for(unsigned j=0;j<c.segments;++j){const double radius=ar.radius[j],mass=.012*16.0/c.segments;ar.roll.push_back({0,0,0,j?2.0/(mass*radius*radius):0,0});}
+for(unsigned j=0;j<c.segments;++j){const double length=.9/c.segments,radius=ar.radius[j];const double inertia=(.012*16.0/c.segments)*(length*length+3*radius*radius)/12;Quat q=frame(radial);ar.directors.push_back({q,q,{},{},{},1/inertia});}
+ar.bend_lambda.resize(c.segments-1);ar.preferred_curvature.resize(c.segments);
 // Root attached to every cage vertex; all reactions act on dynamic torso.
 for(int b:a.body)edge(ar.p[0],b,1e-7);
 }
@@ -54,7 +54,27 @@ animals.push_back(a);}
 for(unsigned k=0;k<c.rigid_count;++k){std::vector<int> ids;Vec3 center{double(k)*.65-.65,.32,1.35};for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})ids.push_back(particle(center+Vec3{x*.16,y*.16,z*.16},.125,.08,-1,-1,-1,int(k)));for(int i=0;i<8;++i)for(int j=i+1;j<8;++j)edge(ids[i],ids[j],1e-9);rigids.push_back(ids);}}
 void distance(D& e,double h){auto&a=p[e.a];auto&b=p[e.b];Vec3 delta=b.x-a.x;double l=norm(delta);if(l<1e-12)return;double alpha=e.compliance/(h*h),dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);e.lambda+=dl;Vec3 impulse=delta*(dl/l);a.x=a.x-impulse*a.inv;b.x=b.x+impulse*b.inv;}
 void volumes(double h){for(auto&t:tetra){auto a=p[t.p[0]].x,b=p[t.p[1]].x,c=p[t.p[2]].x,e=p[t.p[3]].x;std::array<Vec3,4> g;g[1]=cross(c-a,e-a)/6;g[2]=cross(e-a,b-a)/6;g[3]=cross(b-a,c-a)/6;g[0]=(g[1]+g[2]+g[3])*(-1);double alpha=1e-10/(h*h),den=alpha;for(int i=0;i<4;++i)den+=p[t.p[i]].inv*dot(g[i],g[i]);double dl=(-(volume(t)-t.rest)-alpha*t.lambda)/den;t.lambda+=dl;for(int i=0;i<4;++i){auto&v=p[t.p[i]];v.x=v.x+g[i]*(v.inv*dl);}}}
-void bending(double h){for(auto&a:animals){Vec3 up=unit(p[a.body[3]].x-p[a.body[4]].x);for(auto&ar:a.arms){double length=.9/cfg.segments*ar.active.extension;for(unsigned j=1;j<cfg.segments;++j){auto&l=p[ar.p[j-1]];auto&m=p[ar.p[j]];auto&r=p[ar.p[j+1]];Vec3 target=up*(ar.active.curvature*ar.active.activation*length*length);Vec3 error=l.x-m.x*2+r.x-target;double alpha=(2e-5*(1-.9*ar.active.stiffness))/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
+
+void update_preferred_curvature(double phase_time){
+const double tau=2.0*std::acos(-1.0);
+for(auto&animal:animals){
+ Vec3 up=unit(p[animal.body[3]].x-p[animal.body[4]].x);
+ for(auto&ar:animal.arms){
+  Vec3 radial=unit(p[ar.p[1]].x-p[ar.p[0]].x);
+  Vec3 lateral=cross(radial,up);
+  if(norm(lateral)<1e-8)lateral=cross(radial,{1,0,0});
+  lateral=unit(lateral);
+  for(unsigned j=0;j<cfg.segments;++j){
+   const double u=(j+0.5)/cfg.segments;
+   const double phase=tau*(.65*phase_time-1.05*u)+.77*ar.arm_index+.43*ar.animal_index;
+   const double idle=cfg.idle_wriggle*(1.0-ar.active.activation)*(.25+.75*u);
+   ar.preferred_curvature[j]=up*(ar.active.activation*ar.active.curvature+4.0*idle*std::sin(phase))
+       +lateral*(2.2*idle*std::cos(phase));
+  }
+ }
+}
+}
+void bending(double h){for(auto&a:animals){for(auto&ar:a.arms){double length=.9/cfg.segments*ar.active.extension;for(unsigned j=1;j<cfg.segments;++j){auto&l=p[ar.p[j-1]];auto&m=p[ar.p[j]];auto&r=p[ar.p[j+1]];Vec3 target=ar.preferred_curvature[j]*(length*length);Vec3 error=l.x-m.x*2+r.x-target;double alpha=(5e-5*std::pow(16.0/cfg.segments,3.0)*(1-.85*ar.active.stiffness))/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
 void torsion(double h){for(auto&a:animals)for(auto&ar:a.arms){const double desired=ar.active.activation*ar.active.twist*(.9/cfg.segments)*ar.active.extension;const double alpha=(1e-5*(1-.9*ar.active.stiffness))/(h*h);
 // The first material section is attached to a deformable torso orientation.
 // Opposite displacements at two cage nodes transmit its torque into the world.
@@ -64,7 +84,7 @@ if(den>1e-8){const double body_angle=std::atan2(lateral,vertical);Vec3 grad=(sid
 for(size_t j=2;j<ar.roll.size();++j){auto&left=ar.roll[j-1];auto&right=ar.roll[j];const double error=right.angle-left.angle-desired;const double delta=(-error-alpha*right.lambda)/(left.inv_inertia+right.inv_inertia+alpha);right.lambda+=delta;left.angle-=left.inv_inertia*delta;right.angle+=right.inv_inertia*delta;}}}
 void director_constraints(double h){namespace rm=rod_math;
 for(auto&a:animals)for(auto&ar:a.arms){const double segment_length=.9/cfg.segments*ar.active.extension;
-const double shear_alpha=2e-6/(h*h),bend_alpha=2e-5*(1-.9*ar.active.stiffness)/(h*h);
+const double shear_alpha=3e-6/(h*h),bend_alpha=5e-5*(16.0/cfg.segments)*(1-.85*ar.active.stiffness)/(h*h);
 for(size_t j=0;j<ar.directors.size();++j){auto&director=ar.directors[j];auto&left=p[ar.p[j]];auto&right=p[ar.p[j+1]];
 Vec3 e=rm::rotate(director.q,{0,0,1}),span=right.x-left.x;
 Vec3 error=rm::sub(span,rm::mul(e,rm::dot(span,e)));
@@ -75,10 +95,9 @@ left.x=left.x+correction*left.inv;right.x=right.x-correction*right.inv;
 director.q=rm::integrate(director.q,rm::mul(rm::cross(e,correction),segment_length*director.inv_inertia),1);
 }
 for(size_t j=1;j<ar.directors.size();++j){auto&left=ar.directors[j-1];auto&right=ar.directors[j];
-Vec3 tangent=rm::rotate(left.q,{0,0,1}),axis=rm::cross(tangent,{0,1,0});double axis_len=rm::length(axis);
-if(axis_len<1e-8)axis=rm::cross(tangent,{1,0,0}),axis_len=rm::length(axis);
-axis=rm::mul(axis,1/axis_len);
-Quat target=rm::multiply(rm::rotation(rm::mul(axis,ar.active.curvature*ar.active.activation*segment_length)),left.q);
+Vec3 tangent=rm::rotate(left.q,{0,0,1});
+Vec3 axis=rm::cross(tangent,ar.preferred_curvature[j]);
+Quat target=rm::multiply(rm::rotation(rm::mul(axis,segment_length)),left.q);
 Vec3 error=rm::log_rotation(rm::multiply(target,rm::inverse(right.q)));
 double den=left.inv_inertia+right.inv_inertia+bend_alpha;
 Vec3 correction=rm::mul(rm::sub(error,rm::mul(right.bend_lambda,bend_alpha)),1/den);
@@ -129,6 +148,7 @@ void attachments(double h){for(auto&a:animals)for(auto&ar:a.arms){auto&tip=p[ar.
 if(ar.attached==-1)continue;Vec3 target=ar.attached==-2?ar.anchor:p[ar.attached].x;Vec3 delta=target-tip.x;double l=norm(delta);double rest=ar.attached==-2?0:ar.attach_rest;double w=tip.inv+(ar.attached>=0?p[ar.attached].inv:0);double impulse=(l-rest)/(w+1e-7/(h*h));if(std::abs(impulse)/(h*h)>8){ar.attached=-1;++diag.broken_attachments;continue;}if(l>1e-10){Vec3 correction=delta*(impulse/l);tip.x=tip.x+correction*tip.inv;if(ar.attached>=0)p[ar.attached].x=p[ar.attached].x-correction*p[ar.attached].inv;}}}
 bool step(){auto start=std::chrono::steady_clock::now();diag={};double h=cfg.fixed_dt/cfg.substeps;
 for(unsigned sub=0;sub<cfg.substeps;++sub){for(auto&a:animals)for(auto&ar:a.arms){double f=1-std::exp(-h*12);auto blend=[&](double&v,double t){v+=(t-v)*f;};blend(ar.active.activation,ar.target.activation);blend(ar.active.curvature,ar.target.curvature);blend(ar.active.extension,ar.target.extension);blend(ar.active.stiffness,ar.target.stiffness);blend(ar.active.twist,ar.target.twist);}
+update_preferred_curvature(time+sub*h);
 for(auto&particle:p)particle.compression=0;
 for(auto&e:d){e.lambda=0;if(p[e.a].arm>=0&&p[e.a].arm==p[e.b].arm&&p[e.a].animal==p[e.b].animal&&std::abs(p[e.a].node-p[e.b].node)==1)e.rest=.9/cfg.segments*animals[p[e.a].animal].arms[p[e.a].arm].active.extension;}
 for(auto&t:tetra)t.lambda=0;

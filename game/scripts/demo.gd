@@ -45,6 +45,7 @@ var killed_native := false
 var reset_issued := false
 var reset_observed := false
 var dense_scene := false
+var idle_wriggle := 1.0
 var screenshot := ""
 var label: Label
 var camera: Camera3D
@@ -77,6 +78,7 @@ func _ready() -> void:
         if arg == "--test-kill-native": test_kill_native = true; smoke = true
         if arg == "--test-input": test_input = true; smoke = true
         if arg == "--dense": dense_scene = true
+        if arg == "--no-wriggle": idle_wriggle = 0.0
         if arg.begins_with("--screenshot="): screenshot = arg.substr(13); smoke = true
     if animals not in [1, 2, 5, 10]: fail("Choose --animals=1, 2, 5 or 10"); return
     make_stage()
@@ -113,7 +115,7 @@ func _ready() -> void:
     send(reset_command())
 
 func reset_command() -> String:
-    return "reset %d %f" % [animals,1.0 if dense_scene else 2.2]
+    return "reset %d %f %f" % [animals,1.0 if dense_scene else 2.2,idle_wriggle]
 
 func read_pipe() -> void:
     # Drain the pipe independently of render frames. Only complete lines cross
@@ -183,7 +185,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nBody skin is rigid; arm skin approximates rod state.\nXPBD torsion slice / native process / tissue unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\n24 segments/arm; soft physical idle waves (use --no-wriggle to disable).\nArm skin follows bones; full tissue physics remains unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO

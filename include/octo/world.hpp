@@ -26,10 +26,11 @@ struct DragCommand {
     double max_force=20;         // N
 };
 struct WorldConfig {
-    std::uint32_t animals=2, segments=16, substeps=4, iterations=8;
+    std::uint32_t animals=2, segments=24, substeps=4, iterations=8;
     Vec3 gravity{0,-9.81,0};
     double fixed_dt=1.0/60.0, damping=0.4, friction=0.65;
     double spacing=2.2, spawn_height=0.75;
+    double idle_wriggle=0.0;       // [0,1], physical traveling-wave actuation, off for passive tests
     std::uint32_t rigid_count=3;
     bool collisions=true, floor=true;
 };

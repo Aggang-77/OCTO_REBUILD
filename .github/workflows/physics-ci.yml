@@ -1,0 +1,26 @@
+name: Native C++ physics
+on:
+  push:
+    branches:
+      - feat/soft-wriggling-arms
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'include/**'
+      - 'bridge/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/physics-ci.yml'
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j 2
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
+      - name: Two-animal physics benchmark smoke
+        run: ./build/octo_benchmark 2 60

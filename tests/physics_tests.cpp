@@ -1,5 +1,6 @@
 #include "octo/world.hpp"
 #include "octo/collision.hpp"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -26,4 +27,20 @@ int main(){try{
 {auto c=isolated();c.animals=2;c.collisions=true;c.spacing=.3;PhysicsWorld w(c);auto start=w.snapshot();std::uint64_t cross_count=0;for(int i=0;i<20;++i){require(w.step(),"bilateral step finite");cross_count+=w.snapshot().diagnostics.cross_animal_contacts;}auto s=w.snapshot();require(cross_count>0,"actual cross-animal contacts observed");require(distance(start.animals[0].center,s.animals[0].center)>.001&&distance(start.animals[1].center,s.animals[1].center)>.001,"both animals react to contact");require(distance(s.diagnostics.linear_momentum,{})<1e-5,"isolated contact preserves total linear momentum");}
 {auto c=isolated();c.collisions=true;c.rigid_count=3;PhysicsWorld w(c);auto start=w.snapshot();DragCommand drag;drag.kind=DragCommand::Kind::ArmTip;drag.arm=0;drag.target={0,.32,1.35};drag.max_force=20;require(w.drag(drag),"tip force aimed at prop");std::uint64_t animal_prop=0;double max_prop_motion=0;for(int i=0;i<120;++i){require(w.step(),"animal-prop step finite");auto state=w.snapshot();animal_prop+=state.diagnostics.animal_prop_contacts;for(size_t j=0;j<state.rigids.size();++j)max_prop_motion=std::max(max_prop_motion,distance(start.rigids[j].center,state.rigids[j].center));}require(animal_prop>0,"actual animal-prop contacts observed");require(max_prop_motion>.0001,"dynamic prop reacts to animal");}
 {WorldConfig c;c.animals=2;c.rigid_count=2;c.spacing=1.2;PhysicsWorld w(c);for(int i=0;i<180;++i){MuscleCommand m;m.animal=i%2;m.arm=i%8;m.activation=1;m.curvature=(i%2?1:-1)*8;m.extension=(i%2?.7:1.3);require(w.command(m),"stress command");require(w.step(),"stress remains finite");}auto s=w.snapshot();require(s.diagnostics.nonfinite_count==0,"no nonfinite stress");require(s.diagnostics.max_volume_error<.5,"stress volume bound");require(s.diagnostics.contact_count>0,"stress contacts measured");}
+
+{auto c=isolated();c.segments=24;c.damping=.4;c.idle_wriggle=1;PhysicsWorld wriggling(c);c.idle_wriggle=0;PhysicsWorld passive(c);
+auto initial=wriggling.snapshot();require(initial.animals[0].arms[0].nodes.size()==25,"24-segment physical arm owns 25 nodes");
+require(initial.animals[0].arms[0].frames.size()==24,"physical orientation per segment");
+double max_difference=0,max_time_change=0;RenderSnapshot midway;
+for(int i=0;i<150;++i){require(wriggling.step(),"wriggling arm stays finite");require(passive.step(),"passive comparison stays finite");if(i==59)midway=wriggling.snapshot();}
+auto a=wriggling.snapshot(),b=passive.snapshot();
+for(unsigned arm=0;arm<8;++arm){auto&moving=a.animals[0].arms[arm];auto&still=b.animals[0].arms[arm];
+ for(unsigned j=0;j<moving.nodes.size();++j)max_difference=std::max(max_difference,distance(moving.nodes[j],still.nodes[j]));
+ max_time_change=std::max(max_time_change,distance(moving.nodes.back(),midway.animals[0].arms[arm].nodes.back()));
+}
+std::cout<<"idle_wave_max_shape_delta_m="<<max_difference<<" tip_time_delta_m="<<max_time_change<<"\n";
+require(max_difference>.001,"passive traveling wave changes actual node positions");
+require(max_time_change>.001,"passive wave remains time varying");
+require(a.diagnostics.nonfinite_count==0,"wriggling generates finite simulation state");
+}
 std::cout<<"physics checks passed\n";return 0;}catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}
