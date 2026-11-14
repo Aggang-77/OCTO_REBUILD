@@ -5,6 +5,9 @@ render_mode diffuse_burley, specular_schlick_ggx;
 // transforms. Vertex displacement is applied BEFORE the existing GPU
 // skeleton skinning; no second fake arm mesh or CPU per-frame remesh.
 uniform vec4 base_albedo : source_color = vec4(1.0);
+uniform vec2 uv_scale = vec2(1.0);
+uniform vec2 uv_offset = vec2(0.0);
+uniform bool vertex_color_albedo = false;
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap, repeat_enable;
 uniform bool has_albedo_tex = false;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
@@ -28,6 +31,7 @@ uniform float bone_activity[256];
 varying float local_load;
 varying float local_activity;
 varying vec3 original_position;
+varying vec4 vertex_tint;
 
 vec2 skinned_fields(uvec4 bones, vec4 raw_weights) {
     ivec4 ids = ivec4(bones);
@@ -46,6 +50,7 @@ vec2 skinned_fields(uvec4 bones, vec4 raw_weights) {
 
 void vertex() {
     original_position = VERTEX;
+    vertex_tint = COLOR;
     vec2 fields = skinned_fields(BONE_INDICES, BONE_WEIGHTS);
     local_load = clamp(fields.x, 0.0, 1.0);
     local_activity = clamp(fields.y, 0.0, 1.0);
@@ -68,9 +73,13 @@ void vertex() {
 }
 
 void fragment() {
+    vec2 tex_uv = UV * uv_scale + uv_offset;
     vec3 pigment = base_albedo.rgb;
+    if (vertex_color_albedo) {
+        pigment *= vertex_tint.rgb;
+    }
     if (has_albedo_tex) {
-        pigment *= texture(albedo_tex, UV).rgb;
+        pigment *= texture(albedo_tex, tex_uv).rgb;
     }
     // Real octopus skin is not uniformly mirror-shiny. Pigment patterns,
     // microrelief and irregular wet specular breakup remain visible.
@@ -85,7 +94,7 @@ void fragment() {
     ALBEDO = pigment * (0.94 + 0.06 * mottling + chroma);
     float authored_roughness = base_roughness;
     if (has_roughness_tex) {
-        vec4 authored_map = texture(roughness_tex, UV);
+        vec4 authored_map = texture(roughness_tex, tex_uv);
         float tex_rough = roughness_channel == 4 ?
             dot(authored_map.rgb, vec3(0.3333333)) :
             authored_map[clamp(roughness_channel, 0, 3)];
@@ -93,7 +102,7 @@ void fragment() {
     }
     float authored_metallic = base_metallic;
     if (has_metallic_tex) {
-        vec4 metal_map = texture(metallic_tex, UV);
+        vec4 metal_map = texture(metallic_tex, tex_uv);
         authored_metallic *= metallic_channel == 4 ?
             dot(metal_map.rgb, vec3(0.3333333)) :
             metal_map[clamp(metallic_channel, 0, 3)];
@@ -103,7 +112,7 @@ void fragment() {
                       0.055 * mottling - 0.065 * local_load, 0.17, 0.75);
     SPECULAR = 0.48;
     if (has_normal_tex) {
-        NORMAL_MAP = texture(normal_tex, UV).rgb;
+        NORMAL_MAP = texture(normal_tex, tex_uv).rgb;
         NORMAL_MAP_DEPTH = normal_strength;
     }
 }
