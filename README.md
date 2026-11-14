@@ -82,3 +82,15 @@ prevent replacing an executable while it is running. The expected
 probe output begins with `BRIDGE_V1_PREFLIGHT_PASS`. If validation
 fails even after recompilation, check `OCTO_SERVER` is pointing to
 the repository's newly built executable.
+
+## Stronger octopus arms / grips
+
+Default C++ arm stroke motor force/gain is now **4×** the earlier
+baseline (`WorldConfig::arm_motor_strength=4.0`), and the automatic
+sucker/legacy tip break thresholds are **3×** stronger
+(`WorldConfig::sucker_strength=3.0`). The 16-key controls are unchanged.
+These are force/threshold multipliers, **not guaranteed 4× travel**;
+contact, mass, friction and the number of attached suckers also matter.
+The values are bounded in `WorldConfig` and checked by the native
+control regression suite. Rebuild the native server with
+`./tools/build.ps1 -NoTests` before running the Godot demo.
