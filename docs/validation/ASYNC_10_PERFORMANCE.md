@@ -21,6 +21,8 @@ The dense scene uses 1.0 m animal spacing and three dynamic props. All 80 arms r
 
 One attempted second repeat exited or stopped producing output after tick 1, with no Godot error text or completion record. That run is **unresolved**, not counted as a pass. Three subsequent bounded repeats and a reset run completed. The root cause might involve process lifecycle or the environment; evidence is insufficient to assign it. Longer continuous gameplay, GPU timing, adversarial collision performance, actual keyboard/mouse handling, and physics/skin mismatch thresholds remain NOT TESTED. Full orientation-based Cosserat shear/bending and local cross-section deformation remain unimplemented.
 
+After that unexplained run, the bridge watchdog was changed to check elapsed time since the last validated response, including when a worker has already sent the next request. An intentional native-child termination test at tick 20 exited Godot with code 2 and `Native solver exited`; an ordinary two-animal 60-tick run still exited zero. This validates one failure path and prevents indefinite silence after 15 seconds. It does not explain or retroactively pass the earlier incomplete run.
+
 ## Reproduce
 
 ```powershell

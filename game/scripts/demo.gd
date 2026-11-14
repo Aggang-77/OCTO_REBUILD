@@ -19,6 +19,7 @@ var last_response_id := 0
 var pending := false
 var request_id := 0
 var sent_at := 0
+var last_progress_usec := 0
 var current := {}
 var views: Array = []
 var props: Array = []
@@ -29,6 +30,8 @@ var benchmark_ticks := 60
 var test_actuation := false
 var test_all_active := false
 var test_reset := false
+var test_kill_native := false
+var killed_native := false
 var reset_issued := false
 var reset_observed := false
 var dense_scene := false
@@ -61,6 +64,7 @@ func _ready() -> void:
         if arg == "--test-actuation": test_actuation = true
         if arg == "--test-all-active": test_all_active = true
         if arg == "--test-reset": test_reset = true
+        if arg == "--test-kill-native": test_kill_native = true; smoke = true
         if arg == "--dense": dense_scene = true
         if arg.begins_with("--screenshot="): screenshot = arg.substr(13); smoke = true
     if animals not in [1, 2, 5, 10]: fail("Choose --animals=1, 2, 5 or 10"); return
@@ -105,6 +109,8 @@ func read_pipe() -> void:
     # to the main thread; physics and scene nodes remain on the main thread.
     var pending_bytes := PackedByteArray()
     while not stop_reader:
+        if child.has("pid") and not OS.is_process_running(child.pid):
+            break
         var available := pipe.get_length()
         if available <= 0:
             OS.delay_msec(1)
@@ -189,6 +195,7 @@ func poll() -> void:
         parse_ms = float(Time.get_ticks_usec()-parse_start)/1000.0
         if not parsed is Dictionary or int(parsed.get("id", -1)) != last_response_id+1 or int(parsed.get("version", 0)) != 1: fail("Invalid or stale bridge response"); return
         last_response_id += 1
+        last_progress_usec = Time.get_ticks_usec()
         pending = false; rpc_ms = line_rpc_ms
         if not parsed.get("ok", false): fail("Bridge: " + str(parsed.get("error", "unknown"))); return
         if parsed.has("snapshot"):
@@ -200,7 +207,10 @@ func poll() -> void:
             var skin_start := Time.get_ticks_usec()
             update_scene()
             skin_ms = float(Time.get_ticks_usec()-skin_start)/1000.0
-    if pending and Time.get_ticks_usec()-sent_at > 15000000: fail("Native solver timed out")
+    if auto_step and last_progress_usec > 0 and Time.get_ticks_usec()-last_progress_usec > 15000000:
+        fail("Native solver stopped responding for 15 seconds"); return
+    if not auto_step and pending and Time.get_ticks_usec()-sent_at > 15000000:
+        fail("Native solver timed out during reset"); return
     if child.has("pid") and not OS.is_process_running(child.pid) and not quitting: fail("Native solver exited")
 
 func vec(a: Array) -> Vector3: return Vector3(a[0],a[1],a[2])
@@ -262,6 +272,9 @@ func step_command() -> String:
 func _process(delta: float) -> void:
     var start := Time.get_ticks_usec(); poll()
     if current.is_empty() or quitting: return
+    if test_kill_native and current.tick >= 20 and not killed_native:
+        killed_native = true
+        OS.kill(child.pid)
     if test_reset and current.tick >= 120 and not reset_issued:
         reset_issued = true
         inbox_lock.lock()
@@ -326,6 +339,7 @@ func _unhandled_input(event: InputEvent) -> void:
         if hit != null: drag_target = hit
 
 func fail(message: String) -> void:
+    stop_reader = true
     push_error(message)
     if label != null: label.text = "ERROR: " + message
     quitting = true

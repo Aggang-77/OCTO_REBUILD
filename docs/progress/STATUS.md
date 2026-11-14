@@ -62,3 +62,7 @@ record; cause unresolved. Runtime performance is PARTIAL for the tested scene,
 not a 10-animal worst-case guarantee. Reset during dense-active run observed
 and 600 further ticks completed. Build and CTest 3/3 PASS including bridge
 protocol errors/dense reset. Read docs/validation/ASYNC_10_PERFORMANCE.md.
+Follow-up: watchdog now uses time since last validated response, and a forced
+native-child termination at tick 20 produced an explicit Godot exit code 2.
+The earlier incomplete run remains unexplained, but future silence is bounded
+by a 15-second timeout. Normal two-animal smoke still exits zero.
