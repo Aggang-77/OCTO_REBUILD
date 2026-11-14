@@ -61,6 +61,8 @@ var control_extend_stroke := false
 var control_spring_return := false
 var control_release_all := false
 var control_all_pairs_verified := false
+var key_test_index := 0
+var key_test_pressed := false
 var screenshot := ""
 var label: Label
 var camera: Camera3D
@@ -463,35 +465,41 @@ func exercise_input() -> void:
 
 
 
-func verify_all_key_pairs() -> bool:
-    # On a deterministic test frame, synthesize each of 16 physical keys.
-    # Read the actual step2 serialization, not a duplicate lookup table.
-    for test_arm in 8:
-        inject_key(EXTEND_KEYS[test_arm],true)
-        var fields := step_command().split(" ")
-        for arm in 8:
-            var start := 2 + arm*9
-            var reach := float(fields[start+4])
-            if absf(reach - (1.28 if arm == test_arm else 0.70)) > 0.001:
-                inject_key(EXTEND_KEYS[test_arm],false)
-                return false
-        inject_key(EXTEND_KEYS[test_arm],false)
-        inject_key(STROKE_KEYS[test_arm],true)
-        fields = step_command().split(" ")
-        for arm in 8:
-            var start := 2 + arm*9
-            var sweep := float(fields[start+8])
-            if absf(sweep - (1.0 if arm == test_arm else -1.0)) > 0.001:
-                inject_key(STROKE_KEYS[test_arm],false)
-                return false
-        inject_key(STROKE_KEYS[test_arm],false)
-    return true
+func exercise_all_key_pairs() -> void:
+    # Synthesize one key, let Godot advance to a subsequent _process,
+    # then inspect the *actual* serialized step2 command.
+    # A same-frame press+release would not reliably update Input state.
+    if key_test_index >= 16:
+        control_all_pairs_verified = true
+        return
+    var arm := key_test_index % 8
+    var is_extend := key_test_index < 8
+    var key: Key = EXTEND_KEYS[arm] if is_extend else STROKE_KEYS[arm]
+    if not key_test_pressed:
+        inject_key(key,true)
+        key_test_pressed = true
+        return
+    var fields := step_command().split(" ")
+    var correct := true
+    for check_arm in 8:
+        var start_field := 2 + check_arm*9
+        var actual := float(fields[start_field+4 if is_extend else start_field+8])
+        var expected := (1.28 if check_arm == arm else 0.70) if is_extend else (1.0 if check_arm == arm else -1.0)
+        if absf(actual-expected)>0.001:
+            correct = false
+    inject_key(key,false)
+    key_test_pressed = false
+    if not correct:
+        print("KEYMAP_FAIL key_index=%d arm=%d extend=%s" % [key_test_index,arm,str(is_extend)])
+        return
+    key_test_index += 1
+    if key_test_index >= 16:
+        control_all_pairs_verified = true
 
 func exercise_controls() -> void:
     if not test_controls or animals != 2:
         return
     if control_phase == 0 and current.tick >= 10:
-        control_all_pairs_verified = verify_all_key_pairs()
         inject_key(KEY_F,true) # left front extend; physical arm 7
         inject_key(KEY_D,true) # left front stroke; same time
         control_phase = 1
@@ -516,6 +524,8 @@ func exercise_controls() -> void:
         if current.tick >= 47:
             inject_key(KEY_SPACE,false)
             control_phase = 4
+    if control_phase == 4 and current.tick >= 50:
+        exercise_all_key_pairs()
 
 func _process(delta: float) -> void:
     var start := Time.get_ticks_usec(); poll()
@@ -564,7 +574,7 @@ func _process(delta: float) -> void:
                 fail("Control flags mapping=%s dual=%s return=%s space=%s" % [str(control_all_pairs_verified),str(control_extend_stroke),str(control_spring_return),str(control_release_all)]); return
             print("CONTROL_V1_CHECK animals=2 arm_segments=%d no_shader=true" % arm_segments)
             print("CONTROL_KEYS_CHECK simultaneous=true spring_return=true space_override=true")
-            print("KEYMAP_ALL16_CHECK passed=true")
+            print("KEYMAP_ALL16_CHECK injected_sequential=true passed=true")
         if test_input:
             print("INPUT_CHECK selected=%d arm=%s drag=%s phase=%d arm_delta_m=%.5f center_delta_m=%.5f" % [selected,str(input_arm_seen),str(input_drag_seen),input_phase,input_arm_delta,input_center_delta])
             if not input_arm_seen or not input_drag_seen or input_arm_delta < .005 or input_center_delta < .002: fail("Key or mouse input did not produce physical response"); return
