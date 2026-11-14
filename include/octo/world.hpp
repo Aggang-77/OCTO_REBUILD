@@ -54,6 +54,7 @@ struct Diagnostics {
     Vec3 angular_momentum{}; // about world origin, includes material-roll spin
     std::uint64_t contact_count=0, candidate_pairs=0, attachments=0, broken_attachments=0, nonfinite_count=0;
     std::uint64_t cross_animal_contacts=0, animal_prop_contacts=0;
+    std::uint64_t swept_contacts=0;
 };
 struct RenderSnapshot {
     std::uint64_t tick=0;
@@ -75,6 +76,7 @@ public:
     void reset(const WorldConfig& config);
     bool command(const MuscleCommand& command);
     bool drag(const DragCommand& command);
+    bool impulse_rigid(std::uint32_t index, Vec3 impulse); // N·s at the prop center, for controlled physical fixtures
     bool step();                 // exactly config.fixed_dt; false on invalid state
     RenderSnapshot snapshot() const;
     const WorldConfig& config() const;

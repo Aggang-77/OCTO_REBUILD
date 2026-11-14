@@ -1,4 +1,5 @@
 #include "octo/world.hpp"
+#include "octo/collision.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -23,12 +24,13 @@ Quat roll_frame(Quat q,double angle){const double half=.5*angle,s=std::sin(half)
 }
 struct PhysicsWorld::Impl {
 struct P{Vec3 x,old,v;double inv,r;int animal,arm,node,rigid;};
+struct Bounds { Vec3 lo, hi; };
 struct D{int a,b;double rest,compliance,lambda=0;};
 struct T{std::array<int,4> p;double rest,lambda=0;};
 struct Roll{double angle=0,old=0,omega=0,inv_inertia=0,lambda=0;};
 struct Arm{std::vector<int> p;std::vector<double> radius;std::vector<Roll> roll;std::vector<Vec3> bend_lambda;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
 struct Animal{std::vector<int> body;std::array<Arm,8> arms;};
-WorldConfig cfg;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
+WorldConfig cfg;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;std::vector<Bounds> contact_bounds;std::vector<int> contact_order;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
 int particle(Vec3 x,double mass,double radius,int animal=-1,int arm=-1,int node=-1,int rigid=-1){p.push_back({x,x,{},1/mass,radius,animal,arm,node,rigid});return int(p.size()-1);}
 void edge(int a,int b,double compliance){d.push_back({a,b,norm(p[a].x-p[b].x),compliance});}
 double volume(const T&t)const{auto a=p[t.p[0]].x;return dot(p[t.p[1]].x-a,cross(p[t.p[2]].x-a,p[t.p[3]].x-a))/6;}
@@ -59,9 +61,27 @@ for(size_t j=2;j<ar.roll.size();++j){auto&left=ar.roll[j-1];auto&right=ar.roll[j
 bool excluded(const P&a,const P&b){if(a.rigid>=0&&a.rigid==b.rigid)return true;if(a.animal>=0&&a.animal==b.animal){if(a.arm<0&&b.arm<0)return true;if(a.arm==b.arm&&std::abs(a.node-b.node)<=2)return true;if(a.arm<0&&b.node<=2)return true;if(b.arm<0&&a.node<=2)return true;if(a.node<=2&&b.node<=2)return true;}return false;}
 void contacts(){if(cfg.floor)for(auto&a:p)if(a.x.y<a.r){double depth=a.r-a.x.y;diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=a.r;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,cfg.friction*depth)/l);}
 if(!cfg.collisions)return;
-// Sweep broadphase: exact sphere pairs within sorted x intervals.
-std::vector<int> order(p.size());for(size_t i=0;i<p.size();++i)order[i]=int(i);std::sort(order.begin(),order.end(),[&](int a,int b){return p[a].x.x-p[a].r<p[b].x.x-p[b].r;});
-for(size_t i=0;i<order.size();++i){auto&a=p[order[i]];for(size_t j=i+1;j<order.size();++j){auto&b=p[order[j]];if(b.x.x-b.r>a.x.x+a.r)break;if(excluded(a,b))continue;++diag.candidate_pairs;Vec3 v=b.x-a.x;double l=norm(v),depth=a.r+b.r-l;if(depth<=0)continue;++diag.contact_count;if(a.animal>=0&&b.animal>=0&&a.animal!=b.animal)++diag.cross_animal_contacts;if((a.animal>=0&&b.rigid>=0)||(b.animal>=0&&a.rigid>=0))++diag.animal_prop_contacts;diag.max_penetration=std::max(diag.max_penetration,depth);Vec3 n=l>1e-10?v/l:Vec3{1,0,0};double w=a.inv+b.inv;a.x=a.x-n*(depth*a.inv/w);b.x=b.x+n*(depth*b.inv/w);Vec3 relative=(b.x-b.old)-(a.x-a.old);Vec3 tangent=relative-n*dot(relative,n);double tl=norm(tangent);if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}}}}
+// Swept AABB broadphase includes both endpoints so fast crossing paths remain candidates.
+contact_bounds.resize(p.size());contact_order.resize(p.size());
+for(size_t i=0;i<p.size();++i){const auto&v=p[i];contact_bounds[i]={{std::min(v.old.x,v.x.x)-v.r,std::min(v.old.y,v.x.y)-v.r,std::min(v.old.z,v.x.z)-v.r},{std::max(v.old.x,v.x.x)+v.r,std::max(v.old.y,v.x.y)+v.r,std::max(v.old.z,v.x.z)+v.r}};contact_order[i]=int(i);}
+std::sort(contact_order.begin(),contact_order.end(),[&](int a,int b){return contact_bounds[a].lo.x<contact_bounds[b].lo.x;});
+for(size_t i=0;i<contact_order.size();++i){auto&a=p[contact_order[i]];for(size_t j=i+1;j<contact_order.size();++j){auto&b=p[contact_order[j]];
+const auto&ba=contact_bounds[contact_order[i]],&bb=contact_bounds[contact_order[j]];
+if(bb.lo.x>ba.hi.x)break;
+if(excluded(a,b)||ba.lo.y>bb.hi.y||bb.lo.y>ba.hi.y||ba.lo.z>bb.hi.z||bb.lo.z>ba.hi.z)continue;
+++diag.candidate_pairs;
+Vec3 end=b.x-a.x;double l=norm(end),depth=a.r+b.r-l;Vec3 n{};
+if(depth>0){n=l>1e-10?end/l:Vec3{1,0,0};diag.max_penetration=std::max(diag.max_penetration,depth);}
+else{auto hit=swept_sphere_toi(a.old,a.x,b.old,b.x,a.r+b.r);if(!hit)continue;
+n=hit->normal;depth=a.r+b.r-dot(end,n);if(depth<=1e-12)continue;++diag.swept_contacts;}
+++diag.contact_count;
+if(a.animal>=0&&b.animal>=0&&a.animal!=b.animal)++diag.cross_animal_contacts;
+if((a.animal>=0&&b.rigid>=0)||(b.animal>=0&&a.rigid>=0))++diag.animal_prop_contacts;
+double w=a.inv+b.inv;a.x=a.x-n*(depth*a.inv/w);b.x=b.x+n*(depth*b.inv/w);
+Vec3 relative=(b.x-b.old)-(a.x-a.old);Vec3 tangent=relative-n*dot(relative,n);double tl=norm(tangent);
+if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}
+}}}
+
 void attachments(double h){for(auto&a:animals)for(auto&ar:a.arms){auto&tip=p[ar.p.back()];if(!ar.target.attach){ar.attached=-1;continue;}if(ar.attached==-1){if(cfg.floor&&tip.x.y-tip.r<.025){ar.attached=-2;ar.anchor={tip.x.x,tip.r,tip.x.z};}else for(size_t i=0;i<p.size();++i)if(p[i].rigid>=0&&norm(p[i].x-tip.x)<p[i].r+tip.r+.025){ar.attached=int(i);ar.attach_rest=norm(p[i].x-tip.x);break;}}
 if(ar.attached==-1)continue;Vec3 target=ar.attached==-2?ar.anchor:p[ar.attached].x;Vec3 delta=target-tip.x;double l=norm(delta);double rest=ar.attached==-2?0:ar.attach_rest;double w=tip.inv+(ar.attached>=0?p[ar.attached].inv:0);double impulse=(l-rest)/(w+1e-7/(h*h));if(std::abs(impulse)/(h*h)>8){ar.attached=-1;++diag.broken_attachments;continue;}if(l>1e-10){Vec3 correction=delta*(impulse/l);tip.x=tip.x+correction*tip.inv;if(ar.attached>=0)p[ar.attached].x=p[ar.attached].x-correction*p[ar.attached].inv;}}}
 bool step(){auto start=std::chrono::steady_clock::now();diag={};double h=cfg.fixed_dt/cfg.substeps;
@@ -86,6 +106,7 @@ void PhysicsWorld::reset(const WorldConfig&c){auto fresh=std::make_unique<Impl>(
 const WorldConfig&PhysicsWorld::config()const{return impl_->cfg;}
 bool PhysicsWorld::command(const MuscleCommand&c){if(c.animal>=impl_->animals.size()||c.arm>=8||!std::isfinite(c.activation)||!std::isfinite(c.curvature)||!std::isfinite(c.extension)||!std::isfinite(c.twist)||!std::isfinite(c.stiffness))return false;auto v=c;v.activation=std::clamp(v.activation,0.,1.);v.curvature=std::clamp(v.curvature,-15.,15.);v.extension=std::clamp(v.extension,.65,1.35);v.twist=std::clamp(v.twist,-20.,20.);v.stiffness=std::clamp(v.stiffness,0.,1.);impl_->animals[c.animal].arms[c.arm].target=v;return true;}
 bool PhysicsWorld::drag(const DragCommand&c){if(!finite(c.target)||!std::isfinite(c.stiffness)||!std::isfinite(c.max_force)||c.stiffness<0||c.max_force<0||c.stiffness>1e5||c.max_force>1e4)return false;switch(c.kind){case DragCommand::Kind::None:break;case DragCommand::Kind::Animal:if(c.index>=impl_->animals.size())return false;break;case DragCommand::Kind::ArmTip:if(c.index>=impl_->animals.size()||c.arm>=8)return false;break;case DragCommand::Kind::Rigid:if(c.index>=impl_->rigids.size())return false;break;default:return false;}impl_->drag=c;return true;}
+bool PhysicsWorld::impulse_rigid(std::uint32_t index,Vec3 impulse){if(index>=impl_->rigids.size()||!finite(impulse))return false;const auto&ids=impl_->rigids[index];const Vec3 share=impulse/double(ids.size());for(int id:ids)impl_->p[id].v=impl_->p[id].v+share*impl_->p[id].inv;return true;}
 bool PhysicsWorld::step(){return impl_->step();}RenderSnapshot PhysicsWorld::snapshot()const{return impl_->snapshot();}
 }
 

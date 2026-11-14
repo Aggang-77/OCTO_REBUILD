@@ -66,3 +66,13 @@ Follow-up: watchdog now uses time since last validated response, and a forced
 native-child termination at tick 20 produced an explicit Godot exit code 2.
 The earlier incomplete run remains unexplained, but future silence is bounded
 by a 15-second timeout. Normal two-animal smoke still exits zero.
+
+2026-11-15 swept contact checkpoint: shared C++ particle contact now tests
+relative linear sphere sweeps over the substep and caches swept broadphase
+bounds per solver pass. Analytic crossing and 200 N s two-prop regression
+PASS; 400 N s order retention FAIL, so general CCD is not validated. Release
+build and CTest 3/3 PASS; 2-animal dense 10,000-tick soak 0 nonfinite.
+Ten-animal dense active native 600-tick mean/p95 6.587/7.024 ms; Godot GPU
+600 ticks exited zero with screenshot, but 56.081 simulation ticks/s misses
+the 60 Hz target. See docs/validation/SWEPT_CONTACT.md. Next: robust TOI
+response/whole-shape collision, dense contact/skin optimization, tissue model.
