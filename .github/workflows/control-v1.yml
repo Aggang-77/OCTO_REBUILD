@@ -63,4 +63,5 @@ jobs:
             --script res://tests/control_v1_input.gd -- --keymap-test \
             2>&1 | tee "$RUNNER_TEMP/controls.log"
           grep -q "CONTROL_V1_KEYS_PASS" "$RUNNER_TEMP/controls.log"
+          grep -q "GRIP_HUD_COMPAT_PASS" "$RUNNER_TEMP/controls.log"
           if grep -E -q "SCRIPT ERROR|Parse Error|Invalid call" "$RUNNER_TEMP/controls.log"; then exit 1; fi
