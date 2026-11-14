@@ -42,6 +42,9 @@ func _exercise() -> void:
         for j in range(8):
             var begin := 2 + (8 + j) * 9
             var actual := float(parts[begin + 4])
+            if j == arm:
+                print("KEY_DEBUG key=",extension," pressed=",Input.is_physical_key_pressed(extension),
+                    " actual=",actual," selected=",octo.selected," wire=",octo.step_command().substr(0,140))
             if not _check(absf(actual - (1.28 if j == arm else 0.70)) < 0.001, "extend arm %d vs %d" % [j, arm]):
                 return
         _key(extension, false)
