@@ -15,3 +15,8 @@ The original demo set rest radius to `r(u)=0.036*(1-0.8*u)` and reapplied that s
 - Wire test: optional profile parameter, legacy resolution and invalid profile rejection.
 - Full volumetric tissue/FEM or a high-resolution deforming surface is NOT present: collisions use particle spheres, so exact deforming skin-to-skin collisions and physical surface normals are unsolved. Skinning can produce seams or creases, particularly around suckers. The original GLB is not included in git.
 - CI must distinguish Linux/Windows native results from real Godot GPU, manual appearance, and worst-case ten-animal 60 FPS. Tuning values are art direction, not experimentally derived octopus constitutive parameters.
+
+## Secondary softness pass
+- Contact-driven elliptical squash now uses a lightly underdamped physical spring (natural frequency 16 rad/s, damping ratio 0.65), with bounded axis ratio and reciprocal-area compensation. This provides finite relaxation and mild rebound rather than a single monotone exponential.
+- Godot samples the authoritative discrete rod centerline with Catmull-Rom cubic interpolation and blends neighbouring physical section radii/roll instead of a nearest-neighbour step. This smooths the rendered silhouette but does *not* turn the interpolated skin into authoritative collision geometry.
+- Existing GLB rig and textures are retained. No Godot GPU screenshot was possible without the asset file.

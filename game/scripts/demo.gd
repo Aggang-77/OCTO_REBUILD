@@ -245,8 +245,16 @@ func poll() -> void:
 func vec(a: Array) -> Vector3: return Vector3(a[0],a[1],a[2])
 func quat(a: Array) -> Quaternion: return Quaternion(a[0],a[1],a[2],a[3])
 func point(nodes: Array, u: float) -> Vector3:
-    var f := u * float(nodes.size()-1); var i := mini(int(f),nodes.size()-2)
-    return vec(nodes[i]).lerp(vec(nodes[i+1]), f-i)
+    # Smooth interpolation of C++ centerline nodes for the skinned GLB.
+    # No additional autonomous motion is introduced by rendering.
+    var f := clampf(u,0.0,1.0) * float(nodes.size()-1)
+    var i := mini(int(f),nodes.size()-2)
+    var t := f-float(i)
+    var p0 := vec(nodes[maxi(i-1,0)])
+    var p1 := vec(nodes[i])
+    var p2 := vec(nodes[i+1])
+    var p3 := vec(nodes[mini(i+2,nodes.size()-1)])
+    return (p1*2.0 + (p2-p0)*t + (p0*2.0-p1*5.0+p2*4.0-p3)*t*t + (-p0+p1*3.0-p2*3.0+p3)*t*t*t)*0.5
 
 func update_scene() -> void:
     for i in current.animals.size():
@@ -274,16 +282,20 @@ func update_scene() -> void:
                 var tangent := inverse * (point(nodes,float(j1)/23.0)-point(nodes,float(j0)/23.0)).normalized()
                 var swing := Quaternion.IDENTITY
                 if (rest1-rest0).length_squared() > 0.000001 and tangent.length_squared() > 0.000001: swing = Quaternion((rest1-rest0).normalized(), tangent)
-                var roll_index := mini(int(float(j)*material_roll.size()/24.0),material_roll.size()-1)
-                var material_rotation := Quaternion(tangent, float(material_roll[roll_index])) * swing
-                # Imported skin was bound around a narrow linear taper.
-                # Scale its sections using C++ hydrostat radii instead of
-                # reimposing the original conical profile on every bone.
-                var rest_u := float(j)/24.0
+                # Bone samples interpolate *between* adjacent physical sections
+                # instead of jumping to the nearest segment's radius.
+                var section_f := clampf(float(j)*float(radii.size())/23.0-0.5,0.0,float(radii.size()-1))
+                var section_i := mini(int(section_f),radii.size()-2)
+                var section_t := section_f-float(section_i)
+                var material_angle := lerpf(float(material_roll[section_i]),float(material_roll[section_i+1]),section_t)
+                var material_rotation := Quaternion(tangent,material_angle) * swing
+                # Imported skin was authored around a narrow linear cone.
+                # Retarget it to physical semiaxes and preserve the GLB material.
+                var rest_u := float(j)/23.0
                 var base_radius := .036 * (1.0-.8*rest_u)
-                var scale_x := float(radii[roll_index][0])/base_radius
-                var scale_z := float(radii[roll_index][1])/base_radius
-                var cross_section := Vector3(clampf(scale_x,.4,4.0),1.0,clampf(scale_z,.4,4.0))
+                var radius_x := lerpf(float(radii[section_i][0]),float(radii[section_i+1][0]),section_t)
+                var radius_z := lerpf(float(radii[section_i][1]),float(radii[section_i+1][1]),section_t)
+                var cross_section := Vector3(clampf(radius_x/base_radius,.4,4.0),1.0,clampf(radius_z/base_radius,.4,4.0))
                 var target := Transform3D(Basis(material_rotation)*rest.basis*Basis.from_scale(cross_section), Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
                 var parent := skel.get_bone_parent(id)
                 var parent_global: Transform3D = globals.get(parent, skel.get_bone_global_rest(parent) if parent >= 0 else Transform3D.IDENTITY)
