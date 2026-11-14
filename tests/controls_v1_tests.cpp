@@ -83,6 +83,25 @@ int main(){try{
     require(sticky.step(),"cooldown stable");
     require(sticky.snapshot().diagnostics.attachments==0,"no instantaneous regrip");
   }
+  // Extension must seek an actual floor contact, then acquire an
+  // ordinary suction constraint; no distant/teleported attachment.
+  {auto reach_cfg=floor;reach_cfg.spawn_height=.75;reach_cfg.softness=5.;
+   PhysicsWorld reaching(reach_cfg);
+   MuscleCommand extend;extend.arm=0;extend.activation=1;
+   extend.extension=1.48;extend.curvature=0;extend.sweep=-1;
+   require(reaching.command(extend),"reach-for-floor command accepted");
+   std::uint64_t acquired=0;
+   for(int i=0;i<240;++i){
+    require(reaching.step(),"reach-for-floor physics stays finite");
+    acquired=std::max(acquired,reaching.snapshot().diagnostics.attachments);
+   }
+   std::cout<<"CONTROL_V1_REACH_GROUND max_contacts="<<acquired<<"\n";
+   require(acquired>0,"extending arm eventually grips contacted floor");
+   reaching.release_all_suckers(true);
+   require(reaching.step(),"reach grip Space release stable");
+   require(reaching.snapshot().diagnostics.attachments==0,
+           "Space overrides reach-for-floor adhesion");
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
