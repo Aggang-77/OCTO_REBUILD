@@ -241,7 +241,7 @@ func make_stage() -> void:
     var floor_node := MeshInstance3D.new(); var floor_mesh := PlaneMesh.new(); floor_mesh.size = Vector2(30,30); floor_node.mesh = floor_mesh
     var mat := StandardMaterial3D.new(); mat.albedo_color = Color("304953"); mat.roughness = 0.9; floor_node.material_override = mat; add_child(floor_node)
     camera = Camera3D.new(); camera.fov = 48; add_child(camera)
-    distance = 5.7 + maxf(0, animals - 2) * 0.7
+    distance = 4.6 + maxf(0, animals - 2) * 0.7
     update_camera()
     var layer := CanvasLayer.new(); add_child(layer)
     var panel := PanelContainer.new(); panel.position = Vector2(12,12); panel.custom_minimum_size = Vector2(335,0); panel.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(panel)
