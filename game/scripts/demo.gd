@@ -19,6 +19,7 @@ var props: Array = []
 var selected := 0
 var animals := 2
 var smoke := false
+var test_actuation := false
 var screenshot := ""
 var label: Label
 var camera: Camera3D
@@ -43,6 +44,7 @@ func _ready() -> void:
     for arg in OS.get_cmdline_user_args():
         if arg.begins_with("--animals="): animals = int(arg.get_slice("=", 1))
         if arg == "--benchmark": smoke = true
+        if arg == "--test-actuation": test_actuation = true
         if arg.begins_with("--screenshot="): screenshot = arg.substr(13); smoke = true
     if animals not in [1, 2, 5, 10]: fail("Choose --animals=1, 2, 5 or 10"); return
     make_stage()
@@ -203,11 +205,11 @@ func step_command() -> String:
     var out := "step %d" % (animals*8)
     for i in animals:
         for arm in 8:
-            var pressed := i == selected and Input.is_physical_key_pressed(KEYS[arm])
+            var pressed := (i == selected and Input.is_physical_key_pressed(KEYS[arm])) or (test_actuation and i == 0 and arm == 0)
             var shift := Input.is_physical_key_pressed(KEY_SHIFT)
             var ctrl := Input.is_physical_key_pressed(KEY_CTRL)
             var alt := Input.is_physical_key_pressed(KEY_ALT)
-            var twist := (3.0 if Input.is_physical_key_pressed(KEY_Z) else -3.0 if Input.is_physical_key_pressed(KEY_X) else 0.0) if pressed else 0.0
+            var twist := (3.0 if test_actuation or Input.is_physical_key_pressed(KEY_Z) else -3.0 if Input.is_physical_key_pressed(KEY_X) else 0.0) if pressed else 0.0
             out += " %d %d %f %f %f %f %f %d" % [i,arm,1.0 if pressed else 0.0,2.0 if pressed else 0.0,0.75 if pressed and shift else 1.0,twist,1.0 if pressed and alt else 0.0,1 if pressed and ctrl else 0]
     out += " %d %d 0 %f %f %f 30 20" % [drag_kind if dragging else 0,drag_index,drag_target.x,drag_target.y,drag_target.z]
     return out
@@ -225,6 +227,10 @@ func _process(delta: float) -> void:
     frame_sum += float(Time.get_ticks_usec()-start)/1000.0; frame_count += 1
     if smoke and current.tick >= 60:
         smoke = false
+        if test_actuation:
+            var measured_roll := float(current.animals[0].arms[0].roll[8])
+            print("ACTUATION_CHECK roll_mid_rad=%.5f tip_y_m=%.5f" % [measured_roll,float(current.animals[0].arms[0].nodes[-1][1])])
+            if measured_roll < 0.25: fail("Nonzero twist did not reach the original-model renderer"); return
         var elapsed_ms := float(Time.get_ticks_usec()-first_tick_usec)/1000.0
         print("SMOKE_OK tick=%d elapsed_59_ticks_ms=%.3f effective_sim_tps=%.3f frame_cpu_avg_ms=%.3f rpc_ms=%.3f solver_ms=%.3f parse_ms=%.3f skin_ms=%.3f command_ms=%.3f" % [current.tick,elapsed_ms,59.0*1000.0/elapsed_ms,frame_sum/maxi(frame_count,1),rpc_ms,current.diagnostics.step_ms,parse_ms,skin_ms,command_ms])
         if not screenshot.is_empty() and DisplayServer.get_name() != "headless":

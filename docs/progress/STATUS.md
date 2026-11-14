@@ -30,3 +30,12 @@ CTest 2/2 PASS, 10-animal active twist native p95 4.87 ms over 600 measured
 ticks, 10-animal Godot passive smoke 60 ticks PASS but ~37.5 simulation ticks/s.
 This is not full orientation-based Cosserat: no coupled shear/bending material
 frames or torque reaction into torso. See docs/validation/TORSION_SLICE.md.
+
+2026-11-15 bending follow-up: accumulated XPBD multiplier per arm/inner node
+for three-component centerline curvature constraint, reset each actual substep.
+Four vs sixteen solver sweeps targeted response fixture PASS, Release CTest 2/2,
+2-animal 10,000-tick soak PASS. Ten active twist+bend native mean/p95
+4.48/4.86 ms; visible Godot 10-animal 60-tick scene PASS but 37.9 ticks/s.
+Two-animal active original-model scene showed arm bend and nonzero material
+roll ~1.35 rad after 60 ticks. Full rotational Cosserat and 60 Hz still open.
+See docs/validation/BENDING_XPBD.md.
