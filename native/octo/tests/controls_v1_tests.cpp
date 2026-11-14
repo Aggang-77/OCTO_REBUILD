@@ -30,6 +30,35 @@ int main(){try{
   require(delta>.003,"opposite strokes physically distinguishable");
   require(a.diagnostics.nonfinite_count==0&&b.diagnostics.nonfinite_count==0,"finite sweep state");
 
+  // Actuator power must produce more arm motion than the previous
+  // conservative baseline under identical physical initial conditions.
+  WorldConfig weak_cfg=isolated, strong_cfg=isolated;
+  weak_cfg.arm_motor_strength=1.0;
+  strong_cfg.arm_motor_strength=4.0;
+  PhysicsWorld weak(weak_cfg),strong(strong_cfg);
+  MuscleCommand push;m.arm=0;
+  push.arm=0;push.activation=1;push.curvature=0;push.extension=1.0;
+  push.sweep=1.0;
+  require(weak.command(push)&&strong.command(push),"test stroke command accepted");
+  const Vec3 start_tip=weak.snapshot().animals[0].arms[0].nodes.back();
+  for(int i=0;i<16;++i){
+    require(weak.step(),"weak baseline remains finite");
+    require(strong.step(),"strong motor remains finite");
+  }
+  const auto weak_snapshot=weak.snapshot(),strong_snapshot=strong.snapshot();
+  const double weak_travel=distance(start_tip,weak_snapshot.animals[0].arms[0].nodes.back());
+  const double strong_travel=distance(start_tip,strong_snapshot.animals[0].arms[0].nodes.back());
+  std::cout<<"CONTROL_V1_POWER weak_tip_motion_m="<<weak_travel
+           <<" strong_tip_motion_m="<<strong_travel<<"\n";
+  require(strong_travel>weak_travel*1.05,
+          "increased actuator strength must measurably increase stroke motion");
+  require(strong_snapshot.diagnostics.nonfinite_count==0,
+          "strong motor state remains finite");
+
+  // Invalid / unbounded forces cannot silently enter the solver.
+  {auto invalid=isolated; invalid.arm_motor_strength=15.;
+   bool rejected=false;try{PhysicsWorld bad(invalid);}catch(const std::invalid_argument&){rejected=true;}
+   require(rejected,"reject unsafe actuator strength");}
   WorldConfig floor;
   floor.animals=1;floor.rigid_count=0;floor.floor=true;floor.collisions=false;
   floor.gravity={0,-9.81,0};floor.spawn_height=.14;
@@ -53,6 +82,202 @@ int main(){try{
   for(int i=0;i<5;++i){
     require(sticky.step(),"cooldown stable");
     require(sticky.snapshot().diagnostics.attachments==0,"no instantaneous regrip");
+  }
+  // Extension must seek an actual floor contact, then acquire an
+  // ordinary suction constraint; no distant/teleported attachment.
+  {auto reach_cfg=floor;reach_cfg.spawn_height=.75;reach_cfg.softness=5.;
+   PhysicsWorld reaching(reach_cfg);
+   MuscleCommand extend;extend.arm=0;extend.activation=1;
+   extend.extension=1.48;extend.curvature=0;extend.sweep=-1;
+   require(reaching.command(extend),"reach-for-floor command accepted");
+   std::uint64_t acquired=0;
+   for(int i=0;i<240;++i){
+    require(reaching.step(),"reach-for-floor physics stays finite");
+    acquired=std::max(acquired,reaching.snapshot().diagnostics.attachments);
+   }
+   std::cout<<"CONTROL_V1_REACH_GROUND max_contacts="<<acquired<<"\n";
+   require(acquired>0,"extending arm eventually grips contacted floor");
+   reaching.release_all_suckers(true);
+   require(reaching.step(),"reach grip Space release stable");
+   require(reaching.snapshot().diagnostics.attachments==0,
+           "Space overrides reach-for-floor adhesion");
+  }
+  // Coil/uncoil progresses through the rod over time instead of
+  // instantaneously resizing a straight tube.
+  {auto c=isolated;c.auto_suction=false;c.coil_curvature=8.0;c.uncoil_speed=2.0;
+   PhysicsWorld coiling(c);
+   const double start=coiling.snapshot().animals[0].arms[0].uncoil_progress;
+   require(start==0.0,"arm starts with an unreleased coil");
+   MuscleCommand extend;extend.arm=0;extend.activation=1;
+   extend.extension=1.48;extend.curvature=0;extend.sweep=0;
+   require(coiling.command(extend),"uncoil command accepted");
+   for(int i=0;i<15;++i)require(coiling.step(),"uncoiling is finite");
+   const double mid=coiling.snapshot().animals[0].arms[0].uncoil_progress;
+   require(mid>.35&&mid<.65,"base-to-tip uncoil wave travels gradually");
+   for(int i=0;i<20;++i)require(coiling.step(),"uncoil reaches distal end");
+   const double extended=coiling.snapshot().animals[0].arms[0].uncoil_progress;
+   require(extended>.98,"whole arm uncoils after sufficient time");
+   extend.extension=.58;extend.curvature=3.6;
+   require(coiling.command(extend),"recoil command accepted");
+   for(int i=0;i<15;++i)require(coiling.step(),"recoiling stays finite");
+   const double returned=coiling.snapshot().animals[0].arms[0].uncoil_progress;
+   require(returned<extended-.35,"recoil front retreats when key released");
+   std::cout<<"UNCOIL_PASS start="<<start<<" mid="<<mid
+            <<" extended="<<extended<<" returned="<<returned<<"\n";
+  }
+  // Upright correction is a physical field, not a graphics transform.
+  // It must stay finite with collisions and gravity in the shared world.
+  {auto c=floor;c.upright_strength=.45;c.arm_motor_strength=2.2;
+   PhysicsWorld stable(c);
+   for(int i=0;i<240;++i)require(stable.step(),"upright field remains stable");
+   require(stable.snapshot().diagnostics.nonfinite_count==0,
+           "upright constraint has finite physical state");
+  }
+  {auto invalid=isolated;invalid.upright_strength=3.0;
+   bool rejected=false;try{PhysicsWorld no(invalid);}catch(const std::invalid_argument&){rejected=true;}
+   require(rejected,"unbounded stabilization torque must be rejected");
+  }
+  // Start genuinely rolled over, not merely upright and motionless.
+  // Both worlds have the same initial physical cage/arms. The unassisted
+  // one keeps its initial roll in zero gravity; the corrected one must
+  // develop a more upward top-to-bottom torso axis.
+  {WorldConfig passive=isolated;
+   passive.spawn_roll=2.65;passive.coil_curvature=0;
+   passive.upright_strength=0;passive.damping=.5;
+   WorldConfig assisted=passive;assisted.upright_strength=.45;
+   PhysicsWorld untreated(passive),restored(assisted);
+   auto cos_tilt=[](const RenderSnapshot& s)->double{
+    const auto& body=s.animals[0].body_nodes;
+    return (body[3].y-body[4].y)/distance(body[3],body[4]);
+   };
+   const double initial_tilt=cos_tilt(restored.snapshot());
+   double best_assisted=initial_tilt,best_passive=initial_tilt;
+   for(int i=0;i<240;++i){
+    require(untreated.step()&&restored.step(),"tilted-body recovery finite");
+    best_assisted=std::max(best_assisted,cos_tilt(restored.snapshot()));
+    best_passive=std::max(best_passive,cos_tilt(untreated.snapshot()));
+   }
+   std::cout<<"UPRIGHT_RECOVERY initial="<<initial_tilt
+            <<" best_assisted="<<best_assisted
+            <<" best_passive="<<best_passive<<"\n";
+   require(best_assisted>best_passive+.10,
+           "upright motor measurably corrects a rolled-over body");
+  }
+  // Low-resolution mantle tissue is dynamic geometry with 12 genuine
+  // colliding mass nodes, not a decorative rubber shader.
+  {auto c=floor;c.spawn_height=.12;c.tissue_viscosity=10.0;
+   PhysicsWorld tissue_world(c);
+   auto start=tissue_world.snapshot();
+   require(start.animals[0].body_nodes.size()==19,
+           "mantle includes seven cage and twelve physical shell nodes");
+   require(start.animals[0].arms[0].tissue_strain.size()==c.segments,
+           "each arm section maintains two transverse material strains");
+   double max_strain=0;
+   for(int i=0;i<180;++i){
+    require(tissue_world.step(),"viscoelastic mantle remains finite");
+    auto snapshot=tissue_world.snapshot();
+    for(auto strain:snapshot.animals[0].arms[0].tissue_strain){
+     require(std::isfinite(strain[0])&&std::isfinite(strain[1]),
+             "section strains always finite");
+     require(strain[0]>=.49&&strain[0]<=2.51 &&
+             strain[1]>=.39&&strain[1]<=1.51,
+             "section strain stays inside mechanical yield bounds");
+     require(std::abs(strain[0]*strain[1]-1.)<1e-9,
+             "elliptic tissue redistributes transverse area");
+     max_strain=std::max(max_strain,std::abs(strain[1]-1.));
+    }
+    for(const auto& node:snapshot.animals[0].body_nodes)
+     require(node.y>=-.001,"colliding mantle nodes do not cross ground");
+   }
+   require(max_strain>.10,
+           "floor contact must cause at least 10% local transverse deformation");
+   std::cout<<"TISSUE_PASS mantle_nodes="<<
+     tissue_world.snapshot().animals[0].body_nodes.size()<<
+     " max_transverse_strain="<<max_strain<<"\n";
+  }
+  {auto invalid=isolated;invalid.tissue_viscosity=-3;
+   bool rejected=false;try{PhysicsWorld no(invalid);}catch(const std::invalid_argument&){rejected=true;}
+   require(rejected,"negative tissue viscosity is not accepted");
+  }
+  // Viscoelastic damping must remove oscillatory energy without a
+  // global/kinematic position lock. Same impulse, same initial world;
+  // only relative rod viscosity differs. Both are closed systems.
+  {auto c=isolated;c.auto_suction=false;c.damping=0;
+   c.coil_curvature=0;c.upright_strength=0;
+   c.arm_internal_viscosity=0;
+   PhysicsWorld spring(c);
+   c.arm_internal_viscosity=14;
+   PhysicsWorld viscous(c);
+   DragCommand d;d.kind=DragCommand::Kind::ArmTip;d.index=0;d.arm=0;
+   d.target={0.3,1.35,1.6};d.max_force=8;d.stiffness=50;
+   require(spring.drag(d)&&viscous.drag(d),"matched impulse fixtures");
+   require(spring.step()&&viscous.step(),"matched impulse applied");
+   d.kind=DragCommand::Kind::None;
+   require(spring.drag(d)&&viscous.drag(d),"external impulse removed");
+   double spring_energy=0,viscous_energy=0;
+   for(int i=0;i<180;++i){
+    require(spring.step()&&viscous.step(),"viscosity fixtures finite");
+    if(i>60){
+     spring_energy+=spring.snapshot().diagnostics.kinetic_energy;
+     viscous_energy+=viscous.snapshot().diagnostics.kinetic_energy;
+    }
+   }
+   std::cout<<"VISCOUS_DAMPING spring_energy="<<spring_energy
+            <<" damped_energy="<<viscous_energy<<"\n";
+   require(viscous_energy<spring_energy,
+           "viscous arms must dissipate more energy than spring-only rods");
+  }
+  // Native world integration: a held load must evolve actual rod
+  // rest-shape memory rather than merely changing a render material.
+  {WorldConfig c=isolated;
+   c.coil_curvature=0;c.upright_strength=0;c.gravity={0,0,0};
+   c.auto_suction=false;c.creep_rate=1.2;c.creep_recovery=.04;
+   PhysicsWorld loaded(c);
+   DragCommand drag;drag.kind=DragCommand::Kind::ArmTip;
+   drag.index=0;drag.arm=0;drag.target={0,.75,2.0};
+   drag.stiffness=100;drag.max_force=35;
+   require(loaded.drag(drag),"constant-load creep drag accepted");
+   double max_creep=0,max_elastic=0;
+   for(int tick=0;tick<240;++tick){
+    require(loaded.step(),"native creep under sustained load stays finite");
+    const auto snapshot=loaded.snapshot();
+    const auto& arm=snapshot.animals[0].arms[0];
+    require(arm.creep_strain.size()==c.segments &&
+            arm.elastic_strain.size()==c.segments,
+            "creep state exposed for each rod segment");
+    for(unsigned j=0;j<c.segments;++j){
+     require(std::isfinite(arm.creep_strain[j])&&
+             std::isfinite(arm.elastic_strain[j]),"stress/creep state finite");
+     require(std::abs(arm.creep_strain[j])<=c.max_creep_strain+1e-10,
+             "material creep stays bounded");
+     max_creep=std::max(max_creep,std::abs(arm.creep_strain[j]));
+     max_elastic=std::max(max_elastic,std::abs(arm.elastic_strain[j]));
+    }
+   }
+   std::cout<<"NATIVE_CREEP max_memory="<<max_creep
+            <<" max_elastic="<<max_elastic<<"\n";
+   require(max_creep>1e-5,"sustained force must change physical rest-shape memory");
+  }
+  // Experimental 3D flesh is a real collision/volume simulation, and
+  // opt-in until coupled geometry passes all long stress fixtures.
+  {auto c=isolated;c.volumetric_arm_prototype=true;c.coil_curvature=0;
+   c.creep_rate=0;c.bend_creep_rate=0;c.upright_strength=0;
+   PhysicsWorld volumetric(c);
+   auto initial=volumetric.snapshot();
+   require(initial.animals[0].arms[0].volume_rings.size()==c.segments/2+1,
+           "3D arm prototype allocates four physical shell nodes per ring");
+   for(int tick=0;tick<120;++tick)
+    require(volumetric.step(),"3D volumetric arm remains finite at rest");
+   auto state=volumetric.snapshot();
+   require(state.animals[0].arms[0].volume_rings.size()==c.segments/2+1,
+           "3D ring positions survive simulation");
+   double displacement=0;
+   for(size_t j=0;j<state.animals[0].arms[0].volume_rings.size();++j)
+    for(int k=0;k<4;++k)
+     displacement=std::max(displacement,distance(initial.animals[0].arms[0].volume_rings[j][k],
+                                                state.animals[0].arms[0].volume_rings[j][k]));
+   std::cout<<"VOLUMETRIC_ARM_PROTOTYPE rings="<<state.animals[0].arms[0].volume_rings.size()
+            <<" rest_motion="<<displacement<<"\n";
   }
   std::cout<<"control v1 tests passed\n";
   return 0;

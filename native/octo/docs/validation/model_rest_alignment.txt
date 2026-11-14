@@ -1,0 +1,32 @@
+suckers_art_0 arm=7 vertices=3136 axial_vertices=2373 surface_error_p50_m=0.0547 p95_m=0.0741 max_m=0.0795 radial_p50_m=0.0698
+rest_bone_art_0 length_m=1.0515 suckers_radial_p50_m=0.0172 p95_m=0.0446 outside_physics_p95_m=0.0117
+rest_skin_art_0 vertices=975 radial_p50_m=0.0225 radial_p95_m=0.0440 surface_error_p95_m=0.0091
+suckers_art_1 arm=6 vertices=3136 axial_vertices=2408 surface_error_p50_m=0.0191 p95_m=0.0303 max_m=0.0383 radial_p50_m=0.0389
+rest_bone_art_1 length_m=1.0515 suckers_radial_p50_m=0.0172 p95_m=0.0446 outside_physics_p95_m=0.0117
+rest_skin_art_1 vertices=975 radial_p50_m=0.0225 radial_p95_m=0.0440 surface_error_p95_m=0.0091
+suckers_art_2 arm=5 vertices=3136 axial_vertices=2454 surface_error_p50_m=0.0748 p95_m=0.0912 max_m=0.0968 radial_p50_m=0.0883
+rest_bone_art_2 length_m=1.0515 suckers_radial_p50_m=0.0172 p95_m=0.0446 outside_physics_p95_m=0.0117
+rest_skin_art_2 vertices=975 radial_p50_m=0.0225 radial_p95_m=0.0440 surface_error_p95_m=0.0091
+suckers_art_3 arm=4 vertices=3136 axial_vertices=2548 surface_error_p50_m=0.0307 p95_m=0.0456 max_m=0.0513 radial_p50_m=0.0465
+rest_bone_art_3 length_m=1.0515 suckers_radial_p50_m=0.0172 p95_m=0.0446 outside_physics_p95_m=0.0117
+rest_skin_art_3 vertices=975 radial_p50_m=0.0225 radial_p95_m=0.0440 surface_error_p95_m=0.0091
+suckers_art_4 arm=3 vertices=3136 axial_vertices=2548 surface_error_p50_m=0.0307 p95_m=0.0456 max_m=0.0513 radial_p50_m=0.0465
+rest_bone_art_4 length_m=1.0515 suckers_radial_p50_m=0.0172 p95_m=0.0446 outside_physics_p95_m=0.0117
+rest_skin_art_4 vertices=975 radial_p50_m=0.0225 radial_p95_m=0.0440 surface_error_p95_m=0.0091
+suckers_art_5 arm=2 vertices=3136 axial_vertices=2454 surface_error_p50_m=0.0748 p95_m=0.0912 max_m=0.0968 radial_p50_m=0.0883
+rest_bone_art_5 length_m=1.0515 suckers_radial_p50_m=0.0172 p95_m=0.0446 outside_physics_p95_m=0.0117
+rest_skin_art_5 vertices=975 radial_p50_m=0.0225 radial_p95_m=0.0440 surface_error_p95_m=0.0091
+suckers_art_6 arm=1 vertices=3136 axial_vertices=2408 surface_error_p50_m=0.0191 p95_m=0.0303 max_m=0.0383 radial_p50_m=0.0389
+rest_bone_art_6 length_m=1.0515 suckers_radial_p50_m=0.0172 p95_m=0.0446 outside_physics_p95_m=0.0117
+rest_skin_art_6 vertices=975 radial_p50_m=0.0225 radial_p95_m=0.0440 surface_error_p95_m=0.0091
+suckers_art_7 arm=0 vertices=3136 axial_vertices=2373 surface_error_p50_m=0.0547 p95_m=0.0741 max_m=0.0795 radial_p50_m=0.0698
+rest_bone_art_7 length_m=1.0515 suckers_radial_p50_m=0.0172 p95_m=0.0446 outside_physics_p95_m=0.0117
+rest_skin_art_7 vertices=975 radial_p50_m=0.0225 radial_p95_m=0.0440 surface_error_p95_m=0.0091
+skin arm=0 vertices=921 axial_vertices=766 surface_error_p50_m=0.0397 p95_m=0.0755 max_m=0.0802 radial_p50_m=0.0614
+skin arm=1 vertices=902 axial_vertices=760 surface_error_p50_m=0.0158 p95_m=0.0320 max_m=0.0368 radial_p50_m=0.0341
+skin arm=2 vertices=883 axial_vertices=767 surface_error_p50_m=0.0632 p95_m=0.0931 max_m=0.0977 radial_p50_m=0.0821
+skin arm=3 vertices=1378 axial_vertices=1275 surface_error_p50_m=0.0419 p95_m=0.2146 max_m=0.2555 radial_p50_m=0.0571
+skin arm=4 vertices=1455 axial_vertices=1352 surface_error_p50_m=0.0431 p95_m=0.2145 max_m=0.2541 radial_p50_m=0.0586
+skin arm=5 vertices=883 axial_vertices=767 surface_error_p50_m=0.0656 p95_m=0.0948 max_m=0.0977 radial_p50_m=0.0839
+skin arm=6 vertices=903 axial_vertices=761 surface_error_p50_m=0.0152 p95_m=0.0319 max_m=0.0368 radial_p50_m=0.0337
+skin arm=7 vertices=921 axial_vertices=766 surface_error_p50_m=0.0426 p95_m=0.0772 max_m=0.0802 radial_p50_m=0.0634

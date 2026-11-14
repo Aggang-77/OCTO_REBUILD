@@ -8,7 +8,7 @@ try {
     & $Zig c++ -std=c++20 -O2 -I native/octo/include native/octo/core/world.cpp native/octo/bridge/game_server.cpp -o native/octo/octo_game_server.exe
     if ($LASTEXITCODE -ne 0) { throw 'Octopus engine build failed' }
     if ($Tests) {
-        foreach ($testName in @('physics_tests','controls_v1_tests','scene_coupling_tests')) {
+        foreach ($testName in @('physics_tests','controls_v1_tests','viscoelastic_tests','volumetric_arm_tests','scene_coupling_tests','integration_tests')) {
             & $Zig c++ -std=c++20 -O2 -I native/octo/include native/octo/core/world.cpp "native/octo/tests/$testName.cpp" -o ".tools/$testName.exe"
             if ($LASTEXITCODE -ne 0) { throw "Build failed: $testName" }
             & ".\.tools\$testName.exe"

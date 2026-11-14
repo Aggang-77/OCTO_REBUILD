@@ -4,3 +4,7 @@
 /source_assets/
 /tools/*inspection.json
 /android/
+
+# Generated Python caches
+__pycache__/
+*.pyc

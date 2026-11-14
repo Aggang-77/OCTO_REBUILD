@@ -19,8 +19,17 @@ static void snapshot(const RenderSnapshot& s){
 // Full physical state remains in PhysicsWorld::snapshot for diagnostics/tests.
 static void render_snapshot(const RenderSnapshot& s){
  std::cout<<"{\"tick\":"<<s.tick<<",\"time\":"<<s.time<<",\"animals\":[";
- for(size_t i=0;i<s.animals.size();++i){if(i)std::cout<<',';const auto& a=s.animals[i];std::cout<<"{\"center\":";v(a.center);std::cout<<",\"orientation\":";q(a.orientation);std::cout<<",\"arms\":[";
-  for(size_t k=0;k<8;++k){if(k)std::cout<<',';std::cout<<"{\"nodes\":[";const auto& nodes=a.arms[k].nodes;for(size_t j=0;j<nodes.size();++j){if(j)std::cout<<',';v(nodes[j]);}std::cout<<"],\"roll\":[";const auto& roll=a.arms[k].material_roll;for(size_t j=0;j<roll.size();++j){if(j)std::cout<<',';std::cout<<roll[j];}std::cout<<"],\"radii\":[";const auto& radii=a.arms[k].radii;for(size_t j=0;j<radii.size();++j){if(j)std::cout<<',';std::cout<<'['<<radii[j][0]<<','<<radii[j][1]<<']';}std::cout<<"],\"attached\":[";const auto& held=a.arms[k].attached;for(size_t j=0;j<held.size();++j){if(j)std::cout<<',';std::cout<<(held[j]?"true":"false");}std::cout<<"]}";}
+ for(size_t i=0;i<s.animals.size();++i){if(i)std::cout<<',';const auto& a=s.animals[i];std::cout<<"{\"center\":";v(a.center);std::cout<<",\"orientation\":";q(a.orientation);
+  std::cout<<",\"body_nodes\":[";for(size_t j=0;j<a.body_nodes.size();++j){if(j)std::cout<<',';v(a.body_nodes[j]);}
+  std::cout<<"],\"arms\":[";
+  for(size_t k=0;k<8;++k){if(k)std::cout<<',';std::cout<<"{\"uncoil\":"<<a.arms[k].uncoil_progress<<",\"nodes\":[";const auto& nodes=a.arms[k].nodes;for(size_t j=0;j<nodes.size();++j){if(j)std::cout<<',';v(nodes[j]);}std::cout<<"],\"roll\":[";const auto& roll=a.arms[k].material_roll;for(size_t j=0;j<roll.size();++j){if(j)std::cout<<',';std::cout<<roll[j];}std::cout<<"],\"radii\":[";const auto& radii=a.arms[k].radii;for(size_t j=0;j<radii.size();++j){if(j)std::cout<<',';std::cout<<'['<<radii[j][0]<<','<<radii[j][1]<<']';}std::cout<<"],\"tissue\":[";const auto& strain=a.arms[k].tissue_strain;for(size_t j=0;j<strain.size();++j){if(j)std::cout<<',';std::cout<<'['<<strain[j][0]<<','<<strain[j][1]<<']';}
+   std::cout<<"],\"creep\":[";const auto& creep=a.arms[k].creep_strain;for(size_t j=0;j<creep.size();++j){if(j)std::cout<<',';std::cout<<creep[j];}
+   std::cout<<"],\"elastic_strain\":[";const auto& elastic=a.arms[k].elastic_strain;for(size_t j=0;j<elastic.size();++j){if(j)std::cout<<',';std::cout<<elastic[j];}
+   std::cout<<"],\"volume_rings\":[";const auto& rings=a.arms[k].volume_rings;
+   for(size_t j=0;j<rings.size();++j){if(j)std::cout<<',';std::cout<<'[';
+    for(int vtx=0;vtx<4;++vtx){if(vtx)std::cout<<',';v(rings[j][vtx]);}
+    std::cout<<']';}
+   std::cout<<"],\"attached\":[";const auto& held=a.arms[k].attached;for(size_t j=0;j<held.size();++j){if(j)std::cout<<',';std::cout<<(held[j]?"true":"false");}std::cout<<"]}";}
   std::cout<<"]}";}
  std::cout<<"],\"rigids\":[";
  for(size_t i=0;i<s.rigids.size();++i){if(i)std::cout<<',';const auto& r=s.rigids[i];std::cout<<"{\"center\":";v(r.center);std::cout<<",\"orientation\":";q(r.orientation);std::cout<<",\"half_extents\":";v(r.half_extents);std::cout<<'}';}
@@ -29,12 +38,12 @@ static void render_snapshot(const RenderSnapshot& s){
 int main(){std::cout<<std::setprecision(6);WorldConfig cfg;PhysicsWorld world(cfg);std::string line;unsigned long long last=0;
  while(std::getline(std::cin,line)){if(line.size()>65536){std::cout<<"{\"version\":1,\"id\":0,\"ok\":false,\"error\":\"request_too_large\"}"<<std::endl;continue;}std::istringstream in(line);int version=0;unsigned long long id=0;std::string op;in>>version>>id>>op;std::string error;
  if(!in||version!=1)error="bad_header";else if(id<=last)error="stale_id";else {last=id;if(op=="quit"){std::cout<<"{\"version\":1,\"id\":"<<id<<",\"ok\":true}"<<std::endl;break;}else if(op=="reset"){
- unsigned n=0;double spacing=2.2,suction=0;in>>n;bool parsed=bool(in);
+ unsigned n=0;double spacing=2.2,suction=0,volume_arm=0;in>>n;bool parsed=bool(in);
  std::vector<std::string> tokens;std::string token;while(in>>token)tokens.push_back(token);
  auto number=[&](size_t idx,double& v){if(idx>=tokens.size())return true;std::istringstream part(tokens[idx]);part>>v;return bool(part)&&part.eof();};
- parsed=parsed&&tokens.size()<=2&&number(0,spacing)&&number(1,suction);
- if(!parsed||n<1||n>10||!std::isfinite(spacing)||spacing<.5||spacing>4||!(suction==0||suction==1))error="bad_config";
- else{cfg.animals=n;cfg.spacing=spacing;cfg.auto_suction=suction==1;world.reset(cfg);}
+ parsed=parsed&&tokens.size()<=3&&number(0,spacing)&&number(1,suction)&&number(2,volume_arm);
+ if(!parsed||n<1||n>10||!std::isfinite(spacing)||spacing<.5||spacing>4||!(suction==0||suction==1)||!(volume_arm==0||volume_arm==1))error="bad_config";
+ else{cfg.animals=n;cfg.spacing=spacing;cfg.auto_suction=suction==1;cfg.volumetric_arm_prototype=volume_arm==1;world.reset(cfg);}
 }else if(op=="step"||op=="step2"){const bool v1=op=="step2";unsigned n=0;in>>n;std::vector<MuscleCommand> commands; if(!in||n!=cfg.animals*8)error="bad_count";else{for(unsigned i=0;i<n;++i){MuscleCommand c;int attach=0;in>>c.animal>>c.arm>>c.activation>>c.curvature>>c.extension>>c.twist>>c.stiffness>>attach;if(v1)in>>c.sweep;c.attach=attach!=0;if(!in||c.animal!=i/8||c.arm!=i%8||!std::isfinite(c.activation)||!std::isfinite(c.curvature)||!std::isfinite(c.extension)||!std::isfinite(c.twist)||!std::isfinite(c.stiffness)||!std::isfinite(c.sweep)||(attach!=0&&attach!=1)){error="bad_command";break;}commands.push_back(c);}DragCommand d;int kind=0;in>>kind>>d.index>>d.arm>>d.target.x>>d.target.y>>d.target.z>>d.stiffness>>d.max_force;int release=0;if(v1)in>>release;
 if(!in||kind<0||kind>3||!std::isfinite(d.target.x)||!std::isfinite(d.target.y)||!std::isfinite(d.target.z)||!std::isfinite(d.stiffness)||!std::isfinite(d.max_force)||(v1&&release!=0&&release!=1))error="bad_drag";
 std::string extra;if(in>>extra)error="extra_data";

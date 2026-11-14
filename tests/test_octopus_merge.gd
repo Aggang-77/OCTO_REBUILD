@@ -43,14 +43,18 @@ func _run() -> void:
 		return
 	check(game.arena.props.size() == 48, "Original map and 48 physical props coexist with the octopus")
 	check(o.views[0].skel.get_bone_count() == 193 and o.threats.size() == 8, "Original octopus skeleton and eight hunter threat adapters are connected")
-	check(o.current.body_nodes.size() == 7, "Actual native torso sites reach the Godot contact bridge")
+	check(o.current.body_nodes.size() == 19, "Latest native torso cage and mantle shell reach the Godot contact bridge")
+	check(o.current.animals[0].arms[0].tissue.size() == 16 and o.current.animals[0].arms[0].creep.size() == 16,
+		"Latest viscous tissue and creep state reach the integrated renderer")
+	check(o.views[0].torso_root >= 0, "Original GameReady root bone is connected to the new physical mantle shell")
 	check(target.capture_seconds_override == 10.0 and target.objective.continuous_capture, "Merged scene selects continuous ten-second capture")
 	var before: Vector3 = o.vec(o.current.animals[0].arms[0].nodes[-1]) - o.vec(o.current.animals[0].center)
 	key(KEY_J, true)
 	await process_frame
-	check(o.step_command().contains("0 0 1.000000 0.000000 1.280000"), "Physical J key reaches right-front native muscle command")
+	check(o.step_command().contains("0 0 1.000000 0.000000 1.480000"), "Physical J key reaches latest right-front native muscle command")
 	var tick := int(o.current.tick)
 	check(await wait_native(tick + 65), "Native simulation keeps advancing under actual key input")
+	check(float(o.current.animals[0].arms[0].uncoil) >= 0.99, "Held J progressively uncoils the actual native arm")
 	var after: Vector3 = o.vec(o.current.animals[0].arms[0].nodes[-1]) - o.vec(o.current.animals[0].center)
 	key(KEY_J, false)
 	check(before.distance_to(after) > 0.01, "Held J produces measurable movement of the actual native arm")
@@ -58,7 +62,7 @@ func _run() -> void:
 		key(o.EXTEND_KEYS[arm], true)
 		key(o.STROKE_KEYS[arm], true)
 		await process_frame
-		check(o.step_command().contains("0 %d 1.000000 0.000000 1.280000 0 0.15 0 1.000000" % arm), "Arm %d preserves both independent original control channels" % arm)
+		check(o.step_command().contains("0 %d 1.000000 0.000000 1.480000 0 0.02 0 1.000000" % arm), "Arm %d preserves both independent latest control channels" % arm)
 		key(o.EXTEND_KEYS[arm], false)
 		key(o.STROKE_KEYS[arm], false)
 	# Exercise the real contact gate against a separated hitbox: no distance cheat.

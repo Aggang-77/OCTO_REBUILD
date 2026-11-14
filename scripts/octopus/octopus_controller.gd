@@ -101,8 +101,8 @@ func step_command() -> String:
 		var enabled := threats[arm].active
 		var reach := enabled and Input.is_physical_key_pressed(EXTEND_KEYS[arm])
 		var paddle := enabled and Input.is_physical_key_pressed(STROKE_KEYS[arm])
-		out += " 0 %d %f %f %f 0 0.15 0 %f" % [arm, 1.0 if enabled else 0.0,
-			0.0 if reach else 3.6, 1.28 if reach else 0.70, (1.0 if paddle else -1.0) if enabled else 0.0]
+		out += " 0 %d %f %f %f 0 0.02 0 %f" % [arm, 1.0 if enabled else 0.0,
+			0.0 if reach else 3.6, 1.48 if reach else 0.58, (1.0 if paddle else -1.0) if enabled else 0.0]
 	out += " %d 0 %d %f %f %f 30 20 %d" % [drag_kind if dragging else 0,
 		drag_index, drag_target.x, drag_target.y, drag_target.z,
 		1 if Input.is_physical_key_pressed(KEY_SPACE) else 0]
@@ -221,7 +221,7 @@ func _physics_process(delta: float) -> void:
 	for arm in range(-1, 8):
 		var nodes: Array = current.body_nodes if arm < 0 else current.animals[0].arms[arm].nodes
 		for site in range(nodes.size()):
-			var radius := 0.065 if arm < 0 else 0.036 * (1.0 - 0.8 * float(site) / 16.0)
+			var radius := (0.065 if site < 7 else 0.033) if arm < 0 else 0.036 * (1.0 - 0.8 * float(site) / 16.0)
 			contact_shape.radius = radius + 0.025
 			var query := PhysicsShapeQueryParameters3D.new()
 			query.shape = contact_shape

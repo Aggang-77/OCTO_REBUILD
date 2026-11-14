@@ -41,6 +41,13 @@ def main() -> None:
         moving = request(6, step2(0))
         assert moving["ok"] and moving["snapshot"]["tick"] == 1
         assert len(moving["snapshot"]["animals"][0]["arms"][0]["attached"]) == 16
+        assert len(moving["snapshot"]["animals"][0]["arms"][0]["creep"]) == 16
+        assert len(moving["snapshot"]["animals"][0]["arms"][0]["elastic_strain"]) == 16
+        assert len(moving["snapshot"]["animals"][0]["body_nodes"]) == 19, "physical mantle shell absent from bridge"
+        arm0 = moving["snapshot"]["animals"][0]["arms"][0]
+        assert len(arm0["tissue"]) == 16, "sectional tissue strain absent from bridge"
+        assert all(len(v) == 2 and min(v) > 0 for v in arm0["tissue"])
+        assert all(abs(v[0]*v[1]-1.0) < 1e-4 for v in arm0["tissue"]), "volume-conserving section anisotropy"
         releasing = request(7, step2(1))
         assert releasing["ok"] and releasing["snapshot"]["tick"] == 2
         assert all(not any(a["attached"]) for a in releasing["snapshot"]["animals"][0]["arms"])
@@ -48,7 +55,14 @@ def main() -> None:
         assert not bad_release["ok"] and bad_release["error"] == "bad_drag"
         invalid_auto = request(9, "reset 2 2.2 3")
         assert not invalid_auto["ok"] and invalid_auto["error"] == "bad_config"
-        assert request(10, "quit")["ok"]
+        enabled_volume = request(10, "reset 1 2.2 1 1")
+        assert enabled_volume["ok"]
+        volume_arms = enabled_volume["snapshot"]["animals"][0]["arms"]
+        assert len(volume_arms[0]["volume_rings"]) == 9
+        assert all(len(ring) == 4 for ring in volume_arms[0]["volume_rings"])
+        assert len(volume_arms[1]["volume_rings"]) == 0
+        assert request(11, "reset 1 2.2 1 2")["error"] == "bad_config"
+        assert request(12, "quit")["ok"]
         proc.wait(timeout=5)
         assert proc.returncode == 0
     print("bridge protocol checks passed")

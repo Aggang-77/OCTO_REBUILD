@@ -14,6 +14,16 @@ int main(){
  bool finite_steps=true;for(int i=0;i<180;++i)finite_steps=world.step()&&finite_steps;
  check(finite_steps,"Terrain simulation stays finite for 180 steps");
  check(world.snapshot().animals[0].center.y>.4,"Octopus rests above map floor rather than y=0");
+ WorldConfig gripping_cfg=cfg;gripping_cfg.auto_suction=true;gripping_cfg.spawn_height=1.15;
+ PhysicsWorld gripping(gripping_cfg);gripping.terrain(2,-20,-20,40,{.4,.4,.4,.4});
+ MuscleCommand reach;reach.arm=0;reach.activation=1;reach.extension=1.48;reach.stiffness=.02;
+ gripping.command(reach);for(int i=0;i<180;++i)gripping.step();
+ const auto grip_state=gripping.snapshot();bool terrain_grip=false;
+ for(bool held:grip_state.animals[0].arms[0].attached)terrain_grip=terrain_grip||held;
+ check(terrain_grip,"Latest uncoiling arm reaches and grips raised map terrain");
+ check(grip_state.animals[0].arms[0].uncoil_progress>.99,"Latest progressive uncoiling remains active with terrain coupling");
+ check(grip_state.animals[0].body_nodes.size()==19,"Latest physical mantle shell is retained");
+ check(world.scene_inputs({{-1,18,{.1,0,0}}},{}),"Physical mantle-shell sites accept external character reactions");
  check(!world.scene_inputs({{9,0,{1,0,0}}},{}),"Reject invalid solver site");
  check(!world.scene_inputs({},{{0,0,{},{0,2,0},1}}),"Reject non-unit contact normal");
  cfg.floor=false;cfg.gravity={};cfg.damping=0;

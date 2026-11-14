@@ -1,5 +1,40 @@
 # OCTO_REBUILD import
 
+## Local main merge (2026-11-15)
+
+The integrated project now includes `songhh06/OCTO_REBUILD` main at
+`5199960`, merged beneath `native/octo` on `local/merge-octo-main`.
+Git records the previously imported `7a93c0e` baseline and the newer upstream
+history; the root Godot game, characters, map and hidden fight mode are retained.
+
+The latest stable motor/suction multipliers, progressive uncoiling,
+surface-following, upright recovery, 19-node mantle cage/shell, viscous tissue
+and bounded creep are used by the integrated game. Input now matches upstream:
+extension 1.48/0.58 and stiffness 0.02. The render client also retains upstream's
+texture-preserving wet PBR finish and physical mantle-root skin deformation.
+
+Terrain-seeking, following and suction anchors use the actual heightfield, and
+all 19 body sites support the existing scene-force/contact adapter. The separate
+tetrahedral-arm prototype remains an explicit native opt-in as it is upstream;
+the normal integrated launcher uses the stable default physics configuration.
+
+The two-solver coupling limitations described below still apply.
+
+Validation on Windows with Zig 0.13.0 and Godot 4.7.2:
+
+- Native physics, controls-v1, viscoelastic, volumetric-arm, scene-coupling and
+  integration suites: PASS. The coupling fixture verifies real suction on a
+  raised heightfield and reactions applied to all 19 body sites.
+- Integrated input/renderer/objective/reset suite: 40/40 PASS.
+- Real-contact capture, hidden-fight interruption and ten-second victory:
+  9/9 PASS, including a rendered victory screenshot.
+- Hidden-fight entry, keyboard combat, suspension and return: 23/23 PASS.
+
+These results verify the tested fixtures; they are not a full performance or
+biological-fidelity acceptance claim.
+
+## Original import
+
 Imported from the local `GitHub/OCTO_REBUILD` checkout at
 `7a93c0e886cc7625f44c778e98c5abaee31ff129` on 2026-11-15.
 The original checkout is preserved. `core`, `include`, `bridge/server.cpp` and

@@ -1,0 +1,98 @@
+name: Controls v1 checks
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure and build native simulator
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
+      - name: CTest native physics, bridge and control rules
+        run: ctest --test-dir build --output-on-failure
+      - name: Benchmark CPU physics and inspect viscoelastic tissue metrics
+        run: |
+          ./build/octo_controls_v1_tests
+          ./build/octo_volumetric_arm_tests
+          ./build/octo_benchmark 2 120 volumetric
+          ./build/octo_benchmark 2 120
+          ./build/octo_benchmark 10 120
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure MSVC
+        run: cmake -S . -B build
+      - name: Build Release
+        run: cmake --build build --config Release --parallel 2
+      - name: CTest on Windows
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Reproduce stale generator cache and Korean Windows path in PowerShell 5.1
+        shell: pwsh
+        run: |
+          $testRoot = Join-Path $env:RUNNER_TEMP '바탕화면 테스트/OCTO_REBUILD'
+          New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE '*') -Destination $testRoot -Recurse -Force
+          $oldBuild = Join-Path $testRoot 'build/release-final'
+          # First generate a Visual Studio cache at precisely the path
+          # where the user had an existing build. Our script must replace
+          # this cache with Ninja without deleting source or assets.
+          & cmake -S $testRoot -B $oldBuild
+          if ($LASTEXITCODE -ne 0) { throw 'Stale Visual Studio cache fixture failed' }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $testRoot 'tools/build.ps1') -NoTests
+          if ($LASTEXITCODE -ne 0) { throw 'PowerShell 5.1 stale-cache rebuild failed' }
+          & (Join-Path $testRoot 'tools/check-bridge.ps1') -Server (Join-Path $oldBuild 'octo_server.exe')
+      - name: Verify executable supports live controls-v1 step2 protocol
+        shell: pwsh
+        run: |
+          $binary = Get-ChildItem -Path build -Recurse -Filter octo_server.exe |
+            Select-Object -First 1
+          if ($null -eq $binary) { throw 'No octo_server.exe was built' }
+          # check-bridge.ps1 is a PowerShell script: it throws on
+          # failure and does not set $LASTEXITCODE like a native CLI.
+          & ./tools/check-bridge.ps1 -Server $binary.FullName
+
+  godot-input:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Godot 4.6.2
+        run: |
+          curl --fail --location --retry 3 --silent --show-error \
+            -o "$RUNNER_TEMP/godot.zip" \
+            https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_linux.x86_64.zip
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP"
+          chmod +x "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64"
+      - name: Import project and compile GDScript
+        run: |
+          "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
+            --headless --editor --path game --import --quit
+      - name: Run real-window virtual display for input simulation
+        run: |
+          if ! command -v xvfb-run >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends xvfb
+          fi
+      - name: Verify exact 16-key Godot input serialization
+        run: |
+          xvfb-run -a -s '-screen 0 1280x720x24' \
+            env LIBGL_ALWAYS_SOFTWARE=1 timeout 40s \
+            "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
+            --rendering-driver opengl3 --audio-driver Dummy --path game \
+            --script res://tests/control_v1_input.gd -- --keymap-test \
+            2>&1 | tee "$RUNNER_TEMP/controls.log"
+          grep -q "CONTROL_V1_KEYS_PASS" "$RUNNER_TEMP/controls.log"
+          grep -q "GRIP_HUD_COMPAT_PASS" "$RUNNER_TEMP/controls.log"
+          if grep -E -q "SCRIPT ERROR|Parse Error|Invalid call" "$RUNNER_TEMP/controls.log"; then exit 1; fi

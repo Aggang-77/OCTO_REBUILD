@@ -1,0 +1,2 @@
+animals,scenario,segments,substeps,iterations,warmup,measured_ticks,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,snapshot_mean_ms,constraints_mean_ms,collision_mean_ms,max_penetration_m,max_volume_error,max_contacts,max_pairs,attachment_samples,max_energy_J,nonfinite
+10,spread_twist_active,16,4,8,120,600,4.59053767,4.5767,5.0362,5.1857,5.4058,0.256853167,2.22407367,2.17665083,0.0115927661,0.00429433438,7982,223826,15211,49.5770862,0

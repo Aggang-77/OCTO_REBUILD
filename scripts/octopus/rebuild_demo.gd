@@ -93,6 +93,10 @@ func _ready() -> void:
     for i in animals:
         var scene := packed.instantiate() as Node3D
         add_child(scene)
+        # Preserve the imported GLB texture/normal maps. Only alter
+        # inexpensive built-in PBR parameters; no jelly vertex shader.
+        var coated_surfaces := apply_slime_finish(scene)
+        print("SLIME_FINISH animal=%d coated_surfaces=%d shader=none" % [i,coated_surfaces])
         scene.scale = Vector3.ONE * MODEL_SCALE
         scene.rotation.y = MODEL_YAW
         var skels := scene.find_children("*", "Skeleton3D", true, false)
@@ -110,7 +114,25 @@ func _ready() -> void:
                 rests.append(skel.get_bone_global_rest(id))
             bone_ids.append(ids)
             bone_rests.append(rests)
-        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids, "bone_rests": bone_rests})
+        # Optional imported independent mantle mesh: preserve its original
+        # material and vertex data, deform only its object transform from
+        # the low-resolution physical shell. Never deform a combined arm mesh.
+        var mantles: Array = []
+        for mesh_node in scene.find_children("*", "MeshInstance3D", true, false):
+            var mesh_part := mesh_node as MeshInstance3D
+            var lower := String(mesh_part.name).to_lower()
+            if lower.contains("mantle") or lower.contains("head") or lower.contains("hood"):
+                mantles.append({"node": mesh_part, "rest": mesh_part.transform})
+        # GameReady has 193 bones (192 arm segments + one shared torso
+        # root). Its body can therefore be deformed even when every part
+        # of the GLB is one combined skin surface: root-weighted vertices
+        # follow this bone, while arm bones are re-targeted below.
+        var torso_root: int = skel.get_bone_parent(bone_ids[0][0])
+        var torso_rest := skel.get_bone_global_rest(torso_root) if torso_root >= 0 else Transform3D.IDENTITY
+        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids,
+            "bone_rests": bone_rests, "mantles": mantles,
+            "torso_root": torso_root, "torso_rest": torso_rest})
+        print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d torso_root=%d" % [i,mantles.size(),torso_root])
     print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
     var server := OS.get_environment("OCTO_SERVER")
     if server.is_empty(): fail("Set OCTO_SERVER to the octo_server executable"); return
@@ -124,7 +146,11 @@ func _ready() -> void:
     send(reset_command())
 
 func reset_command() -> String:
-    return "reset %d %f 1" % [animals,1.0 if dense_scene else 2.2]
+    var command := "reset %d %f 1" % [animals,1.0 if dense_scene else 2.2]
+    if OS.get_environment("OCTO_VOLUME_ARM") == "1":
+        # Explicit experimental toggle, never activated in normal demo.
+        command += " 1"
+    return command
 
 func read_pipe() -> void:
     # Drain the pipe independently of render frames. Only complete lines cross
@@ -178,6 +204,26 @@ func read_pipe() -> void:
                 inbox_lock.unlock()
             newline = pending_bytes.find(10)
 
+func apply_slime_finish(scene: Node3D) -> int:
+    var applied := 0
+    for node in scene.find_children("*", "MeshInstance3D", true, false):
+        var instance := node as MeshInstance3D
+        if instance.mesh == null:
+            continue
+        for surface in range(instance.mesh.get_surface_count()):
+            var original := instance.get_active_material(surface)
+            if original is StandardMaterial3D:
+                # Duplicating avoids global/shared material mutations;
+                # imported albedo/normal/roughness textures stay bound.
+                var wet := original.duplicate() as StandardMaterial3D
+                wet.roughness = 0.20
+                wet.clearcoat_enabled = true
+                wet.clearcoat = 0.68
+                wet.clearcoat_roughness = 0.10
+                instance.set_surface_override_material(surface, wet)
+                applied += 1
+    return applied
+
 func make_stage() -> void:
     var env := WorldEnvironment.new(); var e := Environment.new()
     e.background_mode = Environment.BG_COLOR; e.background_color = Color("101e2b")
@@ -230,7 +276,13 @@ func poll() -> void:
         pending = request_id > last_response_id
         inbox_lock.unlock()
         rpc_ms = line_rpc_ms
-        if not parsed.get("ok", false): fail("Bridge: " + str(parsed.get("error", "unknown"))); return
+        if not parsed.get("ok", false):
+            var bridge_error := str(parsed.get("error", "unknown"))
+            if bridge_error == "bad_operation":
+                fail("C++ server cannot handle controls-v1 'step2'. Close the game, run tools/build.ps1 and relaunch PLAY_DEMO.cmd. Server: " + OS.get_environment("OCTO_SERVER"))
+            else:
+                fail("Bridge: " + bridge_error)
+            return
         if parsed.has("snapshot"):
             current = parsed.snapshot
             if current.tick == 0 and reset_issued: reset_observed = true
@@ -252,6 +304,30 @@ func point(nodes: Array, u: float) -> Vector3:
     var f := u * float(nodes.size()-1); var i := mini(int(f),nodes.size()-2)
     return vec(nodes[i]).lerp(vec(nodes[i+1]), f-i)
 
+func mantle_scale_from_shell(nodes: Array, center: Vector3, inverse: Quaternion) -> Vector3:
+    # Only snapshot data: 7 internal cage nodes + 12 collision shell nodes.
+    if nodes.size() < 19:
+        return Vector3.ONE
+    var minimum := Vector3(INF, INF, INF)
+    var maximum := Vector3(-INF, -INF, -INF)
+    for n in range(7, 19):
+        var local_point := inverse * (vec(nodes[n]) - center)
+        minimum = minimum.min(local_point)
+        maximum = maximum.max(local_point)
+    var span := maximum - minimum
+    return Vector3(
+        clampf(span.x / 0.44, 0.55, 1.55),
+        clampf(span.y / 0.25, 0.50, 1.65),
+        clampf(span.z / 0.38, 0.55, 1.55))
+
+func apply_torso_root_skin(skel: Skeleton3D, root_id: int, rest: Transform3D, size: Vector3) -> void:
+    if root_id < 0:
+        return
+    var parent_id := skel.get_bone_parent(root_id)
+    var parent_rest := skel.get_bone_global_rest(parent_id) if parent_id >= 0 else Transform3D.IDENTITY
+    var global_target := Transform3D(rest.basis * Basis.from_scale(size), rest.origin)
+    skel.set_bone_pose(root_id, parent_rest.affine_inverse() * global_target)
+
 func update_scene() -> void:
     for i in current.animals.size():
         var a: Dictionary = current.animals[i]; var view: Dictionary = views[i]
@@ -260,12 +336,33 @@ func update_scene() -> void:
         scene.position = center - orientation * Quaternion(Vector3.UP,MODEL_YAW) * (Vector3(0,.15,.1)*MODEL_SCALE)
         scene.quaternion = orientation * Quaternion(Vector3.UP,MODEL_YAW)
         var inverse := Quaternion(Vector3.UP,-MODEL_YAW) * orientation.inverse()
+        # A physical shell of 12 particles controls the gross mantle
+        # flattening/stretching if the GLB exposes a separate mantle mesh.
+        # GPU keeps its original vertices; no per-frame mesh allocations.
+        var tissue_nodes: Array = a.get("body_nodes", [])
+        if tissue_nodes.size() >= 19:
+            var shape_scale := mantle_scale_from_shell(tissue_nodes, center, inverse)
+            var root_id: int = view.torso_root
+            if root_id >= 0:
+                apply_torso_root_skin(skel, root_id, view.torso_rest, shape_scale)
+            if root_id < 0:
+                for mantle_entry in view.mantles:
+                    var mantle: MeshInstance3D = mantle_entry.node
+                    var rest_transform: Transform3D = mantle_entry.rest
+                    mantle.transform = Transform3D(
+                        rest_transform.basis * Basis.from_scale(shape_scale),
+                        rest_transform.origin)
         for arm in 8:
             var nodes: Array = a.arms[arm].nodes
             var material_roll: Array = a.arms[arm].roll
             var radii: Array = a.arms[arm].radii
             if nodes.size() < 2: continue
             var globals := {}
+            var torso_root: int = view.torso_root
+            if torso_root >= 0 and tissue_nodes.size() >= 19:
+                # Seed the parent transform with the physically deformed
+                # torso root so arm targets stay world-space correct.
+                globals[torso_root] = skel.get_bone_global_pose(torso_root)
             var art := (7-arm)%8
             var ids: Array = view.bone_ids[art]
             var rests: Array = view.bone_rests[art]
@@ -281,7 +378,7 @@ func update_scene() -> void:
                 var roll_index := mini(int(float(j)*material_roll.size()/24.0),material_roll.size()-1)
                 var material_rotation := Quaternion(tangent, float(material_roll[roll_index])) * swing
                 var base_radius := .036 * (1.0-.8*float(roll_index)/float(material_roll.size()))
-                var cross_section := Vector3(clampf(float(radii[roll_index][0])/base_radius,.5,1.8),1.0,clampf(float(radii[roll_index][1])/base_radius,.5,1.8))
+                var cross_section := Vector3(clampf(float(radii[roll_index][0])/base_radius,.40,2.5),1.0,clampf(float(radii[roll_index][1])/base_radius,.40,2.5))
                 var target := Transform3D(Basis(material_rotation)*rest.basis*Basis.from_scale(cross_section), Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
                 var parent := skel.get_bone_parent(id)
                 var parent_global: Transform3D = globals.get(parent, skel.get_bone_global_rest(parent) if parent >= 0 else Transform3D.IDENTITY)
@@ -303,12 +400,12 @@ func step_command() -> String:
                 controlled and Input.is_physical_key_pressed(EXTEND_KEYS[arm]))
             var paddle := test_all_active or (
                 controlled and Input.is_physical_key_pressed(STROKE_KEYS[arm]))
-            var extension := 1.28 if reach else 0.70
+            var extension := 1.48 if reach else 0.58
             var curvature := 0.0 if reach else 3.6
             var sweep := 1.0 if paddle else -1.0
             var twist := 3.0 if test_actuation and i == 0 and arm == 0 else 0.0
             out += " %d %d %f %f %f %f %f %d %f" % [
-                i, arm, 1.0, curvature, extension, twist, 0.15, 0, sweep]
+                i, arm, 1.0, curvature, extension, twist, 0.02, 0, sweep]
     out += " %d %d 0 %f %f %f 30 20 %d" % [
         drag_kind if dragging else 0, drag_index,
         drag_target.x, drag_target.y, drag_target.z,

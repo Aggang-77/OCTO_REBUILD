@@ -1,0 +1,8 @@
+animals,scenario,segments,substeps,iterations,warmup,measured_ticks,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,snapshot_mean_ms,constraints_mean_ms,collision_mean_ms,max_penetration_m,max_volume_error,max_contacts,max_pairs,attachment_samples,max_energy_J,nonfinite
+1,spread_active,16,4,8,120,600,0.451058,0.4382,0.5618,0.6193,0.7406,0.0187055,0.2306275,0.201421,0.00755685926,0.00302121756,1243,31836,1534,5.26604286,0
+animals,scenario,segments,substeps,iterations,warmup,measured_ticks,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,snapshot_mean_ms,constraints_mean_ms,collision_mean_ms,max_penetration_m,max_volume_error,max_contacts,max_pairs,attachment_samples,max_energy_J,nonfinite
+2,spread_active,16,4,8,120,600,0.802140167,0.7808,0.9985,1.0897,1.1857,0.0415355,0.411643833,0.3558315,0.00926974611,0.00415842001,1846,43148,3024,7.54557282,0
+animals,scenario,segments,substeps,iterations,warmup,measured_ticks,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,snapshot_mean_ms,constraints_mean_ms,collision_mean_ms,max_penetration_m,max_volume_error,max_contacts,max_pairs,attachment_samples,max_energy_J,nonfinite
+5,spread_active,16,4,8,120,600,1.94060367,1.9083,2.1571,2.299,2.7864,0.0874596667,0.954272,0.906557333,0.0108276255,0.00425448985,4231,113764,7583,23.6130322,0
+animals,scenario,segments,substeps,iterations,warmup,measured_ticks,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,snapshot_mean_ms,constraints_mean_ms,collision_mean_ms,max_penetration_m,max_volume_error,max_contacts,max_pairs,attachment_samples,max_energy_J,nonfinite
+10,spread_active,16,4,8,120,600,4.29473667,4.2295,5.1022,5.4129,5.5736,0.2191725,1.86844933,2.26867733,0.0117655313,0.00429426556,8097,223506,15205,49.4914886,0
