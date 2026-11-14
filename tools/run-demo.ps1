@@ -1,4 +1,4 @@
-param([ValidateSet(1,2,5,10)][int]$Animals=2,[switch]$Benchmark,[string]$Screenshot='', [switch]$Headless)
+param([ValidateSet(1,2,5,10)][int]$Animals=2,[switch]$Benchmark,[string]$Screenshot='', [switch]$Headless,[ValidateRange(8,64)][int]$Segments=24,[switch]$NoWriggle)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $server=Join-Path $root 'build/release-final/octo_server.exe'
@@ -13,7 +13,8 @@ $env:LOCALAPPDATA=Join-Path $root 'work/localappdata'
 New-Item -ItemType Directory -Force $env:APPDATA,$env:LOCALAPPDATA | Out-Null
 $argsList=@('--path', (Join-Path $root 'game'))
 if ($Headless) { $argsList+= '--headless' }
-$argsList+= @('--', "--animals=$Animals")
+$argsList+= @('--', "--animals=$Animals", "--segments=$Segments")
+if ($NoWriggle) { $argsList+= '--no-wriggle' }
 if ($Benchmark) { $argsList+= '--benchmark' }
 if ($Screenshot) { $argsList+= "--screenshot=$Screenshot" }
 $windowStyle=if ($Headless) { 'Hidden' } else { 'Normal' }

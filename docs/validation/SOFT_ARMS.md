@@ -13,5 +13,5 @@
 ## Validation plan and limitations
 
 - New native physics regression compares zero-gravity isolated idle-wave and passive worlds, checks 24-segment snapshot sizes and observes time-varying node displacement.
-- Bridge protocol regression checks the new reset parameter, node/roll/radius array sizes and invalid strength rejection.
+- Bridge protocol regression checks the optional reset parameters, node/roll/radius array sizes, invalid strength rejection, and a 16-segment compatibility reset. Optional arguments are now parsed token-by-token to avoid EOF side effects from `peek()`.
 - GitHub Actions workflow on commit `3026df96f587395b5d6e23f824d6ad0ed2fcfa08` completed successfully (Linux Release build, native CTest, two-animal benchmark smoke). Subsequent changes and Windows/Godot rendering still require separate checks. Expected computational cost increases with node/contact count; measure before asserting 60 Hz.

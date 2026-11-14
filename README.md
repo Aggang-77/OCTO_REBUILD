@@ -16,6 +16,8 @@ Closing the Godot window ends the session and its native C++ server.
 ./tools/build.ps1
 C:\Tools\Godot\godot.exe --headless --editor --import --path game
 ./tools/run-demo.ps1 -Animals 2
+# Lower CPU load or compare against still arms:
+./tools/run-demo.ps1 -Animals 2 -Segments 16 -NoWriggle
 ./build/release-final/octo_benchmark.exe 10 600 dense
 ```
 
