@@ -326,7 +326,7 @@ func update_procedural(animal: Dictionary, view: Dictionary) -> void:
             var a := point(nodes, u0)
             var b := point(nodes, u1)
             var delta := b-a
-            var r := radii[mini(j,radii.size()-1)]
+            var r: Array = radii[mini(j,radii.size()-1)]
             var thickness := maxf(0.008,0.5*(float(r[0])+float(r[1])))
             var rot := Quaternion(Vector3.UP,delta.normalized()) if delta.length_squared() > 0.000001 else Quaternion.IDENTITY
             var basis := Basis(rot) * Basis.from_scale(Vector3(thickness, 0.5*delta.length()+thickness, thickness))
