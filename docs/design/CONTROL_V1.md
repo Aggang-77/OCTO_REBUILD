@@ -187,3 +187,37 @@ the global damping of props or artificially lock the octopus in place.
 An impulse-matched native regression now requires the damped world to
 have less cumulative kinetic energy than a spring-only world. These
 changes still stop short of full creep/plasticity or fluid dynamics.
+
+## 2026-11-15: creep / stress relaxation (slow internal shape memory)
+
+The native C++ XPBD solver now stores a separate, **bounded rest-strain
+memory on every arm axial edge and mantle-shell strand**, plus an
+additional geometric bend-rest correction per arm joint. This state
+updates once per physical substep, not once per solver iteration.
+
+The axial constitutive approximation follows
+`dq/dt = creep_rate*(epsilon_total-q) - creep_recovery*q`, where
+`q` is the slow stress-free strain and `epsilon_total` is measured
+against the player's currently commanded length. The restoring
+stress proxy is `epsilon_elastic = current_length/rest_length - 1`.
+At held deformation the changing internal rest shape reduces the
+elastic mismatch over time; after unloading, slow recovery returns
+`q` toward zero. The analytic exponential integration avoids
+substep-dependent creep rates. Bounds on `q` avoid runaway length
+changes during collisions. The bend memory behaves similarly but
+uses the measured second difference of adjacent arm-centerline points.
+
+The corresponding `WorldConfig` parameters are `creep_rate=0.70/s`,
+`creep_recovery=0.06/s`, `max_creep_strain=0.25` and
+`bend_creep_rate=0.45/s`. Existing `arm_internal_viscosity` is
+retained separately: viscosity damps relative speed, whereas creep
+changes the delayed rest configuration.
+
+The bridge exports `arms[].creep` and `arms[].elastic_strain`
+for instrumentation. Unit tests exercise a fixed 20% imposed strain,
+stress relaxation under a held displacement, slow unloaded recovery,
+coarse/fine timestep agreement, finite bounds and a real native world
+load fixture. These are uncalibrated gameplay parameters, **not a
+validated biological tissue law or proof of realistic full-surface
+creep**, and the GLB visual pipeline still uses the existing GPU
+bone skinning.
