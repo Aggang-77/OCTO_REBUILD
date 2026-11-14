@@ -119,3 +119,11 @@ validate tick, fields, and protocol; run-demo.ps1 now rebuilds on source
 staleness or failed protocol preflight before Godot launches. Direct Godot
 bad_operation now emits actionable rebuild guidance. Windows CI exercises
 preflight against an actual compiled octo_server.exe.
+
+2026-11-15 force tuning on main: boosted physics-world sweep actuator
+force gain and per-site motor cap to 4x prior baseline, suction-break
+thresholds to 3x (both automatic sucker nodes and legacy tip grips).
+Exposed bounded C++ WorldConfig multipliers and added a weak-vs-strong
+stroke displacement regression test. This does not modify rendering or
+control key bindings. Real GameReady play-feel/60Hz with new forces
+remains to be validated locally; CI physics and integration pass.
