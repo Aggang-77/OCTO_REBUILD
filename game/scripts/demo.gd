@@ -192,7 +192,6 @@ func apply_slime_finish(scene: Node3D) -> int:
                 # imported albedo/normal/roughness textures stay bound.
                 var wet := original.duplicate() as StandardMaterial3D
                 wet.roughness = 0.20
-                wet.specular = 0.78
                 wet.clearcoat_enabled = true
                 wet.clearcoat = 0.68
                 wet.clearcoat_roughness = 0.10
