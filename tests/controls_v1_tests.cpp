@@ -282,7 +282,7 @@ int main(){try{
   // Real gravity-settled resting pose: no arm can continuously sweep
   // or hold the prior prescribed cooked-octopus curl at zero input.
   {WorldConfig rest;
-   rest.animals=1;rest.rigid_count=0;rest.auto_suction=false;
+   rest.animals=1;rest.rigid_count=0;rest.auto_suction=true;
    rest.grounded_rest=true;rest.spawn_height=.27;rest.upright_strength=.08;
    PhysicsWorld resting(rest);
    for(unsigned arm=0;arm<8;++arm){
@@ -308,6 +308,8 @@ int main(){try{
            "passive mantle must rest low instead of standing on arms");
    require(fraction>.50,
            "majority of distal passive arm nodes must lie near the ground");
+   require(snapshot.diagnostics.attachments==0,
+           "uncommanded resting octopus cannot glue every arm to the floor");
   }
   std::cout<<"control v1 tests passed\n";
   return 0;
