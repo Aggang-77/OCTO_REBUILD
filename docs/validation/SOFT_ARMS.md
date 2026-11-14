@@ -15,3 +15,15 @@
 - New native physics regression compares zero-gravity isolated idle-wave and passive worlds, checks 24-segment snapshot sizes and observes time-varying node displacement.
 - Bridge protocol regression checks the optional reset parameters, node/roll/radius array sizes, invalid strength rejection, and a 16-segment compatibility reset. Optional arguments are now parsed token-by-token to avoid EOF side effects from `peek()`.
 - GitHub Actions workflow on commit `3026df96f587395b5d6e23f824d6ad0ed2fcfa08` completed successfully (Linux Release build, native CTest, two-animal benchmark smoke). Subsequent changes and Windows/Godot rendering still require separate checks. Expected computational cost increases with node/contact count; measure before asserting 60 Hz.
+
+
+## Native CI verification (commit c36672b, Linux runner)
+
+GitHub Actions run: https://github.com/songhh06/OCTO_REBUILD/actions/runs/43624306314
+
+- Release C++ compile: PASS.
+- CTest: physics.unit, bridge.protocol, physics.integration = **3/3 PASS**. Godot input test is not registered on the runner without Godot and the GameReady GLB.
+- 2-animal spread-active physics benchmark (60 measured ticks, 120 warm-up): **mean 1.770 ms, p95 1.825 ms** per fixed step.
+- 10-animal dense-active physics benchmark (120 measured ticks, 120 warm-up): **mean 15.054 ms, p95 16.014 ms** per fixed step, no reported nonfinite values.
+- Measurements are from a GitHub-hosted Linux VM, not the Windows Ryzen 5 5600X machine. They exclude bridge transfer, Godot scene update and GPU frame time. Do **not** infer a 60 FPS rendering guarantee.
+- Physical leg quality and motion aesthetics still need an interactive Godot visual review.

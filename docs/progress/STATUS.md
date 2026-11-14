@@ -118,3 +118,9 @@ suppression. Godot demo enables the waves by reset protocol, with
 --no-wriggle/--segments=N controls. First GitHub Actions Linux Release
 build/CTest/two-animal benchmark PASS on 3026df96. Windows Godot visual
 and sustained 10-animal 60 Hz remain unverified for the new settings.
+
+2026-11-15 soft-arm native verification (draft PR #1, c36672b): GitHub
+Actions Linux build / CTest 3/3 PASS; 2 spread-active solver mean/p95
+1.770/1.825 ms, 10 dense-active 15.054/16.014 ms, no nonfinite.
+Performance measurements exclude Godot; no 60 FPS claim. Godot GUI
+validation and Windows MSVC test still pending.
