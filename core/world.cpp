@@ -73,13 +73,28 @@ animals.push_back(a);}
 for(unsigned k=0;k<c.rigid_count;++k){std::vector<int> ids;Vec3 center{double(k)*.65-.65,.32,1.35};for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})ids.push_back(particle(center+Vec3{x*.16,y*.16,z*.16},.125,.08,-1,-1,-1,int(k)));for(int i=0;i<8;++i)for(int j=i+1;j<8;++j)edge(ids[i],ids[j],1e-9);rigids.push_back(ids);}}
 void distance(D& e,double h){auto&a=p[e.a];auto&b=p[e.b];Vec3 delta=b.x-a.x;double l=norm(delta);if(l<1e-12)return;double alpha=e.compliance/(h*h),dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);e.lambda+=dl;Vec3 impulse=delta*(dl/l);a.x=a.x-impulse*a.inv;b.x=b.x+impulse*b.inv;}
 void volumes(double h){for(auto&t:tetra){auto a=p[t.p[0]].x,b=p[t.p[1]].x,c=p[t.p[2]].x,e=p[t.p[3]].x;std::array<Vec3,4> g;g[1]=cross(c-a,e-a)/6;g[2]=cross(e-a,b-a)/6;g[3]=cross(b-a,c-a)/6;g[0]=(g[1]+g[2]+g[3])*(-1);double alpha=(1e-10*std::sqrt(cfg.softness))/(h*h),den=alpha;for(int i=0;i<4;++i)den+=p[t.p[i]].inv*dot(g[i],g[i]);double dl=(-(volume(t)-t.rest)-alpha*t.lambda)/den;t.lambda+=dl;for(int i=0;i<4;++i){auto&v=p[t.p[i]];v.x=v.x+g[i]*(v.inv*dl);}}}
+Vec3 coil_direction(const Arm& ar,unsigned joint)const{
+ // A physically held prop gives a local bend-in direction; terrain
+ // stays free to curl upwards. This is not a remote grasp or skin force.
+ const Sucker* nearest=nullptr;
+ unsigned closest=cfg.segments+1;
+ for(const auto& s:ar.suckers){
+  if(s.attached==-1)continue;
+  unsigned sep=unsigned(std::abs(int(s.node)-int(joint)));
+  if(sep<closest){closest=sep;nearest=&s;}
+ }
+ if(!nearest||closest>std::max(3u,cfg.segments/3)||nearest->attached==-2)
+  return {0,1,0};
+ return nearest->contact_normal*(-1);
+}
 void bending(double h){for(auto&a:animals){Vec3 up=unit(p[a.body[3]].x-p[a.body[4]].x);for(auto&ar:a.arms){double length=.9/cfg.segments*ar.active.extension;for(unsigned j=1;j<cfg.segments;++j){auto&l=p[ar.p[j-1]];auto&m=p[ar.p[j]];auto&r=p[ar.p[j+1]];const double u=double(j)/double(cfg.segments);
  // Release a smooth front root->tip. Coiled distal sections store
  // curvature even while the proximal arm has already unwound.
  const double phase=std::clamp((u-ar.uncoil_front+.10)/.20,0.,1.);
  const double coil=phase*phase*(3.-2.*phase);
  const double wanted=(ar.active.curvature+cfg.coil_curvature*coil)*ar.active.activation;
- Vec3 target=up*(wanted*length*length);Vec3 error=l.x-m.x*2+r.x-target;double alpha=(2e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
+ const Vec3 curl=coil>0.02?coil_direction(ar,j):up;
+ Vec3 target=curl*(wanted*length*length);Vec3 error=l.x-m.x*2+r.x-target;double alpha=(2e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
 void torsion(double h){for(auto&a:animals)for(auto&ar:a.arms){const double desired=ar.active.activation*ar.active.twist*(.9/cfg.segments)*ar.active.extension;const double alpha=(1e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);
 // The first material section is attached to a deformable torso orientation.
 // Opposite displacements at two cage nodes transmit its torque into the world.
@@ -100,7 +115,9 @@ left.x=left.x+correction*left.inv;right.x=right.x-correction*right.inv;
 director.q=rm::integrate(director.q,rm::mul(rm::cross(e,correction),segment_length*director.inv_inertia),1);
 }
 for(size_t j=1;j<ar.directors.size();++j){auto&left=ar.directors[j-1];auto&right=ar.directors[j];
-Vec3 tangent=rm::rotate(left.q,{0,0,1}),axis=rm::cross(tangent,{0,1,0});double axis_len=rm::length(axis);
+Vec3 tangent=rm::rotate(left.q,{0,0,1});
+ const Vec3 curl=coil_direction(ar,unsigned(j));
+ Vec3 axis=rm::cross(tangent,curl);double axis_len=rm::length(axis);
 if(axis_len<1e-8)axis=rm::cross(tangent,{1,0,0}),axis_len=rm::length(axis);
 axis=rm::mul(axis,1/axis_len);
 const double u=double(j)/double(cfg.segments);
@@ -333,7 +350,11 @@ void update_suckers(double h){
     const double delay=double(cfg.segments-s.node)/cfg.segments*.22;
     if(ar.peel_clock>=delay){s.attached=-1;s.cooldown=.18;s.dwell=0;}
    }
-   if(s.attached!=-1||s.cooldown>0)continue;
+   if(s.attached!=-1){
+    record_sucker_frame(ar,s);
+    continue;
+   }
+   if(s.cooldown>0)continue;
    auto&node=p[ar.p[s.node]];
    Vec3 tangent=unit(p[ar.p[std::min(unsigned(cfg.segments),s.node+1)]].x-p[ar.p[s.node-1]].x);
    const Vec3 down{0,-1,0};
