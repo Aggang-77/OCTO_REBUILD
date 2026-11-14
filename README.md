@@ -119,3 +119,32 @@ control regression suite. Rebuild the native server with
 around sampled rigid particles, not a true arbitrary-mesh surface
 geodesic; the wet appearance is PBR lighting, not a fluid layer.
 Real GameReady GLB visuals and feel remain subject to local testing.
+
+## Low-resolution viscoelastic flesh / mantle (2026-11-15)
+
+The C++ solver now allocates **12 dynamic shell particles per animal**
+(two rings of six) around the original seven-vertex torso cage.
+They have physical mass, contact with ground and props, and
+compliant strands to the body. The original tetrahedral body volume
+constraints remain active.
+
+Each of the 16 segments of each arm additionally carries a
+**damped dynamic transverse strain** driven by measured contact
+compression and smoothed along neighboring sections. The two
+principal axis scales are inverse pairs so their product remains
+one; axial stretch also changes area through the existing
+section-volume correction. The physical strain has a slow recovery
+and local viscous damping rather than snapping back in one frame.
+Strain is applied through the existing GPU-skinned GameReady arm
+bones, with the previous restrictive ±1.8 visual scale expanded
+to 0.40–2.5. **No new jelly shader or 5k-vertex CPU mesh rebuild**.
+
+The bridge transmits all 19 body mass-node positions and 2-axis
+section strain data. If the imported GLB exposes a **separate named
+mantle/head/hood mesh**, Godot uses the physical shell bounds to
+rescale its existing mesh transform (no rebuilt vertices); a
+combined/unnamed GLB cannot receive that mantle visual deformation
+until its model is split or painted with suitable vertex weights.
+This is a coarse shape/viscoelastic proxy, **not full FEM or
+Navier–Stokes slime fluid**; its discrete shell particles do not
+provide exact triangle-to-triangle surface collision.
