@@ -338,6 +338,14 @@ func mantle_scale_from_shell(nodes: Array, center: Vector3, inverse: Quaternion)
         clampf(span.y / 0.25, 0.50, 1.65),
         clampf(span.z / 0.38, 0.55, 1.55))
 
+func mantle_respiration(shape: Vector3, elapsed: float) -> Vector3:
+    # Slow physiological mantle pumping (~0.25 Hz), not oscillating arm
+    # stiffness. Preserve the large shape deformation from the C++ shell.
+    var breath := 0.024 * sin(elapsed * TAU * 0.25)
+    return Vector3(shape.x * (1.0 + breath),
+        shape.y * (1.0 + breath * 0.35),
+        shape.z * (1.0 + breath))
+
 func apply_torso_root_skin(skel: Skeleton3D, root_id: int, rest: Transform3D, size: Vector3) -> void:
     if root_id < 0:
         return
@@ -387,7 +395,9 @@ func update_scene() -> void:
         # GPU keeps its original vertices; no per-frame mesh allocations.
         var tissue_nodes: Array = a.get("body_nodes", [])
         if tissue_nodes.size() >= 19:
-            var shape_scale := mantle_scale_from_shell(tissue_nodes, center, inverse)
+            var shape_scale := mantle_respiration(
+                mantle_scale_from_shell(tissue_nodes, center, inverse),
+                float(current.get("time", 0.0)))
             var root_id: int = view.torso_root
             if root_id >= 0:
                 apply_torso_root_skin(skel, root_id, view.torso_rest, shape_scale)
