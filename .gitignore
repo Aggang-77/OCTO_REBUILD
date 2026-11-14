@@ -1,0 +1,10 @@
+build/
+work/
+game/.godot/
+game/assets/*.glb
+game/assets/*.png
+*.pdb
+*.obj
+*.exe
+*.dll
+*.lib
