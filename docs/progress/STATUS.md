@@ -266,3 +266,26 @@ Isolated 360-tick / six-second physics regression: torso center height
 floor contact. These measured metrics do not test the private
 GameReady model's visual triangle-to-floor clearance. Old mode can be
 enabled temporarily via `OCTO_REST_MODE=legacy` for A/B.
+
+2026-11-15 arm-mantle junction correction: confirmed the original solver
+hard-tied every arm's root to **all 7 torso cage nodes** at
+`1e-7 * softness` compliance. In grounded gameplay this is now
+replaced by spatially local, distributed XPBD constraints from the arm
+root to 3 closest lower mantle-shell vertices, from the second arm
+node to the nearest shell vertex, and one **very soft** central
+connective-tissue tether. The outer mantle-shell masses and arm nodes
+remain fully dynamic and exchange forces in the shared C++ world.
+Unmodified rigid-root constraints remain only for legacy isolated
+physics fixtures (`grounded_rest=false`) so established unit tests
+are not silently reinterpreted. Config exposes
+`arm_root_shell_compliance=3e-5`,
+`arm_root_center_compliance=2e-4` before softness scaling.
+New real physical arm-drag regression verifies displacement of the
+mantle shell and relative motion of arm root vs cage, in addition to
+previous floor contact and no-penetration checks. Linux CI measured
+maximum shell displacement 0.555837 m and relative root deformation
+0.11756 m in a sustained high-force stress fixture, not typical idle
+movement and not an acceptable calibration for final real-animal
+fidelity. Existing idle case: torso y=0.224709, 94.79% distal nodes
+near ground; visual proxy floor clipping 0, lower belly contact 1.
+Actual private GLB skin continuity still requires local visual review.
