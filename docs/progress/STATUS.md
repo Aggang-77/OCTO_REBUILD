@@ -179,3 +179,16 @@ Internal mantle-to-center velocity dashpots now exchange equal and
 opposite impulses to damp bouncy oscillation while conserving total
 linear momentum in free space. Renderer still uses existing GPU skin,
 not the former CPU rebuilt jelly skin or a high-cost custom shader.
+
+2026-11-15 rubbery-bounce correction after live-play feedback: the former
+arm tissue transversal value followed a second-order spring/velocity
+integrator, while XPBD distance/director projection regenerated rod
+particle velocities every tick. Switched the local strain to an
+overdamped first-order deformation state, with faster flattening and
+slower recovery. Added configurable physical rod-relative viscous damping
+(default 14/s) using equal-and-opposite pair impulses, preserving linear
+momentum and leaving contacts in the native solver. Baseline native
+regression compared identical applied impulses without vs with this
+viscosity (integrated kinetic energy 7.65415 vs 5.7151 over sampled
+ticks on CI). This validates damping, not the subjective on-screen
+'goo' feeling. GameReady live visuals still require local play test.
