@@ -601,6 +601,13 @@ void update_suckers(double h){
     continue;
    }
    if(s.cooldown>0)continue;
+   // An octopus resting under its own weight can make contact without
+   // automatically welding every inactive sucker to the seabed. Gripping
+   // remains a separate, active behavior and Space still releases.
+   if(cfg.grounded_rest&&ar.target.activation<.1&&ar.active.activation<.15){
+    s.dwell=0;
+    continue;
+   }
    auto&node=p[ar.p[s.node]];
    Vec3 tangent=unit(p[ar.p[std::min(unsigned(cfg.segments),s.node+1)]].x-p[ar.p[s.node-1]].x);
    const Vec3 down{0,-1,0};
