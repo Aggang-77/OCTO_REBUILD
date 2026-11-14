@@ -26,6 +26,52 @@ func _exercise() -> void:
     await process_frame
     octo.animals = 2
     octo.selected = 1
+    # The imported GLB is private, so exercise the exact GPU material
+    # conversion with a synthetic StandardMaterial and live shader.
+    var skin_rig := Skeleton3D.new()
+    skin_rig.add_bone("BodyRoot")
+    skin_rig.add_bone("A0_00")
+    var skin_scene := Node3D.new()
+    var skin_mesh := MeshInstance3D.new()
+    var skin_sphere := SphereMesh.new()
+    var skin_source := StandardMaterial3D.new()
+    skin_source.albedo_color = Color(0.42, 0.27, 0.18, 1.0)
+    skin_source.roughness = 0.52
+    var skin_image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
+    skin_image.fill(Color(0.7, 0.5, 0.3))
+    skin_source.albedo_texture = ImageTexture.create_from_image(skin_image)
+    skin_sphere.material = skin_source
+    skin_mesh.mesh = skin_sphere
+    skin_scene.add_child(skin_mesh)
+    octo.add_child(skin_scene)
+    var skin_bone_ids: Array = []
+    for idx in 8:
+        skin_bone_ids.append([])
+    skin_bone_ids[7] = [1]
+    var native_skin = octo.skin_deformer.install(skin_scene, skin_rig, skin_bone_ids)
+    if not _check(native_skin.covered_surfaces == 1 and
+            skin_mesh.get_active_material(0) is ShaderMaterial,
+            "original imported mesh receives deformation shader"):
+        return
+    var converted: ShaderMaterial = skin_mesh.get_active_material(0)
+    if not _check(converted.get_shader_parameter("albedo_tex") ==
+            skin_source.albedo_texture and
+            converted.get_shader_parameter("base_roughness") == 0.52,
+            "texture and authored roughness preserved"):
+        return
+    var synthetic_arms: Array = []
+    for idx in 8:
+        synthetic_arms.append({"tissue": [[1.0, 0.6]], "creep": [0.08]})
+    octo.skin_deformer.update_skin(native_skin, synthetic_arms)
+    var skin_compression: PackedFloat32Array = converted.get_shader_parameter("bone_compression")
+    var skin_activity: PackedFloat32Array = converted.get_shader_parameter("bone_activity")
+    if not _check(skin_compression.size() == 256 and
+            absf(skin_compression[1] - 0.4) < 0.0001 and
+            skin_activity[1] > 0.4 and skin_compression[0] == 0.0,
+            "live C++ tissue pressure maps to exact imported bone index"):
+        return
+    print("GLB_VERTEX_SKIN_PASS surfaces=1 bone_map=true texture_preserved=true")
+
     # The prototype's real 3D shell surface is generated from physical
     # ring positions, not from a fixed circular centerline tube.
     var ring_a := [[0.0,0.0,0.0], [1.0,0.0,0.0],
