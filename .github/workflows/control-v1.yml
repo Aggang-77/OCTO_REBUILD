@@ -48,10 +48,19 @@ jobs:
         run: |
           "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
             --headless --editor --path game --import --quit
+      - name: Run real-window virtual display for input simulation
+        run: |
+          if ! command -v xvfb-run >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends xvfb
+          fi
       - name: Verify exact 16-key Godot input serialization
         run: |
-          "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
-            --headless --path game --script res://tests/control_v1_input.gd \
+          xvfb-run -a -s '-screen 0 1280x720x24' \
+            env LIBGL_ALWAYS_SOFTWARE=1 timeout 40s \
+            "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
+            --rendering-driver opengl3 --audio-driver Dummy --path game \
+            --script res://tests/control_v1_input.gd \
             2>&1 | tee "$RUNNER_TEMP/controls.log"
           grep -q "CONTROL_V1_KEYS_PASS" "$RUNNER_TEMP/controls.log"
           if grep -E -q "SCRIPT ERROR|Parse Error|Invalid call" "$RUNNER_TEMP/controls.log"; then exit 1; fi
