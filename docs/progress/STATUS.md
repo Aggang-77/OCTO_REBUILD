@@ -155,3 +155,17 @@ and clearcoat makes the existing model look wet without a jelly shader.
 No full mucus simulation, arbitrary mesh wrapping, or GLB hardware
 render benchmark claimed. CI regression: uncoil progress/recoil,
 forces, grip/Space, old director fixtures and Godot shader-free PBR.
+
+2026-11-15 tissue volume prototype on main: original 7 torso cage nodes
+now coupled to 12 additional physically simulated mantle shell
+particles (2x6 ring). Shell collides with floor/objects, is joined by
+soft internal springs, and does not bypass C++ world. Arm section
+transverse strain is its own damped, viscous state, pressure-responsive
+and smoothed to neighboring segments, with reciprocal principal
+scales and axial volume coupling. Snapshot/bridge exports 19 body
+nodes and transverse strain per section. GameReady arm skeleton now
+shows larger nonuniform transverse deformation, no shader/per-frame
+mesh rebuild. A separately named mantle mesh is optionally scaled
+from physical shell extents; merged GLB mantle remains visually
+unresolved. Native 19-node/suction/tissue tests and bridge contract
+added; Windows, Linux and Godot CI should gate regressions.
