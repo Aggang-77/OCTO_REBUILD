@@ -1,6 +1,7 @@
 #include "octo/world.hpp"
 #include "octo/collision.hpp"
 #include "octo/rod_math.hpp"
+#include "octo/viscoelastic.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -151,9 +152,8 @@ void update_creep_memory(double h){
   }
   const double length=norm(p[e.a].x-p[e.b].x);
   const double total=std::clamp(length/std::max(nominal,1e-7)-1.,-.5,.5);
-  const double equilibrium=cfg.creep_rate*total/rate;
-  e.creep=std::clamp(equilibrium+(e.creep-equilibrium)*std::exp(-rate*h),
-                     -cfg.max_creep_strain,cfg.max_creep_strain);
+  e.creep=viscoelastic::update_creep(e.creep,total,h,cfg.creep_rate,
+                                     cfg.creep_recovery,cfg.max_creep_strain);
  }
  // Geometric curvature also holds a delayed stress-free correction.
  // Do not overwrite the user's active motor command, which remains
