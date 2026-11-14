@@ -220,3 +220,25 @@ The instrumented Linux CI run for **two octopuses** reported physics
 step mean 2.45 ms with the pilot versus 1.97 ms without (same runner;
 not a hardware-independent claim). The global Godot frame time,
 rendering and original GameReady visual realism remain unmeasured.
+
+## Biologically grounded living GameReady skin (2026-11-15)
+
+The standard `PLAY_DEMO.cmd` now applies **live deformation to the
+original imported GLB mesh vertices** through Godot GPU skinning and
+bone-weighted physical tissue pressure from the shared C++ simulator.
+The shader retains source color, UV, normal, metallic and roughness
+textures, adds small physical-contact flattening and sideways skin
+bulging, subtle nonoscillating papillae and slow pigment modulation.
+Arms now rest **asymmetrically and passively** rather than all eight
+retracting/actively sweeping in unison; a gentle mantle respiration
+also helps avoid the frozen cooked-octopus appearance.
+
+The unstable tetrahedral trial is still off by default. The new GPU
+skin does **not** create full surface-level collisions or validated
+incompressible material behavior. The actual private GameReady GLB is
+not tracked in the repository and still requires on-device visual
+validation. Use `$env:OCTO_SKIN_MODE="legacy"` before launching to
+compare the old appearance. See
+[`docs/design/REALISTIC_OCTOPUS_SURFACE.md`](docs/design/REALISTIC_OCTOPUS_SURFACE.md).
+Run `python tools/audit_gameready_mesh.py game/assets/Octopus_GameReady_v5.glb`
+on the local asset to check vertex/face, skin and topological details.
