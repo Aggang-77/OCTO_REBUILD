@@ -143,7 +143,11 @@ func _ready() -> void:
     send(reset_command())
 
 func reset_command() -> String:
-    return "reset %d %f 1" % [animals,1.0 if dense_scene else 2.2]
+    var command := "reset %d %f 1" % [animals,1.0 if dense_scene else 2.2]
+    if OS.get_environment("OCTO_VOLUME_ARM") == "1":
+        # Explicit experimental toggle, never activated in normal demo.
+        command += " 1"
+    return command
 
 func read_pipe() -> void:
     # Drain the pipe independently of render frames. Only complete lines cross
