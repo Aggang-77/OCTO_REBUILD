@@ -39,3 +39,13 @@ Four vs sixteen solver sweeps targeted response fixture PASS, Release CTest 2/2,
 Two-animal active original-model scene showed arm bend and nonzero material
 roll ~1.35 rad after 60 ticks. Full rotational Cosserat and 60 Hz still open.
 See docs/validation/BENDING_XPBD.md.
+
+2026-11-15 torso torsion coupling: first arm material-roll constraint now
+uses the deforming torso up-axis and applies opposing mass-weighted position
+corrections to two torso nodes. Isolated opposite-twist fixture body-node
+difference ~1.15 mm and last-tick total angular momentum residual
+~3.17e-9 kg m²/s. CTest 2/2, 10,000-tick soak PASS; 10-animal active twist
+native p95 5.04 ms. Godot two-animal active input PASS, ten passive display
+60 ticks PASS at 34.4 simulation ticks/s. This is still an approximate
+scalar torsion coupling, not full orientation Cosserat or 60 Hz.
+See docs/validation/TORSO_TORQUE.md.

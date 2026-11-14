@@ -51,6 +51,7 @@ struct Diagnostics {
     double step_ms=0, constraints_ms=0, collision_ms=0;
     double max_penetration=0, max_volume_error=0, kinetic_energy=0;
     Vec3 linear_momentum{};
+    Vec3 angular_momentum{}; // about world origin, includes material-roll spin
     std::uint64_t contact_count=0, candidate_pairs=0, attachments=0, broken_attachments=0, nonfinite_count=0;
     std::uint64_t cross_animal_contacts=0, animal_prop_contacts=0;
 };
