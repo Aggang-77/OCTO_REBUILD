@@ -308,6 +308,23 @@ int main(){try{
            "passive mantle must rest low instead of standing on arms");
    require(fraction>.50,
            "majority of distal passive arm nodes must lie near the ground");
+   unsigned visible_clip=0,belly_contacts=0;
+   const auto& body=snapshot.animals[0].body_nodes;
+   for(unsigned j=0;j<7;++j)
+    if(body[j].y <rest.visual_mantle_floor_radius-1e-4)++visible_clip;
+   for(const auto& ar:snapshot.animals[0].arms)
+    for(unsigned j=0;j<ar.nodes.size();++j){
+     const double t=double(j)/(ar.nodes.size()-1);
+     const double visual_radius=rest.visual_arm_floor_radius*(1.-.38*t);
+     if(ar.nodes[j].y<visual_radius-1e-4)++visible_clip;
+    }
+   if(body[4].y-rest.visual_mantle_floor_radius<.025)++belly_contacts;
+   std::cout<<"VISIBLE_SURFACE_CONTACT clipping="<<visible_clip
+            <<" belly_contact="<<belly_contacts<<"\n";
+   require(visible_clip==0,
+           "resting visible arm and mantle envelopes must clear floor");
+   require(belly_contacts>0,
+           "mantle lower cage must physically contact the ground");
    require(snapshot.diagnostics.attachments==0,
            "uncommanded resting octopus cannot glue every arm to the floor");
   }
