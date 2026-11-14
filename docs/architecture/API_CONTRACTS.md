@@ -53,3 +53,27 @@ Original 15,203,672 byte GameReady GLB, 193 joints and embedded material are reu
 Sources checked: https://mmacklin.com/xpbd.pdf (XPBD compliance/substep scaling),
 https://animation.rwth-aachen.de/publication/0550/ (position/orientation rods).
 These papers justify the method family, not our unmeasured fidelity or runtime.
+
+## Superseding controls-v1 protocol and renderer
+
+The former GPU jelly/webbing module is removed from the active
+game; the shipped renderer uses original GameReady skeletal bones
+or a static MultiMesh fallback with no per-frame ArrayMesh rebuild.
+The earlier shader/web documents are historical.
+
+- New `step2` message has nine per-arm fields:
+  `animal arm activation curvature extension twist stiffness attach sweep`
+  plus eight drag fields and one integer Space-release flag (0 or 1).
+  Existing `step` grammar remains usable.
+- `reset ANIMALS [SPACING [IDLE [SEGMENTS [ORGANIC [AUTO_SUCTION]]]]]`
+  enables discrete per-arm automatic suction only when the last flag is 1.
+- Direction convention: torso +Z forward, +Y up, arm indices 0–7
+  clockwise from +Z. Key mapping lives in
+  `docs/design/CONTROL_V1.md`.
+- Render snapshots now include per-section `attached` flags for
+  the GameReady/fast-client UI.
+- Space invokes `PhysicsWorld::release_all_suckers(held)`; grip
+  velocities are not erased. Automatic contacts use discrete node
+  proximity, approximate underside-facing normal, contact dwell,
+  relative-speed cap, area-scaled break limit and timed cooldown.
+  These do not constitute anatomical skin-level sucker mechanics.
