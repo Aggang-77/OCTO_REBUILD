@@ -11,6 +11,7 @@ def main() -> int:
     assert "PROCEDURAL_LITE animals=2 shaders=0 procedural_mesh_rebuild=0" in log, log[-4000:]
     assert "CONTROL_V1_READY arms=8" in log, log[-4000:]
     assert "CONTROL_V1_CHECK animals=2 arm_segments=16 no_shader=true" in log, log[-4000:]
+    assert "CONTROL_KEYS_CHECK simultaneous=true spring_return=true space_override=true" in log, log[-4000:]
     assert "SMOKE_OK" in log, log[-4000:]
     assert re.search(r"SCREENSHOT path=.*error=0", log), log[-4000:]
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
