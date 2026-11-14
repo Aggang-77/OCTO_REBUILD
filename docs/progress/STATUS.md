@@ -110,3 +110,12 @@ Display-only UI mouse interception was fixed. Release CTest 4/4 PASS;
 120-tick run measured arm relative-tip divergence 0.164 m and horizontal
 body motion during drag 0.774 m. This covers the synthetic two-animal path,
 not a manual playability/attachment audit. See docs/validation/GODOT_INPUT_PATH.md.
+
+2026-11-15 bridge bad_operation regression: after controls v1 main
+adoption, an older pre-step2 executable at build/release-final/octo_server.exe
+can be selected by the PowerShell demo launcher (previously checked only
+Test-Path). Added tools/check-bridge.ps1 to send a real step2 request and
+validate tick, fields, and protocol; run-demo.ps1 now rebuilds on source
+staleness or failed protocol preflight before Godot launches. Direct Godot
+bad_operation now emits actionable rebuild guidance. Windows CI exercises
+preflight against an actual compiled octo_server.exe.
