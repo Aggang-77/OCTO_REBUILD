@@ -22,6 +22,8 @@ func _initialize() -> void:
 
 func _exercise() -> void:
     var octo = DEMO.new()
+    root.add_child(octo)
+    await process_frame
     octo.animals = 2
     octo.selected = 1
     if not _check(DEMO.EXTEND_KEYS.size() == 8 and DEMO.STROKE_KEYS.size() == 8, "16-key arrays"):
