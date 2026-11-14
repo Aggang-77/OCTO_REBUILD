@@ -56,6 +56,10 @@ var arm_segments := 16
 var organic_profile := true
 var procedural_mode := false
 var test_controls := false
+var control_phase := 0
+var control_extend_stroke := false
+var control_spring_return := false
+var control_release_all := false
 var screenshot := ""
 var label: Label
 var camera: Camera3D
@@ -456,10 +460,41 @@ func exercise_input() -> void:
         Input.parse_input_event(event)
         input_phase = 4
 
+
+func exercise_controls() -> void:
+    if not test_controls or animals != 2:
+        return
+    if control_phase == 0 and current.tick >= 10:
+        inject_key(KEY_F,true) # left front extend; physical arm 7
+        inject_key(KEY_D,true) # left front stroke; same time
+        control_phase = 1
+    if control_phase == 1:
+        var out := step_command()
+        control_extend_stroke = control_extend_stroke or (
+            out.contains(" 0 7 1.000000 0.000000 1.280000 0.000000 0.150000 0 1.000000"))
+        if current.tick >= 25:
+            inject_key(KEY_F,false)
+            inject_key(KEY_D,false)
+            control_phase = 2
+    if control_phase == 2:
+        var out := step_command()
+        control_spring_return = control_spring_return or (
+            out.contains(" 0 7 1.000000 3.600000 0.700000 0.000000 0.150000 0 -1.000000"))
+        if current.tick >= 35:
+            inject_key(KEY_SPACE,true)
+            control_phase = 3
+    if control_phase == 3:
+        var out := step_command()
+        control_release_all = control_release_all or out.ends_with(" 1")
+        if current.tick >= 47:
+            inject_key(KEY_SPACE,false)
+            control_phase = 4
+
 func _process(delta: float) -> void:
     var start := Time.get_ticks_usec(); poll()
     if current.is_empty() or quitting: return
     exercise_input()
+    exercise_controls()
     if test_kill_native and current.tick >= 20 and not killed_native:
         killed_native = true
         OS.kill(child.pid)
@@ -491,7 +526,12 @@ func _process(delta: float) -> void:
                 fail("Control v1 step2 wire command invalid"); return
             if not procedural_mode or views[0].lite_segments == null:
                 fail("Lightweight no-shader renderer missing"); return
+            if views[0].lite_segments.material_override is ShaderMaterial:
+                fail("Legacy custom shader unexpectedly active"); return
+            if not control_extend_stroke or not control_spring_return or not control_release_all:
+                fail("Dual-key extension, stroke return or Space release failed"); return
             print("CONTROL_V1_CHECK animals=2 arm_segments=%d no_shader=true" % arm_segments)
+            print("CONTROL_KEYS_CHECK simultaneous=true spring_return=true space_override=true")
         if test_input:
             print("INPUT_CHECK selected=%d arm=%s drag=%s phase=%d arm_delta_m=%.5f center_delta_m=%.5f" % [selected,str(input_arm_seen),str(input_drag_seen),input_phase,input_arm_delta,input_center_delta])
             if not input_arm_seen or not input_drag_seen or input_arm_delta < .005 or input_center_delta < .002: fail("Key or mouse input did not produce physical response"); return
