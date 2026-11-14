@@ -207,3 +207,28 @@ Dedicated numerical tests verify under held 20% deformation that
 stress relaxes over seconds, and after release memory recovers;
 an integration fixture loads the actual physical arm tip. Tests must
 be verified against Linux+Windows CI and local GameReady visuals.
+
+2026-11-15 first genuine 3D volumetric arm pilot on main:
+Added 9 cross-sectional rings x 4 C++ dynamic surface particles for
+arm 0 only (per octopus), longitudinal/perimeter/diagonal constraints,
+32 signed-volume tetrahedra and local area-conserving XPBD projection.
+All ring particles participate in shared floor/object/octopus C++
+contact. Rest of the arms retain old centerline implementation; pilot
+is opt-in by environment OCTO_VOLUME_ARM=1 and optional native reset
+parameter. Added an explicit PLAY_VOLUMETRIC_DEMO.cmd; ordinary
+PLAY_DEMO.cmd is unchanged. The experiment overlays a lightweight
+36-vertex translucent procedural shell driven by actual ring coordinates,
+which demonstrates non-elliptical shape changes but is not final
+weighted GPU skin. The cross section radius of the existing GameReady
+arm is also sampled from the physical cage when enabled.
+The original first unguarded rollout broke existing tests, so the
+feature was moved behind an off-by-default option and a separate
+6-test native regression including 2 octopuses, floor and boxes.
+**Known blocker:** test maximum individual tetra relative volume
+residual ~3.41463 under two-animal shared-world contact; unacceptable
+for a calibrated incompressible soft-body. No claim of complete
+volumetric soft-body stability or production gameplay fidelity.
+Linux benchmark two octopuses: prototype 2.45 ms mean vs baseline
+1.97 ms mean physics step (runner-dependent). No full GameReady GUI
+benchmark. Deformation/contact tests and demo-input path checked
+through CI.
