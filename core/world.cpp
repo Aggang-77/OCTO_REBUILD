@@ -28,7 +28,7 @@ struct PhysicsWorld::Impl {
 struct P{Vec3 x,old,v;double inv,r;int animal,arm,node,rigid;double compression=0;};
 struct Bounds { Vec3 lo, hi; };
 struct D{int a,b;double rest,compliance,lambda=0,base_rest=0,creep=0;bool adaptive=false,arm_axial=false;};
-struct T{std::array<int,4> p;double rest,lambda=0;};
+struct T{std::array<int,4> p;double rest,lambda=0;bool soft_volume=false;};
 struct Roll{double angle=0,old=0,omega=0,inv_inertia=0,lambda=0;};
 struct Director{Quat q{},old{};Vec3 omega{},bend_lambda{},shear_lambda{};double inv_inertia=0;};
 struct Sucker{
@@ -39,7 +39,7 @@ struct Sucker{
  double wrap_radius=0; // local object curvature estimate (metres)
 };
 struct TissueSection{double transverse=1,rate=0,pressure=0;};
-struct Arm{std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda,bend_creep;std::vector<int> axial_edges;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
+struct Arm{std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda,bend_creep;std::vector<int> axial_edges;std::vector<std::array<int,4>> volume_rings;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
 struct Animal{std::vector<int> body;std::vector<int> shell;std::array<Arm,8> arms;};
 WorldConfig cfg;bool release_held=false;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;std::vector<Bounds> contact_bounds;std::vector<int> contact_order;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
 int particle(Vec3 x,double mass,double radius,int animal=-1,int arm=-1,int node=-1,int rigid=-1){p.push_back({x,x,{},1/mass,radius,animal,arm,node,rigid});return int(p.size()-1);}
@@ -60,7 +60,8 @@ if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.ite
    !std::isfinite(c.creep_rate)||c.creep_rate<0||c.creep_rate>5||
    !std::isfinite(c.creep_recovery)||c.creep_recovery<0||c.creep_recovery>2||
    !std::isfinite(c.max_creep_strain)||c.max_creep_strain<0||c.max_creep_strain>.5||
-   !std::isfinite(c.bend_creep_rate)||c.bend_creep_rate<0||c.bend_creep_rate>5)throw std::invalid_argument("Invalid WorldConfig");
+   !std::isfinite(c.bend_creep_rate)||c.bend_creep_rate<0||c.bend_creep_rate>5||
+   !std::isfinite(c.volumetric_compliance)||c.volumetric_compliance<0||c.volumetric_compliance>1e-4)throw std::invalid_argument("Invalid WorldConfig");
 for(unsigned n=0;n<c.animals;++n){Animal a;Vec3 center{(double(n)-double(c.animals-1)/2)*c.spacing,c.spawn_height,0};
 const double cr=std::cos(c.spawn_roll),sr=std::sin(c.spawn_roll);
 const auto rotate_spawn=[&](Vec3 v)->Vec3{
@@ -97,6 +98,47 @@ for(unsigned j=0;j<c.segments;++j){const double radius=ar.radius[j],mass=.012;ar
 for(unsigned j=0;j<c.segments;++j){const double length=.9/c.segments,radius=ar.radius[j];const double inertia=.012*(length*length+3*radius*radius)/12;Quat q=frame(radial);ar.directors.push_back({q,q,{},{},{},1/inertia});}
 ar.bend_lambda.resize(c.segments-1);ar.bend_creep.resize(c.segments-1);
 const unsigned spacing=std::max(3u,c.segments/6);for(unsigned j=spacing;j<=c.segments;j+=spacing)ar.suckers.push_back({j});if(ar.suckers.empty()||ar.suckers.back().node!=c.segments)ar.suckers.push_back({c.segments});
+// Staged, independent tetrahedral arm flesh. Four real 3D masses
+// per cross-section (every two rod segments) and four signed-volume
+// tetrahedra between adjacent rings. The original centerline commands
+// these through compliant strands, never by teleporting the ring.
+if(c.volumetric_arm_prototype&&k==0&&c.segments>=4){
+ const unsigned stride=2;
+ const Vec3 outward=radial;
+ const Vec3 vertical=rotate_spawn({0,1,0});
+ const Vec3 sideways=unit(cross(outward,vertical));
+ for(unsigned j=0;j<=c.segments;j+=stride){
+  std::array<int,4> ring{};
+  const double rad=.036*(1-.8*double(j)/c.segments);
+  const Vec3 midpoint=p[ar.p[j]].x;
+  const Vec3 directions[4]={vertical,sideways,vertical*(-1),sideways*(-1)};
+  for(int v=0;v<4;++v){
+   const Vec3 pos=midpoint+directions[v]*rad;
+   ring[v]=particle(pos,.003,.008,int(n),k,int(1000+j*4+v));
+   // Finite shear compliance allows true non-elliptical squeeze.
+   edge(ring[v],ar.p[j],8e-7*c.softness);
+   if(!ar.volume_rings.empty()){
+    const int before=ar.volume_rings.back()[v];
+    edge(before,ring[v],1.8e-6*c.softness);
+    edge(ar.volume_rings.back()[(v+1)%4],ring[v],2.0e-6*c.softness);
+   }
+  }
+  // Structural perimeter permits contact patches to flatten locally
+  // while opposed nodes move outward to conserve tetrahedral volume.
+  for(int v=0;v<4;++v)
+   edge(ring[v],ring[(v+1)%4],3e-6*c.softness);
+  if(!ar.volume_rings.empty()){
+   const auto& last=ar.volume_rings.back();
+   const int previous_center=ar.p[j-stride],current_center=ar.p[j];
+   for(int v=0;v<4;++v){
+    T t{{previous_center,last[v],last[(v+1)%4],current_center},0};
+    t.rest=volume(t);
+    if(std::abs(t.rest)>1e-9){t.soft_volume=true;tetra.push_back(t);}
+   }
+  }
+  ar.volume_rings.push_back(ring);
+ }
+}
 // Root attached to every cage vertex; all reactions act on dynamic torso.
 for(int b:a.body)edge(ar.p[0],b,1e-7*c.softness);
 }
@@ -114,7 +156,7 @@ animals.push_back(a);}
  }
  for(unsigned k=0;k<c.rigid_count;++k){std::vector<int> ids;Vec3 center{double(k)*.65-.65,.32,1.35};for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})ids.push_back(particle(center+Vec3{x*.16,y*.16,z*.16},.125,.08,-1,-1,-1,int(k)));for(int i=0;i<8;++i)for(int j=i+1;j<8;++j)edge(ids[i],ids[j],1e-9);rigids.push_back(ids);}}
 void distance(D& e,double h){auto&a=p[e.a];auto&b=p[e.b];Vec3 delta=b.x-a.x;double l=norm(delta);if(l<1e-12)return;double alpha=e.compliance/(h*h),dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);e.lambda+=dl;Vec3 impulse=delta*(dl/l);a.x=a.x-impulse*a.inv;b.x=b.x+impulse*b.inv;}
-void volumes(double h){for(auto&t:tetra){auto a=p[t.p[0]].x,b=p[t.p[1]].x,c=p[t.p[2]].x,e=p[t.p[3]].x;std::array<Vec3,4> g;g[1]=cross(c-a,e-a)/6;g[2]=cross(e-a,b-a)/6;g[3]=cross(b-a,c-a)/6;g[0]=(g[1]+g[2]+g[3])*(-1);double alpha=(1e-10*std::sqrt(cfg.softness))/(h*h),den=alpha;for(int i=0;i<4;++i)den+=p[t.p[i]].inv*dot(g[i],g[i]);double dl=(-(volume(t)-t.rest)-alpha*t.lambda)/den;t.lambda+=dl;for(int i=0;i<4;++i){auto&v=p[t.p[i]];v.x=v.x+g[i]*(v.inv*dl);}}}
+void volumes(double h){for(auto&t:tetra){auto a=p[t.p[0]].x,b=p[t.p[1]].x,c=p[t.p[2]].x,e=p[t.p[3]].x;std::array<Vec3,4> g;g[1]=cross(c-a,e-a)/6;g[2]=cross(e-a,b-a)/6;g[3]=cross(b-a,c-a)/6;g[0]=(g[1]+g[2]+g[3])*(-1);double alpha=(t.soft_volume?cfg.volumetric_compliance:1e-10*std::sqrt(cfg.softness))/(h*h),den=alpha;for(int i=0;i<4;++i)den+=p[t.p[i]].inv*dot(g[i],g[i]);double dl=(-(volume(t)-t.rest)-alpha*t.lambda)/den;t.lambda+=dl;for(int i=0;i<4;++i){auto&v=p[t.p[i]];v.x=v.x+g[i]*(v.inv*dl);}}}
 Vec3 coil_direction(const Arm& ar,unsigned joint)const{
  // A physically held prop gives a local bend-in direction; terrain
  // stays free to curl upwards. This is not a remote grasp or skin force.
@@ -217,7 +259,8 @@ right.bend_lambda=rm::add(right.bend_lambda,correction);
 left.q=rm::integrate(left.q,rm::mul(correction,-left.inv_inertia),1);
 right.q=rm::integrate(right.q,rm::mul(correction,right.inv_inertia),1);
 }}}
-bool excluded(const P&a,const P&b){if(a.rigid>=0&&a.rigid==b.rigid)return true;if(a.animal>=0&&a.animal==b.animal){if(a.arm<0&&b.arm<0)return true;if(a.arm==b.arm&&std::abs(a.node-b.node)<=2)return true;if(a.arm<0&&b.node<=2)return true;if(b.arm<0&&a.node<=2)return true;if(a.node<=2&&b.node<=2)return true;}return false;}
+bool excluded(const P&a,const P&b){if(a.rigid>=0&&a.rigid==b.rigid)return true;if(a.animal>=0&&a.animal==b.animal){if(a.arm<0&&b.arm<0)return true;if(a.arm==b.arm&&a.arm>=0&&(a.node>=1000||b.node>=1000))return true;
+ if(a.arm==b.arm&&std::abs(a.node-b.node)<=2)return true;if(a.arm<0&&b.node<=2)return true;if(b.arm<0&&a.node<=2)return true;if(a.node<=2&&b.node<=2)return true;}return false;}
 // A coarse whole-prop guard catches center paths that cross before individual
 // corner constraints can resolve the coherent body's translation.
 void rigid_center_sweeps(){if(!cfg.collisions)return;const double diameter=2*.16*std::sqrt(3.0);
@@ -593,7 +636,14 @@ RenderSnapshot snapshot()const{RenderSnapshot s;s.tick=tick;s.time=time;s.diagno
  out.creep_strain.push_back(strand.creep);
  const double axial=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);
  out.elastic_strain.push_back(axial/std::max(strand.rest,1e-7)-1.);
-bool held=j==cfg.segments-1&&ar.attached!=-1;for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}}s.animals.push_back(as);}for(auto&ids:rigids){RigidSnapshot rs;for(int id:ids)rs.center=rs.center+p[id].x/8;rs.orientation=frame(p[ids[1]].x-p[ids[0]].x);s.rigids.push_back(rs);}return s;}
+
+bool held=j==cfg.segments-1&&ar.attached!=-1;for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}
+ for(const auto& ring:ar.volume_rings){
+  std::array<Vec3,4> world_ring{};
+  for(int v=0;v<4;++v)world_ring[v]=p[ring[v]].x;
+  out.volume_rings.push_back(world_ring);
+ }
+ }s.animals.push_back(as);}for(auto&ids:rigids){RigidSnapshot rs;for(int id:ids)rs.center=rs.center+p[id].x/8;rs.orientation=frame(p[ids[1]].x-p[ids[0]].x);s.rigids.push_back(rs);}return s;}
 };
 PhysicsWorld::PhysicsWorld(const WorldConfig& c):impl_(std::make_unique<Impl>(c)){}
 PhysicsWorld::~PhysicsWorld()=default;PhysicsWorld::PhysicsWorld(PhysicsWorld&&) noexcept=default;PhysicsWorld&PhysicsWorld::operator=(PhysicsWorld&&) noexcept=default;

@@ -54,6 +54,9 @@ struct WorldConfig {
     double creep_recovery=0.06;        // s^-1, return toward anatomical rest
     double max_creep_strain=0.25;      // fractional rest-length adaptation
     double bend_creep_rate=0.45;       // s^-1, slow curvature memory
+    // Staged volumetric arm prototype, enabled for physical arm 0 only.
+    bool volumetric_arm_prototype=true;
+    double volumetric_compliance=2e-7; // per-tetra XPBD volume compliance
     bool reach_ground_on_extend=true;   // guide ungripped extended tips to contact
     std::uint32_t rigid_count=3;
     bool auto_suction=false;      // enabled for gameplay; original native tests retain passive baseline
@@ -68,6 +71,7 @@ struct ArmSnapshot {
     std::vector<std::array<double,2>> tissue_strain; // two dynamical transverse semiaxis scale factors
     std::vector<double> creep_strain; // segment axial rest-shape adaptation
     std::vector<double> elastic_strain; // instantaneous length/rest mismatch (stress proxy)
+    std::vector<std::array<Vec3,4>> volume_rings; // 4 real 3D surface masses per ring; not a rendered GLB mesh
     std::vector<std::array<double,2>> radii; // segments, ellipse semiaxes metres
     std::vector<bool> attached;  // segments; physical attachment, not decoration
 };
