@@ -143,3 +143,12 @@ Linux native 3/3 CTest, Windows MSVC native 3/3 CTest PASS.
 Native body/collision tests do not certify original-GLB/Godot visuals.
 The previous 10-animal real-time results used slim geometry; higher
 contact density is now a performance regression to address.
+
+2026-11-15 jelly membrane preview: added Godot procedural tube surface
+driven by authoritative C++ rod nodes/radii, GPU wobble/recoil shader,
+dynamic intensity (PageUp/PageDown), F6 visibility, optional original
+GameReady model (preserving head/eyes) and automatic no-GLB demo fallback.
+Godot 4.6.2 OpenGL llvmpipe under Xvfb successfully rendered two animals
+and a 1280x720 screenshot (CI run 43628842241); actual original-GLB
+overlay remains unverified. Software GL preview measured ~35.4 sim
+ticks/s, *not* a real-GPU 60 FPS result. See docs/validation/JELLY_MEMBRANE.md.
