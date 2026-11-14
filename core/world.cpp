@@ -170,11 +170,14 @@ for(size_t i=0;i<p.size();++i){auto&a=p[i];a.old=a.x;Vec3 force{};if(int(i)==dra
 rigid_center_sweeps();
 for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
 rigid_center_sweeps();
-for(auto&a:animals)for(auto&ar:a.arms)for(unsigned j=0;j<cfg.segments;++j){double l=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);double pressure=std::max(p[ar.p[j]].compression,p[ar.p[j+1]].compression);double target=std::clamp(1-2*pressure/std::max(ar.radius[j],1e-5),.5,1.0);
+for(auto&a:animals)for(auto&ar:a.arms)for(unsigned j=0;j<cfg.segments;++j){double l=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);double pressure=std::max(p[ar.p[j]].compression,p[ar.p[j+1]].compression);// A pressed muscular hydrostat stays rounded, not a zero-thickness ribbon.
+// Clamp the dynamic ellipse aspect ratio to keep the arm's cross section
+// visibly voluminous; the area*length constraint remains exact.
+double target=std::clamp(1-2*pressure/std::max(ar.radius[j],1e-5),.70,1.0);
 const double omega=16.0,zeta=.65;
 ar.squash_velocity[j]+=(omega*omega*(target-ar.squash[j])-2*zeta*omega*ar.squash_velocity[j])*h;
-ar.squash[j]=std::clamp(ar.squash[j]+ar.squash_velocity[j]*h,.42,1.12);
-if(ar.squash[j]<=.42||ar.squash[j]>=1.12)ar.squash_velocity[j]=0;p[ar.p[j]].r=ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(l,1e-5));p[ar.p[j]].r=std::min(.1,p[ar.p[j]].r);}
+ar.squash[j]=std::clamp(ar.squash[j]+ar.squash_velocity[j]*h,.68,1.12);
+if(ar.squash[j]<=.68||ar.squash[j]>=1.12)ar.squash_velocity[j]=0;p[ar.p[j]].r=ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(l,1e-5));p[ar.p[j]].r=std::min(.1,p[ar.p[j]].r);}
 for(auto&a:p){a.v=(a.x-a.old)/h;if(!finite(a.x)||!finite(a.v)){++diag.nonfinite_count;return false;}}
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&roll:ar.roll){roll.omega=(roll.angle-roll.old)/h;if(!std::isfinite(roll.angle)||!std::isfinite(roll.omega)){++diag.nonfinite_count;return false;}}
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&director:ar.directors){director.q=rod_math::normalize(director.q);director.omega=rod_math::mul(rod_math::log_rotation(rod_math::multiply(director.q,rod_math::inverse(director.old))),1/h);if(!finite(director.omega)||!std::isfinite(director.q.w)){++diag.nonfinite_count;return false;}}
