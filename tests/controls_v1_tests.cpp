@@ -279,6 +279,36 @@ int main(){try{
    std::cout<<"VOLUMETRIC_ARM_PROTOTYPE rings="<<state.animals[0].arms[0].volume_rings.size()
             <<" rest_motion="<<displacement<<"\n";
   }
+  // Real gravity-settled resting pose: no arm can continuously sweep
+  // or hold the prior prescribed cooked-octopus curl at zero input.
+  {WorldConfig rest;
+   rest.animals=1;rest.rigid_count=0;rest.auto_suction=false;
+   rest.grounded_rest=true;rest.spawn_height=.27;rest.upright_strength=.08;
+   PhysicsWorld resting(rest);
+   for(unsigned arm=0;arm<8;++arm){
+    MuscleCommand idle;idle.arm=arm;idle.activation=0;
+    idle.curvature=0;idle.extension=1.10;idle.sweep=0;
+    require(resting.command(idle),"idle gravitational settling command accepted");
+   }
+   for(int tick=0;tick<360;++tick)
+    require(resting.step(),"resting octopus remains finite with floor contacts");
+   auto snapshot=resting.snapshot();
+   unsigned close=0,total=0;
+   for(const auto& ar:snapshot.animals[0].arms){
+    for(size_t k=ar.nodes.size()/3;k<ar.nodes.size();++k){
+     ++total;
+     if(ar.nodes[k].y<.115)++close;
+    }
+   }
+   double fraction=double(close)/total;
+   std::cout<<"GROUNDED_REST torso_y="<<snapshot.animals[0].center.y
+            <<" distal_floor_fraction="<<fraction
+            <<" contact_count="<<snapshot.diagnostics.contact_count<<"\n";
+   require(snapshot.animals[0].center.y<.43,
+           "passive mantle must rest low instead of standing on arms");
+   require(fraction>.50,
+           "majority of distal passive arm nodes must lie near the ground");
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
