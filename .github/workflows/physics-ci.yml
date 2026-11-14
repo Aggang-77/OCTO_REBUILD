@@ -37,3 +37,53 @@ jobs:
         run: cmake --build build --config Release --parallel 2
       - name: Native tests
         run: ctest --test-dir build -C Release --output-on-failure
+
+  jelly-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the native shared-world server
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target octo_server -j 2
+      - name: Install Godot 4.6.2 and a virtual GL display
+        run: |
+          curl --fail --location --retry 3 --silent --show-error \
+            -o "$RUNNER_TEMP/godot.zip" \
+            https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_linux.x86_64.zip
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP"
+          chmod +x "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64"
+          if ! command -v xvfb-run >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends xvfb
+          fi
+      - name: Import and parse Godot project
+        run: |
+          "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
+            --headless --editor --path game --import --quit
+      - name: Render two procedural jelly octopuses and verify screenshot
+        run: |
+          export OCTO_SERVER="$PWD/build/octo_server"
+          xvfb-run -a -s '-screen 0 1280x720x24' \
+            env LIBGL_ALWAYS_SOFTWARE=1 timeout 60s \
+            "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
+            --rendering-driver opengl3 --path game -- \
+            --animals=2 --procedural --test-jelly --benchmark-ticks=90 \
+            --screenshot="$RUNNER_TEMP/jelly_preview.png" \
+            > "$RUNNER_TEMP/godot_jelly.log" 2>&1 || {
+              cat "$RUNNER_TEMP/godot_jelly.log"
+              exit 1
+            }
+          cat "$RUNNER_TEMP/godot_jelly.log"
+          python3 tests/check_jelly_demo.py \
+            "$RUNNER_TEMP/godot_jelly.log" "$RUNNER_TEMP/jelly_preview.png"
+      - name: Upload rendered proof and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jelly-preview-linux
+          path: |
+            ${{ runner.temp }}/jelly_preview.png
+            ${{ runner.temp }}/godot_jelly.log
+          if-no-files-found: warn
