@@ -26,6 +26,23 @@ func _exercise() -> void:
     await process_frame
     octo.animals = 2
     octo.selected = 1
+    # Old/native-in-flight render snapshots can omit the new HUD-only
+    # attached field; this must never throw or stop player controls.
+    var legacy_snapshot: Dictionary = {
+        "animals": [{"arms": [{"nodes": []}, {"radii": []}]}]
+    }
+    if not _check(octo.count_grips_from_snapshot(legacy_snapshot) == 0,
+            "legacy snapshot without attached does not crash"):
+        return
+    var mixed_snapshot: Dictionary = {
+        "animals": [{"arms": [{"attached": [true, false, true]},
+                              {"nodes": []}]},
+                    {"arms": [{"attached": [false, true]}]}]
+    }
+    if not _check(octo.count_grips_from_snapshot(mixed_snapshot) == 3,
+            "grip count uses only explicitly present contacts"):
+        return
+    print("GRIP_HUD_COMPAT_PASS legacy_missing=true counted=3")
     if not _check(DEMO.EXTEND_KEYS.size() == 8 and DEMO.STROKE_KEYS.size() == 8, "16-key arrays"):
         return
     var unique := {}
@@ -44,9 +61,6 @@ func _exercise() -> void:
         for j in range(8):
             var begin := 2 + (8 + j) * 9
             var actual := float(parts[begin + 4])
-            if j == arm:
-                print("KEY_DEBUG key=",extension," pressed=",Input.is_physical_key_pressed(extension),
-                    " actual=",actual," selected=",octo.selected," wire=",octo.step_command().substr(0,140))
             if not _check(absf(actual - (1.28 if j == arm else 0.70)) < 0.001, "extend arm %d vs %d" % [j, arm]):
                 return
         _key(extension, false)
