@@ -20,3 +20,18 @@ The original demo set rest radius to `r(u)=0.036*(1-0.8*u)` and reapplied that s
 - Contact-driven elliptical squash now uses a lightly underdamped physical spring (natural frequency 16 rad/s, damping ratio 0.65), with bounded axis ratio and reciprocal-area compensation. This provides finite relaxation and mild rebound rather than a single monotone exponential.
 - Godot samples the authoritative discrete rod centerline with Catmull-Rom cubic interpolation and blends neighbouring physical section radii/roll instead of a nearest-neighbour step. This smooths the rendered silhouette but does *not* turn the interpolated skin into authoritative collision geometry.
 - Existing GLB rig and textures are retained. No Godot GPU screenshot was possible without the asset file.
+
+## Measured native validation (commit 2a1e6bd)
+
+GitHub Actions: https://github.com/songhh06/OCTO_REBUILD/actions/runs/43626436269
+
+| Check | Result |
+|---|---|
+| Linux C++ Release compile + native CTest | PASS, 3/3 |
+| Windows MSVC Release compile + native CTest | PASS, 3/3 |
+| 2 spread-active, 24 segments, Linux, 60 measured ticks | mean/p95 2.725/2.782 ms |
+| 10 dense-active, 24 segments, Linux, 120 measured ticks | mean/p95 27.510/28.280 ms; nonfinite 0 |
+| Original GameReady GLB visual screenshot and GUI playability | NOT RUN (untracked model asset unavailable) |
+| 10 dense 60 Hz real-time budget | FAIL on hosted native timing (16.667 ms deadline exceeded) |
+
+Compared with the earlier slim-arm Linux test (mean 15.054 ms at 10 dense animals), the enlarged physical sections create more collision candidate pairs. The tests use different hosted runner executions; the numerical difference should not be taken as a controlled hardware benchmark. The two-animal interactive use case remains within the **native** CPU timestep budget, but end-to-end Godot speed is unmeasured. This realism/performance trade-off is an explicit open task for collision broadphase/proxy refinement, not a hidden success claim.

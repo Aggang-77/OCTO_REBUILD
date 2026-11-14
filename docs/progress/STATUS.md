@@ -135,3 +135,11 @@ length and local hydrostatic radius reconstruction, retargeted imported
 GLB bone scale to physical section radii, and optional legacy-profile
 comparison. Native tests, Windows CI and actual original-GLB visuals
 must be evaluated separately; no full surface-volume/contact claim.
+
+2026-11-15 organic profile verified via GitHub Actions run 43626436269:
+Linux native 3/3 CTest, Windows MSVC native 3/3 CTest PASS.
+2 spread-active mean/p95 2.725/2.782 ms; 10 dense-active
+27.510/28.280 ms on hosted Linux, vs 16.667 ms deadline FAIL.
+Native body/collision tests do not certify original-GLB/Godot visuals.
+The previous 10-animal real-time results used slim geometry; higher
+contact density is now a performance regression to address.

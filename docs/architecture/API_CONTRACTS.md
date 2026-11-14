@@ -14,7 +14,12 @@ Invalid IDs and NaN inputs return false without mutation. Failed step is reporte
 Muscle targets persist until replaced and are filtered. Drag is a capped spring
 force; attachment is a bounded constraint with reaction on both participants.
 Adjacent segments are excluded from self-contact; remote arms and different animals collide.
-Tangential friction is bounded by normal reaction. All parameters are ASSUMED engineering values.
+Tangential friction is bounded by normal reaction. All parameters are ASSUMED engineering values. Since the organic-hydrostat slice,
+`WorldConfig::organic_profile` selects the broad-midarm section shape by default
+(legacy cone optional); `idle_wriggle` controls distributed 3D bend and normalized
+positive longitudinal rest-length waves. The scalar ellipse cross-section is
+reconstructed to preserve nominal per-section area×length. These remain rod
+proxies, not independently tessellated transverse tissue or exact surface CCD.
 
 ## Renderer transport
 
