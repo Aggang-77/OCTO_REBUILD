@@ -28,6 +28,8 @@ def main() -> None:
         advanced = request(4, f"step 16 {arms} 0 0 0 0 0 0 30 20")
         assert advanced["ok"] and advanced["snapshot"]["tick"] == 1
         assert len(advanced["snapshot"]["animals"][0]["arms"][0]["roll"]) == 16
+        radii = advanced["snapshot"]["animals"][0]["arms"][0]["radii"]
+        assert len(radii) == 16 and all(len(pair) == 2 and min(pair) > 0 for pair in radii)
         assert not request(4, "snapshot")["ok"], "duplicate request ID accepted"
         assert request(5, "quit")["ok"]
         proc.wait(timeout=5)

@@ -103,3 +103,10 @@ C++ child alive. Pending bookkeeping was corrected; reader phase and byte
 availability are recorded on future watchdog failures. Six instrumented
 repeats then passed, 56.833–58.547 ticks/s. No phase-level failure captured;
 reliability and sustained 60 Hz both remain failing gates in these tests.
+
+2026-11-15 input path follow-up: headless Godot `game.input` CTest injects
+Tab/Q and mouse pick/motion for animal 2, then checks C++ snapshot motion.
+Display-only UI mouse interception was fixed. Release CTest 4/4 PASS;
+120-tick run measured arm relative-tip divergence 0.164 m and horizontal
+body motion during drag 0.774 m. This covers the synthetic two-animal path,
+not a manual playability/attachment audit. See docs/validation/GODOT_INPUT_PATH.md.

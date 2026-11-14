@@ -33,6 +33,14 @@ var test_actuation := false
 var test_all_active := false
 var test_reset := false
 var test_kill_native := false
+var test_input := false
+var input_phase := 0
+var input_arm_seen := false
+var input_drag_seen := false
+var input_arm_delta := 0.0
+var input_center_delta := 0.0
+var input_arm_baseline := 0.0
+var input_center_baseline := Vector3.ZERO
 var killed_native := false
 var reset_issued := false
 var reset_observed := false
@@ -67,6 +75,7 @@ func _ready() -> void:
         if arg == "--test-all-active": test_all_active = true
         if arg == "--test-reset": test_reset = true
         if arg == "--test-kill-native": test_kill_native = true; smoke = true
+        if arg == "--test-input": test_input = true; smoke = true
         if arg == "--dense": dense_scene = true
         if arg.begins_with("--screenshot="): screenshot = arg.substr(13); smoke = true
     if animals not in [1, 2, 5, 10]: fail("Choose --animals=1, 2, 5 or 10"); return
@@ -170,11 +179,11 @@ func make_stage() -> void:
     distance = 7.0 + maxf(0, animals - 2) * 0.7
     update_camera()
     var layer := CanvasLayer.new(); add_child(layer)
-    var panel := PanelContainer.new(); panel.position = Vector2(20,20); panel.custom_minimum_size = Vector2(450,0); layer.add_child(panel)
-    var box := VBoxContainer.new(); panel.add_child(box)
-    var title := Label.new(); title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
-    label = Label.new(); label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nBody skin is rigid; arm skin approximates rod state.\nXPBD torsion slice / native process / tissue unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var panel := PanelContainer.new(); panel.position = Vector2(20,20); panel.custom_minimum_size = Vector2(450,0); panel.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(panel)
+    var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
+    var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
+    label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nBody skin is rigid; arm skin approximates rod state.\nXPBD torsion slice / native process / tissue unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -243,6 +252,7 @@ func update_scene() -> void:
         for arm in 8:
             var nodes: Array = a.arms[arm].nodes
             var material_roll: Array = a.arms[arm].roll
+            var radii: Array = a.arms[arm].radii
             if nodes.size() < 2: continue
             var globals := {}
             var art := (7-arm)%8
@@ -259,7 +269,9 @@ func update_scene() -> void:
                 if (rest1-rest0).length_squared() > 0.000001 and tangent.length_squared() > 0.000001: swing = Quaternion((rest1-rest0).normalized(), tangent)
                 var roll_index := mini(int(float(j)*material_roll.size()/24.0),material_roll.size()-1)
                 var material_rotation := Quaternion(tangent, float(material_roll[roll_index])) * swing
-                var target := Transform3D(Basis(material_rotation)*rest.basis, Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
+                var base_radius := .036 * (1.0-.8*float(roll_index)/float(material_roll.size()))
+                var cross_section := Vector3(clampf(float(radii[roll_index][0])/base_radius,.5,1.8),1.0,clampf(float(radii[roll_index][1])/base_radius,.5,1.8))
+                var target := Transform3D(Basis(material_rotation)*rest.basis*Basis.from_scale(cross_section), Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
                 var parent := skel.get_bone_parent(id)
                 var parent_global: Transform3D = globals.get(parent, skel.get_bone_global_rest(parent) if parent >= 0 else Transform3D.IDENTITY)
                 skel.set_bone_pose(id,parent_global.affine_inverse()*target); globals[id] = target
@@ -282,9 +294,55 @@ func step_command() -> String:
     out += " %d %d 0 %f %f %f 30 20" % [drag_kind if dragging else 0,drag_index,drag_target.x,drag_target.y,drag_target.z]
     return out
 
+func inject_key(code: Key, pressed: bool) -> void:
+    var event := InputEventKey.new()
+    event.keycode = code
+    event.physical_keycode = code
+    event.pressed = pressed
+    Input.parse_input_event(event)
+
+func exercise_input() -> void:
+    if not test_input or animals != 2: return
+    if current.tick >= 50 and input_phase == 1:
+        var active_tip := vec(current.animals[1].arms[0].nodes[-1]) - vec(current.animals[1].center)
+        var passive_tip := vec(current.animals[0].arms[0].nodes[-1]) - vec(current.animals[0].center)
+        input_arm_delta = maxf(input_arm_delta,active_tip.distance_to(passive_tip)-input_arm_baseline)
+    if current.tick >= 90 and input_phase == 3:
+        var center := vec(current.animals[1].center)
+        input_center_delta = maxf(input_center_delta,Vector2(center.x,center.z).distance_to(Vector2(input_center_baseline.x,input_center_baseline.z)))
+    if current.tick >= 10 and input_phase == 0:
+        var active_tip := vec(current.animals[1].arms[0].nodes[-1]) - vec(current.animals[1].center)
+        var passive_tip := vec(current.animals[0].arms[0].nodes[-1]) - vec(current.animals[0].center)
+        input_arm_baseline = active_tip.distance_to(passive_tip)
+        inject_key(KEY_TAB,true)
+        inject_key(KEY_TAB,false)
+        inject_key(KEY_Q,true)
+        input_phase = 1
+    if current.tick >= 55 and input_phase == 1:
+        inject_key(KEY_Q,false)
+        input_center_baseline = vec(current.animals[1].center)
+        var event := InputEventMouseButton.new()
+        event.button_index = MOUSE_BUTTON_LEFT
+        event.position = camera.unproject_position(vec(current.animals[1].center))
+        event.pressed = true
+        Input.parse_input_event(event)
+        input_phase = 2
+    if current.tick >= 60 and input_phase == 2:
+        var motion := InputEventMouseMotion.new()
+        motion.position = camera.unproject_position(vec(current.animals[1].center)) + Vector2(100,-40)
+        Input.parse_input_event(motion)
+        input_phase = 3
+    if current.tick >= 95 and input_phase == 3:
+        var event := InputEventMouseButton.new()
+        event.button_index = MOUSE_BUTTON_LEFT
+        event.pressed = false
+        Input.parse_input_event(event)
+        input_phase = 4
+
 func _process(delta: float) -> void:
     var start := Time.get_ticks_usec(); poll()
     if current.is_empty() or quitting: return
+    exercise_input()
     if test_kill_native and current.tick >= 20 and not killed_native:
         killed_native = true
         OS.kill(child.pid)
@@ -298,6 +356,9 @@ func _process(delta: float) -> void:
     label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,parse_ms,skin_ms,command_ms]
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
+    if test_input:
+        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_Q) and next_command.contains(" 1 0 1.000000 2.000000"))
+        input_drag_seen = input_drag_seen or (dragging and drag_kind == 1 and drag_index == 1 and drag_target.distance_to(vec(current.animals[1].center)) > .05)
     command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
     inbox_lock.lock()
     latest_command = next_command
@@ -307,6 +368,9 @@ func _process(delta: float) -> void:
         send(next_command)
     frame_sum += float(Time.get_ticks_usec()-start)/1000.0; frame_count += 1
     if smoke and current.tick >= benchmark_ticks and (not test_reset or reset_observed):
+        if test_input:
+            print("INPUT_CHECK selected=%d arm=%s drag=%s phase=%d arm_delta_m=%.5f center_delta_m=%.5f" % [selected,str(input_arm_seen),str(input_drag_seen),input_phase,input_arm_delta,input_center_delta])
+            if not input_arm_seen or not input_drag_seen or input_arm_delta < .005 or input_center_delta < .002: fail("Key or mouse input did not produce physical response"); return
         smoke = false
         if test_reset: print("RESET_CHECK issued=%s observed=%s" % [reset_issued,reset_observed])
         if test_actuation:

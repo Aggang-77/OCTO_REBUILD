@@ -21,7 +21,7 @@ int main(int argc,char** argv) {
     octo::WorldConfig cfg; cfg.animals=count; cfg.spacing=dense?1.0:2.2;
     octo::PhysicsWorld world(cfg);
     std::vector<double> times, snapshot_times, constraint_times, collision_times;
-    double max_penetration=0,max_volume_error=0,max_energy=0;
+    double max_penetration=0,max_volume_error=0,max_shear_error=0,max_energy=0;
     std::uint64_t max_contacts=0,max_pairs=0,nonfinite=0,attachment_samples=0;
     constexpr unsigned warmup=120;
     for(unsigned tick=0;tick<ticks+warmup;++tick) {
@@ -48,6 +48,7 @@ int main(int argc,char** argv) {
         collision_times.push_back(state.diagnostics.collision_ms);
         max_penetration=std::max(max_penetration,state.diagnostics.max_penetration);
         max_volume_error=std::max(max_volume_error,state.diagnostics.max_volume_error);
+        max_shear_error=std::max(max_shear_error,state.diagnostics.max_shear_error);
         max_energy=std::max(max_energy,state.diagnostics.kinetic_energy);
         max_contacts=std::max(max_contacts,state.diagnostics.contact_count);
         max_pairs=std::max(max_pairs,state.diagnostics.candidate_pairs);
@@ -55,7 +56,7 @@ int main(int argc,char** argv) {
         attachment_samples+=state.diagnostics.attachments;
     }
     const auto mean=[](const std::vector<double>& v){return std::accumulate(v.begin(),v.end(),0.0)/v.size();};
-    std::cout<<"animals,scenario,segments,substeps,iterations,warmup,measured_ticks,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,snapshot_mean_ms,constraints_mean_ms,collision_mean_ms,max_penetration_m,max_volume_error,max_contacts,max_pairs,attachment_samples,max_energy_J,nonfinite\n";
-    std::cout<<std::setprecision(9)<<count<<','<<(dense?"dense_active":twist_load?"spread_twist_active":"spread_active")<<','<<cfg.segments<<','<<cfg.substeps<<','<<cfg.iterations<<','<<warmup<<','<<ticks<<','<<mean(times)<<','<<percentile(times,.5)<<','<<percentile(times,.95)<<','<<percentile(times,.99)<<','<<*std::max_element(times.begin(),times.end())<<','<<mean(snapshot_times)<<','<<mean(constraint_times)<<','<<mean(collision_times)<<','<<max_penetration<<','<<max_volume_error<<','<<max_contacts<<','<<max_pairs<<','<<attachment_samples<<','<<max_energy<<','<<nonfinite<<'\n';
+    std::cout<<"animals,scenario,segments,substeps,iterations,warmup,measured_ticks,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,snapshot_mean_ms,constraints_mean_ms,collision_mean_ms,max_penetration_m,max_volume_error,max_shear_sine,max_contacts,max_pairs,attachment_samples,max_energy_J,nonfinite\n";
+    std::cout<<std::setprecision(9)<<count<<','<<(dense?"dense_active":twist_load?"spread_twist_active":"spread_active")<<','<<cfg.segments<<','<<cfg.substeps<<','<<cfg.iterations<<','<<warmup<<','<<ticks<<','<<mean(times)<<','<<percentile(times,.5)<<','<<percentile(times,.95)<<','<<percentile(times,.99)<<','<<*std::max_element(times.begin(),times.end())<<','<<mean(snapshot_times)<<','<<mean(constraint_times)<<','<<mean(collision_times)<<','<<max_penetration<<','<<max_volume_error<<','<<max_shear_error<<','<<max_contacts<<','<<max_pairs<<','<<attachment_samples<<','<<max_energy<<','<<nonfinite<<'\n';
     return nonfinite==0?0:5;
 }

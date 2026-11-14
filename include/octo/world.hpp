@@ -36,6 +36,7 @@ struct WorldConfig {
 struct ArmSnapshot {
     std::vector<Vec3> nodes;     // segments+1, root -> tip, world metres
     std::vector<Quat> frames;    // segments, local +Z is tangent
+    std::vector<Vec3> angular_velocities; // 3D director angular velocity, world rad/s
     std::vector<double> material_roll; // segments, physically solved torsion angle (radians)
     std::vector<std::array<double,2>> radii; // segments, ellipse semiaxes metres
     std::vector<bool> attached;  // segments; physical attachment, not decoration
@@ -49,7 +50,7 @@ struct AnimalSnapshot {
 struct RigidSnapshot { Vec3 center{}; Quat orientation{}; Vec3 half_extents{0.16,0.16,0.16}; };
 struct Diagnostics {
     double step_ms=0, constraints_ms=0, collision_ms=0;
-    double max_penetration=0, max_volume_error=0, kinetic_energy=0;
+    double max_penetration=0, max_volume_error=0, max_shear_error=0, kinetic_energy=0;
     Vec3 linear_momentum{};
     Vec3 angular_momentum{}; // about world origin, includes material-roll spin
     std::uint64_t contact_count=0, candidate_pairs=0, attachments=0, broken_attachments=0, nonfinite_count=0;
