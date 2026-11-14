@@ -15,7 +15,8 @@ struct MuscleCommand {
     double extension=1;          // rest-length ratio, clamp [0.65,1.35]
     double twist=0;              // rad/m
     double stiffness=0;          // [0,1]
-    bool attach=false;
+    bool attach=false;           // legacy explicit tip attachment
+    double sweep=0;              // [-1,1] body-relative anterior/posterior muscle drive
 };
 struct DragCommand {
     enum class Kind { None, Animal, ArmTip, Rigid };
@@ -31,6 +32,7 @@ struct WorldConfig {
     double fixed_dt=1.0/60.0, damping=0.4, friction=0.65;
     double spacing=2.2, spawn_height=0.75;
     std::uint32_t rigid_count=3;
+    bool auto_suction=false;      // enabled for gameplay; original native tests retain passive baseline
     bool collisions=true, floor=true;
 };
 struct ArmSnapshot {
@@ -77,6 +79,7 @@ public:
     void reset(const WorldConfig& config);
     bool command(const MuscleCommand& command);
     bool drag(const DragCommand& command);
+    void release_all_suckers(bool held); // Space overrides all grips while held
     bool impulse_rigid(std::uint32_t index, Vec3 impulse); // N·s at the prop center, for controlled physical fixtures
     bool step();                 // exactly config.fixed_dt; false on invalid state
     RenderSnapshot snapshot() const;

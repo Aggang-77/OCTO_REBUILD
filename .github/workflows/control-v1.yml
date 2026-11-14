@@ -1,0 +1,57 @@
+name: Controls v1 checks
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure and build native simulator
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
+      - name: CTest native physics, bridge and control rules
+        run: ctest --test-dir build --output-on-failure
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure MSVC
+        run: cmake -S . -B build
+      - name: Build Release
+        run: cmake --build build --config Release --parallel 2
+      - name: CTest on Windows
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  godot-input:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Godot 4.6.2
+        run: |
+          curl --fail --location --retry 3 --silent --show-error \
+            -o "$RUNNER_TEMP/godot.zip" \
+            https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_linux.x86_64.zip
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP"
+          chmod +x "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64"
+      - name: Import project and compile GDScript
+        run: |
+          "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
+            --headless --editor --path game --import --quit
+      - name: Verify exact 16-key Godot input serialization
+        run: |
+          "$RUNNER_TEMP/Godot_v4.6.2-stable_linux.x86_64" \
+            --headless --path game --script res://tests/control_v1_input.gd \
+            2>&1 | tee "$RUNNER_TEMP/controls.log"
+          grep -q "CONTROL_V1_KEYS_PASS" "$RUNNER_TEMP/controls.log"
+          if grep -E -q "SCRIPT ERROR|Parse Error|Invalid call" "$RUNNER_TEMP/controls.log"; then exit 1; fi

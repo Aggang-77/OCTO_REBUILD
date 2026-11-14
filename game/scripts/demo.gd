@@ -1,6 +1,10 @@
 extends Node3D
 const MODEL = "res://assets/Octopus_GameReady_v5.glb"
-const KEYS = [KEY_Q, KEY_W, KEY_E, KEY_R, KEY_A, KEY_S, KEY_D, KEY_F]
+# Solver arms 0..7 go around the body: right-front, right-side-front,
+# right-side-rear, right-rear, left-rear, left-side-rear,
+# left-side-front, left-front. Heading is torso-local +Z.
+const EXTEND_KEYS = [KEY_J, KEY_L, KEY_U, KEY_O, KEY_W, KEY_R, KEY_S, KEY_F]
+const STROKE_KEYS = [KEY_K, KEY_SEMICOLON, KEY_I, KEY_P, KEY_Q, KEY_E, KEY_A, KEY_D]
 const MODEL_SCALE = 1.35 / 2.3
 const MODEL_YAW = -PI / 8.0
 var child := {}
@@ -113,7 +117,7 @@ func _ready() -> void:
     send(reset_command())
 
 func reset_command() -> String:
-    return "reset %d %f" % [animals,1.0 if dense_scene else 2.2]
+    return "reset %d %f 1" % [animals,1.0 if dense_scene else 2.2]
 
 func read_pipe() -> void:
     # Drain the pipe independently of render frames. Only complete lines cross
@@ -183,7 +187,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nBody skin is rigid; arm skin approximates rod state.\nXPBD torsion slice / native process / tissue unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "F/D: left front    J/K: right front\nS/A: left side-front    L/;: right side-front\nR/E: left side-rear    U/I: right side-rear\nW/Q: left rear    O/P: right rear\nHold extend / release retract; hold stroke / release return\nSPACE: release every sucker; hold to prevent gripping\nTab: select octopus   F5: reset\nLeft drag: force   Right drag: orbit"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -282,16 +286,26 @@ func update_scene() -> void:
     if current.tick == 0 or current.tick == 1: print("SNAPSHOT tick=%d animals=%d arms=%d first_node=%s" % [current.tick,current.animals.size(),current.animals[0].arms.size(),str(current.animals[0].arms[0].nodes[0])])
 
 func step_command() -> String:
-    var out := "step %d" % (animals*8)
+    # The C++ step2 protocol carries independent extension/sweep and global
+    # Space release. Neither channel writes positions directly.
+    var out := "step2 %d" % (animals * 8)
     for i in animals:
         for arm in 8:
-            var pressed := test_all_active or (i == selected and Input.is_physical_key_pressed(KEYS[arm])) or (test_actuation and i == 0 and arm == 0)
-            var shift := Input.is_physical_key_pressed(KEY_SHIFT)
-            var ctrl := Input.is_physical_key_pressed(KEY_CTRL)
-            var alt := Input.is_physical_key_pressed(KEY_ALT)
-            var twist := (3.0 if test_actuation or test_all_active or Input.is_physical_key_pressed(KEY_Z) else -3.0 if Input.is_physical_key_pressed(KEY_X) else 0.0) if pressed else 0.0
-            out += " %d %d %f %f %f %f %f %d" % [i,arm,1.0 if pressed else 0.0,2.0 if pressed else 0.0,0.75 if pressed and shift else 1.0,twist,1.0 if pressed and alt else 0.0,1 if pressed and ctrl else 0]
-    out += " %d %d 0 %f %f %f 30 20" % [drag_kind if dragging else 0,drag_index,drag_target.x,drag_target.y,drag_target.z]
+            var controlled := i == selected
+            var reach := test_all_active or (test_actuation and i == 0 and arm == 0) or (
+                controlled and Input.is_physical_key_pressed(EXTEND_KEYS[arm]))
+            var paddle := test_all_active or (
+                controlled and Input.is_physical_key_pressed(STROKE_KEYS[arm]))
+            var extension := 1.28 if reach else 0.70
+            var curvature := 0.0 if reach else 3.6
+            var sweep := 1.0 if paddle else -1.0
+            var twist := 3.0 if test_actuation and i == 0 and arm == 0 else 0.0
+            out += " %d %d %f %f %f %f %f %d %f" % [
+                i, arm, 1.0, curvature, extension, twist, 0.15, 0, sweep]
+    out += " %d %d 0 %f %f %f 30 20 %d" % [
+        drag_kind if dragging else 0, drag_index,
+        drag_target.x, drag_target.y, drag_target.z,
+        1 if Input.is_physical_key_pressed(KEY_SPACE) else 0]
     return out
 
 func inject_key(code: Key, pressed: bool) -> void:
@@ -316,10 +330,10 @@ func exercise_input() -> void:
         input_arm_baseline = active_tip.distance_to(passive_tip)
         inject_key(KEY_TAB,true)
         inject_key(KEY_TAB,false)
-        inject_key(KEY_Q,true)
+        inject_key(KEY_J,true)
         input_phase = 1
     if current.tick >= 55 and input_phase == 1:
-        inject_key(KEY_Q,false)
+        inject_key(KEY_J,false)
         input_center_baseline = vec(current.animals[1].center)
         var event := InputEventMouseButton.new()
         event.button_index = MOUSE_BUTTON_LEFT
@@ -353,11 +367,16 @@ func _process(delta: float) -> void:
         inbox_lock.unlock()
     if first_tick_usec > 0 and current.tick > 1: frame_wall_ms.append(delta*1000.0)
     update_camera()
-    label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,parse_ms,skin_ms,command_ms]
+    var grip_count := 0
+    for animal in current.animals:
+        for arm in animal.arms:
+            for contact in arm.attached:
+                if contact: grip_count += 1
+    label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d   Grips %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,grip_count,parse_ms,skin_ms,command_ms]
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
-        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_Q) and next_command.contains(" 1 0 1.000000 2.000000"))
+        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_J) and next_command.contains(" 1 0 1.000000 0.000000 1.280000"))
         input_drag_seen = input_drag_seen or (dragging and drag_kind == 1 and drag_index == 1 and drag_target.distance_to(vec(current.animals[1].center)) > .05)
     command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
     inbox_lock.lock()
