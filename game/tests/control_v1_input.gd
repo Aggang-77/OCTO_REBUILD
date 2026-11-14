@@ -79,7 +79,7 @@ func _exercise() -> void:
     var override_scene := Node3D.new()
     override_scene.add_child(override_mesh)
     octo.add_child(override_scene)
-    var override_skin := octo.skin_deformer.install(override_scene, skin_rig, skin_bone_ids)
+    var override_skin: Dictionary = octo.skin_deformer.install(override_scene, skin_rig, skin_bone_ids)
     if not _check(override_skin.covered_surfaces == 1 and
             override_mesh.material_override is ShaderMaterial,
             "GLB mesh-level material overrides receive real GPU deformation"):
