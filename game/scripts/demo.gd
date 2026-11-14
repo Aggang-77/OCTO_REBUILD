@@ -1,5 +1,6 @@
 extends Node3D
 const MODEL = "res://assets/Octopus_GameReady_v5.glb"
+const OCTOPUS_SKIN = preload("res://scripts/octopus_skin.gd")
 # Solver arms 0..7 go around the body: right-front, right-side-front,
 # right-side-rear, right-rear, left-rear, left-side-rear,
 # left-side-front, left-front. Heading is torso-local +Z.
@@ -28,6 +29,7 @@ var sent_at := 0
 var last_progress_usec := 0
 var current := {}
 var views: Array = []
+var skin_deformer = OCTOPUS_SKIN.new()
 var props: Array = []
 var selected := 0
 var animals := 2
@@ -93,10 +95,8 @@ func _ready() -> void:
     for i in animals:
         var scene := packed.instantiate() as Node3D
         add_child(scene)
-        # Preserve the imported GLB texture/normal maps. Only alter
-        # inexpensive built-in PBR parameters; no jelly vertex shader.
-        var coated_surfaces := apply_slime_finish(scene)
-        print("SLIME_FINISH animal=%d coated_surfaces=%d shader=none" % [i,coated_surfaces])
+        # Import the untouched GameReady GLB before installing physical
+        # mesh-space skin. The legacy PBR mode is opt-in as a fallback.
         scene.scale = Vector3.ONE * MODEL_SCALE
         scene.rotation.y = MODEL_YAW
         var skels := scene.find_children("*", "Skeleton3D", true, false)
@@ -114,6 +114,15 @@ func _ready() -> void:
                 rests.append(skel.get_bone_global_rest(id))
             bone_ids.append(ids)
             bone_rests.append(rests)
+        var skin_config := {}
+        if OS.get_environment("OCTO_SKIN_MODE") != "legacy":
+            skin_config = skin_deformer.install(scene, skel, bone_ids)
+            print("NATIVE_MESH_SKIN animal=%d covered=%d skipped=%d reason=%s" % [
+                i, skin_config.covered_surfaces,
+                skin_config.rejected_surfaces, skin_config.reason])
+        else:
+            var coated_surfaces := apply_slime_finish(scene)
+            print("SLIME_FINISH_LEGACY animal=%d surfaces=%d" % [i,coated_surfaces])
         # Optional imported independent mantle mesh: preserve its original
         # material and vertex data, deform only its object transform from
         # the low-resolution physical shell. Never deform a combined arm mesh.
@@ -140,7 +149,8 @@ func _ready() -> void:
             preview_material.albedo_color = Color(0.15, 0.9, 0.7, 0.35)
             volume_preview.material_override = preview_material
             add_child(volume_preview)
-        views.append({"volume_preview": volume_preview, "scene": scene, "skel": skel, "bone_ids": bone_ids,
+        views.append({"skin_config": skin_config, "volume_preview": volume_preview,
+            "scene": scene, "skel": skel, "bone_ids": bone_ids,
             "bone_rests": bone_rests, "mantles": mantles,
             "torso_root": torso_root, "torso_rest": torso_rest})
         print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d torso_root=%d" % [i,mantles.size(),torso_root])
@@ -388,6 +398,8 @@ func update_scene() -> void:
                     mantle.transform = Transform3D(
                         rest_transform.basis * Basis.from_scale(shape_scale),
                         rest_transform.origin)
+        if not view.skin_config.is_empty():
+            skin_deformer.update_skin(view.skin_config, a.arms)
         for arm in 8:
             var nodes: Array = a.arms[arm].nodes
             var material_roll: Array = a.arms[arm].roll
