@@ -39,7 +39,21 @@ def main() -> None:
         assert legacy_radii[8][0] < radii[12][0], "legacy taper should be thinner at midarm"
         invalid_profile = request(7, "reset 2 1.0 0.0 24 2")
         assert not invalid_profile["ok"] and invalid_profile["error"] == "bad_config"
-        assert request(8, "quit")["ok"]
+        reset_v1 = request(8, "reset 1 2.2 0.0 16 1 1")
+        assert reset_v1["ok"] and reset_v1["snapshot"]["tick"] == 0
+        # step2 adds independent sweep to each arm and one global Space flag.
+        def v1_step(release: int) -> str:
+            arms = " ".join(f"0 {arm} 1 0 1.28 0 0.15 0 {1 if arm == 7 else -1}" for arm in range(8))
+            return f"step2 8 {arms} 0 0 0 0 0 0 30 20 {release}"
+        v1_move = request(9, v1_step(0))
+        assert v1_move["ok"] and v1_move["snapshot"]["tick"] == 1, v1_move
+        assert "attached" in v1_move["snapshot"]["animals"][0]["arms"][0]
+        v1_release = request(10, v1_step(1))
+        assert v1_release["ok"] and v1_release["snapshot"]["tick"] == 2
+        assert all(not any(a["attached"]) for a in v1_release["snapshot"]["animals"][0]["arms"]), "Space failed to release"
+        invalid_release = request(11, v1_step(3))
+        assert not invalid_release["ok"] and invalid_release["error"] == "bad_drag"
+        assert request(12, "quit")["ok"]
         proc.wait(timeout=5)
         assert proc.returncode == 0
     print("bridge protocol checks passed")
