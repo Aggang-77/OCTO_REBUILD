@@ -63,7 +63,9 @@ if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.ite
    !std::isfinite(c.bend_creep_rate)||c.bend_creep_rate<0||c.bend_creep_rate>5||
    !std::isfinite(c.volumetric_compliance)||c.volumetric_compliance<0||c.volumetric_compliance>1e-4||
    !std::isfinite(c.visual_arm_floor_radius)||c.visual_arm_floor_radius<0||c.visual_arm_floor_radius>.2||
-   !std::isfinite(c.visual_mantle_floor_radius)||c.visual_mantle_floor_radius<0||c.visual_mantle_floor_radius>.2)throw std::invalid_argument("Invalid WorldConfig");
+   !std::isfinite(c.visual_mantle_floor_radius)||c.visual_mantle_floor_radius<0||c.visual_mantle_floor_radius>.2||
+   !std::isfinite(c.arm_root_shell_compliance)||c.arm_root_shell_compliance<0||c.arm_root_shell_compliance>.005||
+   !std::isfinite(c.arm_root_center_compliance)||c.arm_root_center_compliance<0||c.arm_root_center_compliance>.005)throw std::invalid_argument("Invalid WorldConfig");
 for(unsigned n=0;n<c.animals;++n){Animal a;Vec3 center{(double(n)-double(c.animals-1)/2)*c.spacing,c.spawn_height,0};
 const double cr=std::cos(c.spawn_roll),sr=std::sin(c.spawn_roll);
 const auto rotate_spawn=[&](Vec3 v)->Vec3{
@@ -141,8 +143,25 @@ if(c.volumetric_arm_prototype&&k==0&&c.segments>=4){
   ar.volume_rings.push_back(ring);
  }
 }
-// Root attached to every cage vertex; all reactions act on dynamic torso.
-for(int b:a.body)edge(ar.p[0],b,1e-7*c.softness);
+// Hydrostatically deformable arm-to-mantle junction. Previously root
+// node 0 was tied to all seven cage nodes with nearly rigid links.
+// Only the local outer mantle shell should transmit attachment stresses.
+unsigned nearest=0;
+double best=-std::numeric_limits<double>::infinity();
+for(unsigned t=0;t<6;++t){
+ const Vec3 offset=p[a.shell[t]].x-center;
+ const double alignment=dot(offset,radial);
+ if(alignment>best){best=alignment;nearest=t;}
+}
+const int shell_center=a.shell[nearest];
+const int shell_left=a.shell[(nearest+5)%6];
+const int shell_right=a.shell[(nearest+1)%6];
+edge(ar.p[0],shell_center,c.arm_root_shell_compliance*c.softness);
+edge(ar.p[0],shell_left,c.arm_root_shell_compliance*c.softness*1.8);
+edge(ar.p[0],shell_right,c.arm_root_shell_compliance*c.softness*1.8);
+// Widen the attachment across one adjoining rod segment; no hard hinge.
+edge(ar.p[1],shell_center,c.arm_root_shell_compliance*c.softness*3.0);
+edge(ar.p[0],a.body[0],c.arm_root_center_compliance*c.softness);
 }
 animals.push_back(a);}
 // Adapt only arm axial and soft mantle-shell edges. Rigid prop
