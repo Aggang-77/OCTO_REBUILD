@@ -505,7 +505,12 @@ func _process(delta: float) -> void:
         inbox_lock.unlock()
     if first_tick_usec > 0 and current.tick > 1: frame_wall_ms.append(delta*1000.0)
     update_camera()
-    label.text = "Animal %d/%d    Tick %d    %.2f s\nSolver %.2f ms  RPC %.2f ms  Contacts %d\nParse %.2f ms  Skin %.2f ms  Command %.2f ms\nRenderer: %s (NO shader)    Space: release all" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,parse_ms,skin_ms,command_ms,"MultiMesh" if procedural_mode else "GameReady bones"]
+    var grip_count := 0
+    for animal in current.animals:
+        for arm in animal.arms:
+            for attached in arm.attached:
+                if attached: grip_count += 1
+    label.text = "Animal %d/%d    Tick %d    %.2f s\nSolver %.2f ms  RPC %.2f ms  Contacts %d  Grips %d\nParse %.2f ms  Skin %.2f ms  Command %.2f ms\nRenderer: %s (no custom shader)    SPACE: release all" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,grip_count,parse_ms,skin_ms,command_ms,"MultiMesh" if procedural_mode else "GameReady bones"]
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
