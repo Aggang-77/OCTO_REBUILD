@@ -42,6 +42,8 @@ func _exercise() -> void:
     skin_source.albedo_texture = ImageTexture.create_from_image(skin_image)
     skin_source.roughness_texture = skin_source.albedo_texture
     skin_source.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
+    skin_source.uv1_scale = Vector3(1.2, 0.8, 1.0)
+    skin_source.uv1_offset = Vector3(0.11, -0.04, 0.0)
     skin_sphere.material = skin_source
     skin_mesh.mesh = skin_sphere
     skin_scene.add_child(skin_mesh)
@@ -59,6 +61,8 @@ func _exercise() -> void:
     if not _check(converted.get_shader_parameter("albedo_tex") != null and
             converted.get_shader_parameter("roughness_tex") != null and
             int(converted.get_shader_parameter("roughness_channel")) == 1 and
+            (converted.get_shader_parameter("uv_scale") as Vector2).distance_to(Vector2(1.2, 0.8)) < 0.0001 and
+            (converted.get_shader_parameter("uv_offset") as Vector2).distance_to(Vector2(0.11, -0.04)) < 0.0001 and
             absf(float(converted.get_shader_parameter("base_roughness")) - 0.52) < 0.0001,
             "texture and authored roughness preserved"):
         return
