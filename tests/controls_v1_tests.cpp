@@ -189,6 +189,8 @@ int main(){try{
     for(const auto& node:snapshot.animals[0].body_nodes)
      require(node.y>=-.001,"colliding mantle nodes do not cross ground");
    }
+   require(max_strain>.10,
+           "floor contact must cause at least 10% local transverse deformation");
    std::cout<<"TISSUE_PASS mantle_nodes="<<
      tissue_world.snapshot().animals[0].body_nodes.size()<<
      " max_transverse_strain="<<max_strain<<"\n";
