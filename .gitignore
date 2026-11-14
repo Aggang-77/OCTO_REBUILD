@@ -3,6 +3,9 @@ work/
 game/.godot/
 game/assets/*.glb
 game/assets/*.png
+game/assets/*.import
+game/scripts/*.uid
+docs/validation/godot_headless.log
 *.pdb
 *.obj
 *.exe
