@@ -60,6 +60,7 @@ var control_phase := 0
 var control_extend_stroke := false
 var control_spring_return := false
 var control_release_all := false
+var control_all_pairs_verified := false
 var screenshot := ""
 var label: Label
 var camera: Camera3D
@@ -461,10 +462,36 @@ func exercise_input() -> void:
         input_phase = 4
 
 
+
+func verify_all_key_pairs() -> bool:
+    # On a deterministic test frame, synthesize each of 16 physical keys.
+    # Read the actual step2 serialization, not a duplicate lookup table.
+    for test_arm in 8:
+        inject_key(EXTEND_KEYS[test_arm],true)
+        var fields := step_command().split(" ")
+        for arm in 8:
+            var start := 2 + arm*9
+            var reach := float(fields[start+4])
+            if absf(reach - (1.28 if arm == test_arm else 0.70)) > 0.001:
+                inject_key(EXTEND_KEYS[test_arm],false)
+                return false
+        inject_key(EXTEND_KEYS[test_arm],false)
+        inject_key(STROKE_KEYS[test_arm],true)
+        fields = step_command().split(" ")
+        for arm in 8:
+            var start := 2 + arm*9
+            var sweep := float(fields[start+8])
+            if absf(sweep - (1.0 if arm == test_arm else -1.0)) > 0.001:
+                inject_key(STROKE_KEYS[test_arm],false)
+                return false
+        inject_key(STROKE_KEYS[test_arm],false)
+    return true
+
 func exercise_controls() -> void:
     if not test_controls or animals != 2:
         return
     if control_phase == 0 and current.tick >= 10:
+        control_all_pairs_verified = verify_all_key_pairs()
         inject_key(KEY_F,true) # left front extend; physical arm 7
         inject_key(KEY_D,true) # left front stroke; same time
         control_phase = 1
@@ -533,10 +560,11 @@ func _process(delta: float) -> void:
                 fail("Lightweight no-shader renderer missing"); return
             if views[0].lite_segments.material_override is ShaderMaterial:
                 fail("Legacy custom shader unexpectedly active"); return
-            if not control_extend_stroke or not control_spring_return or not control_release_all:
+            if not control_all_pairs_verified or not control_extend_stroke or not control_spring_return or not control_release_all:
                 fail("Dual-key extension, stroke return or Space release failed"); return
             print("CONTROL_V1_CHECK animals=2 arm_segments=%d no_shader=true" % arm_segments)
             print("CONTROL_KEYS_CHECK simultaneous=true spring_return=true space_override=true")
+            print("KEYMAP_ALL16_CHECK passed=true")
         if test_input:
             print("INPUT_CHECK selected=%d arm=%s drag=%s phase=%d arm_delta_m=%.5f center_delta_m=%.5f" % [selected,str(input_arm_seen),str(input_drag_seen),input_phase,input_arm_delta,input_center_delta])
             if not input_arm_seen or not input_drag_seen or input_arm_delta < .005 or input_center_delta < .002: fail("Key or mouse input did not produce physical response"); return
