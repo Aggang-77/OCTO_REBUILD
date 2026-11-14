@@ -169,7 +169,7 @@ func _exercise() -> void:
         for j in range(8):
             var begin := 2 + (8 + j) * 9
             var actual := float(parts[begin + 4])
-            if not _check(absf(actual - (1.48 if j == arm else 0.58)) < 0.001, "extend arm %d vs %d" % [j, arm]):
+            if not _check(absf(actual - (1.48 if j == arm else float(octo.idle_arm_shape(1, j).extension))) < 0.001, "extend arm %d vs %d" % [j, arm]):
                 return
         _key(extension, false)
         _key(stroke, true)
@@ -177,7 +177,7 @@ func _exercise() -> void:
         parts = octo.step_command().split(" ")
         for j in range(8):
             var begin := 2 + (8 + j) * 9
-            if not _check(absf(float(parts[begin + 8]) - (1.0 if j == arm else -1.0)) < 0.001, "stroke arm %d vs %d" % [j, arm]):
+            if not _check(absf(float(parts[begin + 8]) - (1.0 if j == arm else 0.0)) < 0.001, "stroke arm %d vs %d" % [j, arm]):
                 return
         _key(stroke, false)
         await process_frame
@@ -193,7 +193,7 @@ func _exercise() -> void:
     _key(KEY_D, false)
     await process_frame
     parts = octo.step_command().split(" ")
-    if not _check(absf(float(parts[arm7 + 4])-0.58)<0.001 and absf(float(parts[arm7 + 8])+1.0)<0.001, "release returns"):
+    if not _check(absf(float(parts[arm7 + 4])-float(octo.idle_arm_shape(1,7).extension))<0.001 and absf(float(parts[arm7 + 8]))<0.001, "release returns to relaxed draped arms"):
         return
     _key(KEY_SPACE, true)
     await process_frame
@@ -203,6 +203,12 @@ func _exercise() -> void:
     await process_frame
     if not _check(octo.step_command().ends_with(" 0"), "Space release clears"):
         return
-    print("CONTROL_V1_KEYS_PASS 16_keys=true simultaneous=true release_return=true space_priority=true")
+    var a0 := octo.idle_arm_shape(0,0)
+    var a1 := octo.idle_arm_shape(0,1)
+    if not _check(absf(a0.extension-a1.extension)>0.01 and
+            a0.activation < 0.5 and a0.sweep == 0.0,
+            "natural rest posture is asymmetric and passive"):
+        return
+    print("CONTROL_V1_KEYS_PASS 16_keys=true simultaneous=true passive_idle=true space_priority=true")
     octo.free()
     quit(0)
