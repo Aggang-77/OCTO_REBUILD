@@ -112,6 +112,12 @@ func _exercise() -> void:
             0.14*sin(theta)])
     var torso_scale := octo.mantle_scale_from_shell(faux_shell,
         Vector3.ZERO, Quaternion.IDENTITY)
+    var exhale: Vector3 = octo.mantle_respiration(torso_scale, 0.0)
+    var inhale: Vector3 = octo.mantle_respiration(torso_scale, 1.0)
+    if not _check(inhale.x > exhale.x and inhale.z > exhale.z and
+            inhale.x / exhale.x < 1.03,
+            "slow low-amplitude mantle breathing retains shell deformation"):
+        return
     if not _check(torso_scale.x < 1.0 and torso_scale.y < 1.0,
             "shell dimensions feed visible torso shape"):
         return
