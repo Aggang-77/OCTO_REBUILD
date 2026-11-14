@@ -199,6 +199,34 @@ int main(){try{
    bool rejected=false;try{PhysicsWorld no(invalid);}catch(const std::invalid_argument&){rejected=true;}
    require(rejected,"negative tissue viscosity is not accepted");
   }
+  // Viscoelastic damping must remove oscillatory energy without a
+  // global/kinematic position lock. Same impulse, same initial world;
+  // only relative rod viscosity differs. Both are closed systems.
+  {auto c=isolated;c.auto_suction=false;c.damping=0;
+   c.coil_curvature=0;c.upright_strength=0;
+   c.arm_internal_viscosity=0;
+   PhysicsWorld spring(c);
+   c.arm_internal_viscosity=14;
+   PhysicsWorld viscous(c);
+   DragCommand d;d.kind=DragCommand::Kind::ArmTip;d.index=0;d.arm=0;
+   d.target={0.3,1.35,1.6};d.max_force=8;d.stiffness=50;
+   require(spring.drag(d)&&viscous.drag(d),"matched impulse fixtures");
+   require(spring.step()&&viscous.step(),"matched impulse applied");
+   d.kind=DragCommand::Kind::None;
+   require(spring.drag(d)&&viscous.drag(d),"external impulse removed");
+   double spring_energy=0,viscous_energy=0;
+   for(int i=0;i<180;++i){
+    require(spring.step()&&viscous.step(),"viscosity fixtures finite");
+    if(i>60){
+     spring_energy+=spring.snapshot().diagnostics.kinetic_energy;
+     viscous_energy+=viscous.snapshot().diagnostics.kinetic_energy;
+    }
+   }
+   std::cout<<"VISCOUS_DAMPING spring_energy="<<spring_energy
+            <<" damped_energy="<<viscous_energy<<"\n";
+   require(viscous_energy<spring_energy,
+           "viscous arms must dissipate more energy than spring-only rods");
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
