@@ -363,6 +363,22 @@ void suction_constraints(double h){
   if(s.attached>=0)p[s.attached].x=p[s.attached].x-move*p[s.attached].inv;
  }
 }
+void damp_mantle_tissue(double h){
+ // Internal Kelvin-Voigt-like dashpot: exchange equal-and-opposite
+ // impulses between shell and central cage. This removes jiggle while
+ // preserving total linear momentum in a free, isolated octopus.
+ const double fraction=1.0-std::exp(-cfg.tissue_viscosity*h);
+ for(auto& animal:animals){
+  auto& center=p[animal.body[0]];
+  for(int index:animal.shell){
+   auto& shell=p[index];
+   const Vec3 relative=shell.v-center.v;
+   const Vec3 impulse=relative*(fraction/(shell.inv+center.inv));
+   shell.v=shell.v-impulse*shell.inv;
+   center.v=center.v+impulse*center.inv;
+  }
+ }
+}
 void tissue_dynamics(double h){
  // Each rod section stores independent, damped transverse strain. Contact
  // pressures push strain; neighboring sections share it gradually. Axis
@@ -461,7 +477,9 @@ for(auto&a:animals)for(auto&ar:a.arms)std::fill(ar.bend_lambda.begin(),ar.bend_l
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&roll:ar.roll){roll.lambda=0;roll.old=roll.angle;roll.omega*=std::exp(-cfg.damping*h);roll.angle+=roll.omega*h;}
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&director:ar.directors){director.old=director.q;director.bend_lambda={};director.shear_lambda={};director.omega=director.omega*std::exp(-cfg.damping*h);director.q=rod_math::integrate(director.q,director.omega,h);}
 int dragged=-1;if(drag.kind==DragCommand::Kind::Animal)dragged=animals[drag.index].body[0];if(drag.kind==DragCommand::Kind::ArmTip)dragged=animals[drag.index].arms[drag.arm].p.back();if(drag.kind==DragCommand::Kind::Rigid)dragged=rigids[drag.index][0];
-for(size_t i=0;i<p.size();++i){auto&a=p[i];a.old=a.x;Vec3 force{};if(int(i)==dragged){force=(drag.target-a.x)*drag.stiffness;double l=norm(force);if(l>drag.max_force)force=force*(drag.max_force/l);}a.v=(a.v+(cfg.gravity+force*a.inv)*h)*std::exp(-cfg.damping*h);a.x=a.x+a.v*h;}
+for(size_t i=0;i<p.size();++i){auto&a=p[i];a.old=a.x;Vec3 force{};if(int(i)==dragged){force=(drag.target-a.x)*drag.stiffness;double l=norm(force);if(l>drag.max_force)force=force*(drag.max_force/l);}a.v=(a.v+(cfg.gravity+force*a.inv)*h)*std::exp(-cfg.damping*h);}
+damp_mantle_tissue(h);
+for(auto& particle:p)particle.x=particle.x+particle.v*h;
 sweep_motors(h);
 upright_motors(h);
 follow_surface(h);
