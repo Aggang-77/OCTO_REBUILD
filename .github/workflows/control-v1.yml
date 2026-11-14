@@ -37,8 +37,9 @@ jobs:
           $binary = Get-ChildItem -Path build -Recurse -Filter octo_server.exe |
             Select-Object -First 1
           if ($null -eq $binary) { throw 'No octo_server.exe was built' }
+          # check-bridge.ps1 is a PowerShell script: it throws on
+          # failure and does not set $LASTEXITCODE like a native CLI.
           & ./tools/check-bridge.ps1 -Server $binary.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'Native server step2 preflight failed' }
 
   godot-input:
     runs-on: ubuntu-latest
