@@ -342,7 +342,7 @@ func update_scene() -> void:
                 var roll_index := mini(int(float(j)*material_roll.size()/24.0),material_roll.size()-1)
                 var material_rotation := Quaternion(tangent, float(material_roll[roll_index])) * swing
                 var base_radius := .036 * (1.0-.8*float(roll_index)/float(material_roll.size()))
-                var cross_section := Vector3(clampf(float(radii[roll_index][0])/base_radius,.5,1.8),1.0,clampf(float(radii[roll_index][1])/base_radius,.5,1.8))
+                var cross_section := Vector3(clampf(float(radii[roll_index][0])/base_radius,.40,2.5),1.0,clampf(float(radii[roll_index][1])/base_radius,.40,2.5))
                 var target := Transform3D(Basis(material_rotation)*rest.basis*Basis.from_scale(cross_section), Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
                 var parent := skel.get_bone_parent(id)
                 var parent_global: Transform3D = globals.get(parent, skel.get_bone_global_rest(parent) if parent >= 0 else Transform3D.IDENTITY)
