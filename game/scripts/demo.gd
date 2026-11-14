@@ -123,8 +123,16 @@ func _ready() -> void:
             var lower := String(mesh_part.name).to_lower()
             if lower.contains("mantle") or lower.contains("head") or lower.contains("hood"):
                 mantles.append({"node": mesh_part, "rest": mesh_part.transform})
-        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids, "bone_rests": bone_rests, "mantles": mantles})
-        print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d" % [i,mantles.size()])
+        # GameReady has 193 bones (192 arm segments + one shared torso
+        # root). Its body can therefore be deformed even when every part
+        # of the GLB is one combined skin surface: root-weighted vertices
+        # follow this bone, while arm bones are re-targeted below.
+        var torso_root: int = skel.get_bone_parent(bone_ids[0][0])
+        var torso_rest := skel.get_bone_global_rest(torso_root) if torso_root >= 0 else Transform3D.IDENTITY
+        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids,
+            "bone_rests": bone_rests, "mantles": mantles,
+            "torso_root": torso_root, "torso_rest": torso_rest})
+        print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d torso_root=%d" % [i,mantles.size(),torso_root])
     print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
     var server := OS.get_environment("OCTO_SERVER")
     if server.is_empty(): fail("Set OCTO_SERVER to the octo_server executable"); return
@@ -315,18 +323,32 @@ func update_scene() -> void:
                 clampf(span.x / 0.44, 0.55, 1.55),
                 clampf(span.y / 0.25, 0.50, 1.65),
                 clampf(span.z / 0.38, 0.55, 1.55))
-            for mantle_entry in view.mantles:
-                var mantle: MeshInstance3D = mantle_entry.node
-                var rest_transform: Transform3D = mantle_entry.rest
-                mantle.transform = Transform3D(
-                    rest_transform.basis * Basis.from_scale(shape_scale),
-                    rest_transform.origin)
+            var root_id: int = view.torso_root
+            if root_id >= 0:
+                var root_rest: Transform3D = view.torso_rest
+                var root_parent_id := skel.get_bone_parent(root_id)
+                var root_parent_rest := skel.get_bone_global_rest(root_parent_id) if root_parent_id >= 0 else Transform3D.IDENTITY
+                var body_target := Transform3D(
+                    root_rest.basis * Basis.from_scale(shape_scale), root_rest.origin)
+                skel.set_bone_pose(root_id, root_parent_rest.affine_inverse() * body_target)
+            if root_id < 0:
+                for mantle_entry in view.mantles:
+                    var mantle: MeshInstance3D = mantle_entry.node
+                    var rest_transform: Transform3D = mantle_entry.rest
+                    mantle.transform = Transform3D(
+                        rest_transform.basis * Basis.from_scale(shape_scale),
+                        rest_transform.origin)
         for arm in 8:
             var nodes: Array = a.arms[arm].nodes
             var material_roll: Array = a.arms[arm].roll
             var radii: Array = a.arms[arm].radii
             if nodes.size() < 2: continue
             var globals := {}
+            var torso_root: int = view.torso_root
+            if torso_root >= 0 and tissue_nodes.size() >= 19:
+                # Seed the parent transform with the physically deformed
+                # torso root so arm targets stay world-space correct.
+                globals[torso_root] = skel.get_bone_global_pose(torso_root)
             var art := (7-arm)%8
             var ids: Array = view.bone_ids[art]
             var rests: Array = view.bone_rests[art]
