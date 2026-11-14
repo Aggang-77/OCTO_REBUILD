@@ -71,6 +71,10 @@ var first_tick_usec := 0
 var frame_wall_ms: Array[float] = []
 
 func _ready() -> void:
+    # Synthetic key-map test exercises Input with a real in-tree Viewport,
+    # but has no private GameReady GLB or running native server.
+    if "--keymap-test" in OS.get_cmdline_user_args():
+        return
     for arg in OS.get_cmdline_user_args():
         if arg.begins_with("--animals="): animals = int(arg.get_slice("=", 1))
         if arg == "--benchmark": smoke = true
