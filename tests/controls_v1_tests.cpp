@@ -311,6 +311,34 @@ int main(){try{
    require(snapshot.diagnostics.attachments==0,
            "uncommanded resting octopus cannot glue every arm to the floor");
   }
+  // Two animals and three colliding props must also settle without
+  // losing the shared native world or silently raising the bodies.
+  {WorldConfig scene;
+   scene.animals=2;scene.rigid_count=3;scene.auto_suction=true;
+   scene.grounded_rest=true;scene.spawn_height=.27;
+   scene.upright_strength=.08;
+   PhysicsWorld world(scene);
+   for(int tick=0;tick<240;++tick)
+    require(world.step(),"grounded two-octopus prop world remains finite");
+   const auto state=world.snapshot();
+   double max_body=0;
+   unsigned near_ground=0,total=0;
+   for(const auto& animal:state.animals){
+    max_body=std::max(max_body,animal.center.y);
+    for(const auto& arm:animal.arms)
+     for(size_t k=arm.nodes.size()/3;k<arm.nodes.size();++k){
+      ++total;
+      if(arm.nodes[k].y<.15)++near_ground;
+     }
+   }
+   std::cout<<"GROUNDED_SHARED_WORLD max_body_y="<<max_body
+            <<" near_floor_fraction="<<double(near_ground)/total<<"\n";
+   require(state.diagnostics.nonfinite_count==0,
+           "grounded shared world state finite");
+   require(max_body<.48,"two passive bodies cannot become spider-like towers");
+   require(double(near_ground)/total>.55,
+           "most passive arm nodes must stay close to the floor even with props");
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
