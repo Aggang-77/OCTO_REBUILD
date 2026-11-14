@@ -103,12 +103,18 @@ func _exercise() -> void:
             "3D surface triangle topology follows two physical rings"):
         return
     OS.set_environment("OCTO_VOLUME_ARM", "1")
-    if not _check(octo.reset_command().ends_with(" 1"),"experimental native reset enabled"):
+    if not _check(octo.reset_command().ends_with(" 1 1"),
+            "experimental volume is independent of default grounded rest"):
         return
     OS.set_environment("OCTO_VOLUME_ARM", "")
-    if not _check(not octo.reset_command().ends_with(" 1 1"),
-            "stable native reset remains unchanged"):
+    if not _check(octo.reset_command().ends_with(" 0 1"),
+            "default demo starts grounded with tetra experiment disabled"):
         return
+    OS.set_environment("OCTO_REST_MODE", "legacy")
+    if not _check(octo.reset_command().ends_with(" 0 0"),
+            "legacy posture is available for direct A/B comparison"):
+        return
+    OS.set_environment("OCTO_REST_MODE", "")
     print("VOLUMETRIC_GODOT_PREVIEW_PASS physical_vertices=8 triangles=8")
     # Exercise GPU-bone mantle deformation independently of the private GLB:
     # the real GameReady skeleton has one shared root and 192 arm bones.
@@ -231,7 +237,7 @@ func _exercise() -> void:
     var a0 := octo.idle_arm_shape(0,0)
     var a1 := octo.idle_arm_shape(0,1)
     if not _check(absf(a0.extension-a1.extension)>0.01 and
-            a0.activation < 0.5 and a0.sweep == 0.0,
+            a0.activation == 0.0 and a0.sweep == 0.0 and a0.curvature == 0.0,
             "natural rest posture is asymmetric and passive"):
         return
     print("CONTROL_V1_KEYS_PASS 16_keys=true simultaneous=true passive_idle=true space_priority=true")
