@@ -62,7 +62,11 @@ def main() -> None:
         assert all(len(ring) == 4 for ring in volume_arms[0]["volume_rings"])
         assert len(volume_arms[1]["volume_rings"]) == 0
         assert request(11, "reset 1 2.2 1 2")["error"] == "bad_config"
-        assert request(12, "quit")["ok"]
+        grounded = request(12, "reset 1 2.2 1 0 1")
+        assert grounded["ok"], "grounded low-mantle reset accepted"
+        assert grounded["snapshot"]["animals"][0]["center"][1] < 0.35
+        assert request(13, "reset 1 2.2 1 0 2")["error"] == "bad_config"
+        assert request(14, "quit")["ok"]
         proc.wait(timeout=5)
         assert proc.returncode == 0
     print("bridge protocol checks passed")
