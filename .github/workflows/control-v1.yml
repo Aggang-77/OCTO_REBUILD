@@ -31,6 +31,21 @@ jobs:
         run: cmake --build build --config Release --parallel 2
       - name: CTest on Windows
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Reproduce stale generator cache and Korean Windows path in PowerShell 5.1
+        shell: pwsh
+        run: |
+          $testRoot = Join-Path $env:RUNNER_TEMP '바탕화면 테스트/OCTO_REBUILD'
+          New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE '*') -Destination $testRoot -Recurse -Force
+          $oldBuild = Join-Path $testRoot 'build/release-final'
+          # First generate a Visual Studio cache at precisely the path
+          # where the user had an existing build. Our script must replace
+          # this cache with Ninja without deleting source or assets.
+          & cmake -S $testRoot -B $oldBuild
+          if ($LASTEXITCODE -ne 0) { throw 'Stale Visual Studio cache fixture failed' }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $testRoot 'tools/build.ps1') -NoTests
+          if ($LASTEXITCODE -ne 0) { throw 'PowerShell 5.1 stale-cache rebuild failed' }
+          & (Join-Path $testRoot 'tools/check-bridge.ps1') -Server (Join-Path $oldBuild 'octo_server.exe')
       - name: Verify executable supports live controls-v1 step2 protocol
         shell: pwsh
         run: |
