@@ -29,8 +29,9 @@ func _exercise() -> void:
     # Apply the cheap PBR wet-look to a local mesh; no original private GLB
     # and no per-vertex jelly shader are needed for this regression.
     var sample_mesh := MeshInstance3D.new()
-    sample_mesh.mesh = SphereMesh.new()
-    sample_mesh.material_override = StandardMaterial3D.new()
+    var sphere := SphereMesh.new()
+    sphere.material = StandardMaterial3D.new()
+    sample_mesh.mesh = sphere
     var mock := Node3D.new()
     mock.add_child(sample_mesh)
     octo.add_child(mock)
