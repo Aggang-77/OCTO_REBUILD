@@ -1,0 +1,17 @@
+#include "octo/world.hpp"
+#include <cmath>
+#include <iostream>
+#include <limits>
+#include <stdexcept>
+using namespace octo;
+void require(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
+double distance(Vec3 a,Vec3 b){return std::sqrt((a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y)+(a.z-b.z)*(a.z-b.z));}
+WorldConfig isolated(){WorldConfig c;c.animals=1;c.rigid_count=0;c.gravity={0,0,0};c.floor=false;c.collisions=false;c.damping=0;return c;}
+int main(){try{
+{auto c=isolated();c.gravity={0,-9.81,0};PhysicsWorld w(c);auto a=w.snapshot();for(int i=0;i<60;++i)require(w.step(),"free fall finite");auto b=w.snapshot();double t=1,h=c.fixed_dt/c.substeps;double expected=-9.81*t*(t+h)/2;require(std::abs((b.animals[0].center.y-a.animals[0].center.y)-expected)<1e-7,"semi implicit free fall");require(b.diagnostics.max_volume_error<1e-7,"free fall rigid translation preserves tetra volume");}
+{auto c=isolated();PhysicsWorld w(c);auto initial=w.snapshot();MuscleCommand m;m.activation=1;m.curvature=5;m.extension=.8;m.arm=3;require(w.command(m),"valid command");require(distance(initial.animals[0].arms[3].nodes.back(),w.snapshot().animals[0].arms[3].nodes.back())==0,"command cannot teleport");for(int i=0;i<90;++i)require(w.step(),"active finite");auto s=w.snapshot();require(distance(initial.animals[0].arms[3].nodes.back(),s.animals[0].arms[3].nodes.back())>.05,"selected arm physically moves");require(distance(s.diagnostics.linear_momentum,{})<1e-7,"internal forces conserve linear momentum");require(s.animals[0].arms[3].nodes.back().y>s.animals[0].arms[0].nodes.back().y+.02,"signed active bend");require(s.diagnostics.max_volume_error<.15,"body volume bounded");}
+{auto c=isolated();PhysicsWorld w(c);MuscleCommand m;m.animal=9;require(!w.command(m),"invalid animal");m.animal=0;m.curvature=std::numeric_limits<double>::quiet_NaN();require(!w.command(m),"NaN rejected");m.curvature=0;m.twist=1;require(!w.command(m),"unsupported twist rejected");DragCommand d;d.kind=DragCommand::Kind::ArmTip;d.index=0;d.arm=8;require(!w.drag(d),"invalid drag arm");require(w.step(),"invalid input does not poison");}
+{auto c=isolated();c.floor=true;c.gravity={0,-9.81,0};c.spawn_height=.15;PhysicsWorld w(c);for(int i=0;i<240;++i)require(w.step(),"floor stable");auto s=w.snapshot();for(auto&a:s.animals)for(auto&arm:a.arms)for(auto&n:arm.nodes)require(n.y>=-1e-8,"floor nonpenetration");require(std::isfinite(s.diagnostics.kinetic_energy),"floor finite energy");}
+{auto c=isolated();PhysicsWorld w(c);DragCommand d;d.kind=DragCommand::Kind::ArmTip;d.target={100,100,100};d.max_force=.1;d.stiffness=100;require(w.drag(d),"bounded drag valid");require(w.step(),"drag finite");auto s=w.snapshot();require(distance(s.diagnostics.linear_momentum,{})<=.1*c.fixed_dt*1.0001,"drag total impulse force cap");}
+{WorldConfig c;c.animals=2;c.rigid_count=2;c.spacing=1.2;PhysicsWorld w(c);for(int i=0;i<180;++i){MuscleCommand m;m.animal=i%2;m.arm=i%8;m.activation=1;m.curvature=(i%2?1:-1)*8;m.extension=(i%2?.7:1.3);require(w.command(m),"stress command");require(w.step(),"stress remains finite");}auto s=w.snapshot();require(s.diagnostics.nonfinite_count==0,"no nonfinite stress");require(s.diagnostics.max_volume_error<.5,"stress volume bound");require(s.diagnostics.contact_count>0,"stress contacts measured");}
+std::cout<<"physics checks passed\n";return 0;}catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}
