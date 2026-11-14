@@ -25,6 +25,10 @@ static void render_snapshot(const RenderSnapshot& s){
   for(size_t k=0;k<8;++k){if(k)std::cout<<',';std::cout<<"{\"uncoil\":"<<a.arms[k].uncoil_progress<<",\"nodes\":[";const auto& nodes=a.arms[k].nodes;for(size_t j=0;j<nodes.size();++j){if(j)std::cout<<',';v(nodes[j]);}std::cout<<"],\"roll\":[";const auto& roll=a.arms[k].material_roll;for(size_t j=0;j<roll.size();++j){if(j)std::cout<<',';std::cout<<roll[j];}std::cout<<"],\"radii\":[";const auto& radii=a.arms[k].radii;for(size_t j=0;j<radii.size();++j){if(j)std::cout<<',';std::cout<<'['<<radii[j][0]<<','<<radii[j][1]<<']';}std::cout<<"],\"tissue\":[";const auto& strain=a.arms[k].tissue_strain;for(size_t j=0;j<strain.size();++j){if(j)std::cout<<',';std::cout<<'['<<strain[j][0]<<','<<strain[j][1]<<']';}
    std::cout<<"],\"creep\":[";const auto& creep=a.arms[k].creep_strain;for(size_t j=0;j<creep.size();++j){if(j)std::cout<<',';std::cout<<creep[j];}
    std::cout<<"],\"elastic_strain\":[";const auto& elastic=a.arms[k].elastic_strain;for(size_t j=0;j<elastic.size();++j){if(j)std::cout<<',';std::cout<<elastic[j];}
+   std::cout<<"],\"volume_rings\":[";const auto& rings=a.arms[k].volume_rings;
+   for(size_t j=0;j<rings.size();++j){if(j)std::cout<<',';std::cout<<'[';
+    for(int vtx=0;vtx<4;++vtx){if(vtx)std::cout<<',';v(rings[j][vtx]);}
+    std::cout<<']';}
    std::cout<<"],\"attached\":[";const auto& held=a.arms[k].attached;for(size_t j=0;j<held.size();++j){if(j)std::cout<<',';std::cout<<(held[j]?"true":"false");}std::cout<<"]}";}
   std::cout<<"]}";}
  std::cout<<"],\"rigids\":[";
