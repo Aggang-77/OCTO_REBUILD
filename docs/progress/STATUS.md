@@ -128,3 +128,10 @@ validation and Windows MSVC test still pending.
 2026-11-15 Windows CI: MSVC Release build and native CTest 3/3 PASS
 on d80aefe (GitHub Actions run 43624588378). Godot original-asset
 visual assessment and 60 Hz end-to-end GPU test remain open.
+
+2026-11-15 organic arm follow-up: added broad-midarm radius/rest shape,
+distributed axial traveling contractions with normalized total target
+length and local hydrostatic radius reconstruction, retargeted imported
+GLB bone scale to physical section radii, and optional legacy-profile
+comparison. Native tests, Windows CI and actual original-GLB visuals
+must be evaluated separately; no full surface-volume/contact claim.

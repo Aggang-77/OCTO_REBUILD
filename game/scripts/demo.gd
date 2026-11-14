@@ -47,6 +47,7 @@ var reset_observed := false
 var dense_scene := false
 var idle_wriggle := 1.0
 var arm_segments := 24
+var organic_profile := true
 var screenshot := ""
 var label: Label
 var camera: Camera3D
@@ -81,6 +82,7 @@ func _ready() -> void:
         if arg == "--dense": dense_scene = true
         if arg == "--no-wriggle": idle_wriggle = 0.0
         if arg.begins_with("--segments="): arm_segments = int(arg.get_slice("=",1))
+        if arg == "--legacy-profile": organic_profile = false
         if arg.begins_with("--screenshot="): screenshot = arg.substr(13); smoke = true
     if animals not in [1, 2, 5, 10]: fail("Choose --animals=1, 2, 5 or 10"); return
     if arm_segments < 8 or arm_segments > 64: fail("Choose --segments between 8 and 64"); return
@@ -118,7 +120,7 @@ func _ready() -> void:
     send(reset_command())
 
 func reset_command() -> String:
-    return "reset %d %f %f %d" % [animals,1.0 if dense_scene else 2.2,idle_wriggle,arm_segments]
+    return "reset %d %f %f %d %d" % [animals,1.0 if dense_scene else 2.2,idle_wriggle,arm_segments,1 if organic_profile else 0]
 
 func read_pipe() -> void:
     # Drain the pipe independently of render frames. Only complete lines cross
@@ -188,7 +190,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\n24 segments/arm; soft physical idle waves (use --no-wriggle or --segments=16).\nArm skin follows bones; full tissue physics remains unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nOrganic arm sections, traveling compression + bending waves.\nUse --legacy-profile / --no-wriggle / --segments=16 to compare.\nArm skin follows bones; full tissue physics remains unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -274,8 +276,14 @@ func update_scene() -> void:
                 if (rest1-rest0).length_squared() > 0.000001 and tangent.length_squared() > 0.000001: swing = Quaternion((rest1-rest0).normalized(), tangent)
                 var roll_index := mini(int(float(j)*material_roll.size()/24.0),material_roll.size()-1)
                 var material_rotation := Quaternion(tangent, float(material_roll[roll_index])) * swing
-                var base_radius := .036 * (1.0-.8*float(roll_index)/float(material_roll.size()))
-                var cross_section := Vector3(clampf(float(radii[roll_index][0])/base_radius,.5,1.8),1.0,clampf(float(radii[roll_index][1])/base_radius,.5,1.8))
+                # Imported skin was bound around a narrow linear taper.
+                # Scale its sections using C++ hydrostat radii instead of
+                # reimposing the original conical profile on every bone.
+                var rest_u := float(j)/24.0
+                var base_radius := .036 * (1.0-.8*rest_u)
+                var scale_x := float(radii[roll_index][0])/base_radius
+                var scale_z := float(radii[roll_index][1])/base_radius
+                var cross_section := Vector3(clampf(scale_x,.4,4.0),1.0,clampf(scale_z,.4,4.0))
                 var target := Transform3D(Basis(material_rotation)*rest.basis*Basis.from_scale(cross_section), Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
                 var parent := skel.get_bone_parent(id)
                 var parent_global: Transform3D = globals.get(parent, skel.get_bone_global_rest(parent) if parent >= 0 else Transform3D.IDENTITY)

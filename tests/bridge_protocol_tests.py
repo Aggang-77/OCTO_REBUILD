@@ -33,9 +33,13 @@ def main() -> None:
         radii = advanced["snapshot"]["animals"][0]["arms"][0]["radii"]
         assert len(radii) == 24 and all(len(pair) == 2 and min(pair) > 0 for pair in radii)
         assert not request(5, "snapshot")["ok"], "duplicate request ID accepted"
-        small = request(6, "reset 2 1.0 0.0 16")
+        small = request(6, "reset 2 1.0 0.0 16 0")
         assert small["ok"] and len(small["snapshot"]["animals"][0]["arms"][0]["nodes"]) == 17
-        assert request(7, "quit")["ok"]
+        legacy_radii = small["snapshot"]["animals"][0]["arms"][0]["radii"]
+        assert legacy_radii[8][0] < radii[12][0], "legacy taper should be thinner at midarm"
+        invalid_profile = request(7, "reset 2 1.0 0.0 24 2")
+        assert not invalid_profile["ok"] and invalid_profile["error"] == "bad_config"
+        assert request(8, "quit")["ok"]
         proc.wait(timeout=5)
         assert proc.returncode == 0
     print("bridge protocol checks passed")

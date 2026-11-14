@@ -1,4 +1,4 @@
-param([ValidateSet(1,2,5,10)][int]$Animals=2,[switch]$Benchmark,[string]$Screenshot='', [switch]$Headless,[ValidateRange(8,64)][int]$Segments=24,[switch]$NoWriggle)
+param([ValidateSet(1,2,5,10)][int]$Animals=2,[switch]$Benchmark,[string]$Screenshot='', [switch]$Headless,[ValidateRange(8,64)][int]$Segments=24,[switch]$NoWriggle,[switch]$LegacyProfile)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $server=Join-Path $root 'build/release-final/octo_server.exe'
@@ -15,6 +15,7 @@ $argsList=@('--path', (Join-Path $root 'game'))
 if ($Headless) { $argsList+= '--headless' }
 $argsList+= @('--', "--animals=$Animals", "--segments=$Segments")
 if ($NoWriggle) { $argsList+= '--no-wriggle' }
+if ($LegacyProfile) { $argsList+= '--legacy-profile' }
 if ($Benchmark) { $argsList+= '--benchmark' }
 if ($Screenshot) { $argsList+= "--screenshot=$Screenshot" }
 $windowStyle=if ($Headless) { 'Hidden' } else { 'Normal' }

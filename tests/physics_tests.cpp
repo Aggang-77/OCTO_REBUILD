@@ -1,5 +1,6 @@
 #include "octo/world.hpp"
 #include "octo/collision.hpp"
+#include "octo/arm_profile.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -13,7 +14,7 @@ WorldConfig isolated(){WorldConfig c;c.animals=1;c.rigid_count=0;c.gravity={0,0,
 int main(){try{
 {auto crossing=swept_sphere_toi({-1,0,0},{1,0,0},{0,0,0},{0,0,0},.2);require(crossing.has_value(),"crossing spheres swept despite separated endpoints");require(std::abs(crossing->time-.4)<1e-12,"analytic first time of impact");require(std::abs(crossing->normal.x-1)<1e-12,"sweep normal points from moving A to B");require(!swept_sphere_toi({-1,.3,0},{1,.3,0},{0,0,0},{0,0,0},.2),"parallel near miss rejected");require(!swept_sphere_toi({1,0,0},{2,0,0},{0,0,0},{0,0,0},.2),"separating pair rejected");}
 {auto c=isolated();PhysicsWorld w(c);auto initial=w.snapshot();MuscleCommand cmd;cmd.arm=2;cmd.activation=1;cmd.curvature=3;require(w.command(cmd),"director bend accepted");double peak_omega=0,peak_shear=0;for(int tick=0;tick<60;++tick){require(w.step(),"director state remains finite");auto s=w.snapshot();for(auto omega:s.animals[0].arms[2].angular_velocities)peak_omega=std::max(peak_omega,distance(omega,{}));peak_shear=std::max(peak_shear,s.diagnostics.max_shear_error);}auto s=w.snapshot();double frame_alignment=alignment(initial.animals[0].arms[2].frames[8],s.animals[0].arms[2].frames[8]);std::cout<<"director_peak_omega_rad_s="<<peak_omega<<" shear_sine="<<peak_shear<<" frame_alignment="<<frame_alignment<<"\n";require(s.animals[0].arms[2].angular_velocities.size()==c.segments,"one rotational state per segment");require(peak_omega>.01,"actuation changes material angular velocity");require(frame_alignment<.999,"director frame turns in 3D");require(peak_shear<.3,"material tangent remains coupled to centerline");}
-{auto c=isolated();c.floor=true;c.gravity={0,-9.81,0};c.spawn_height=.12;PhysicsWorld w(c);double minimum_ratio=1;for(int tick=0;tick<90;++tick){require(w.step(),"contact-driven section stays finite");auto s=w.snapshot();auto&arm=s.animals[0].arms[0];for(unsigned j=0;j<c.segments;++j){double u=double(j)/c.segments,rest=.036*(1-.8*u),length=distance(arm.nodes[j],arm.nodes[j+1]);double ratio=arm.radii[j][1]/arm.radii[j][0];minimum_ratio=std::min(minimum_ratio,ratio);require(std::abs(arm.radii[j][0]*arm.radii[j][1]*length/(rest*rest*(.9/c.segments))-1)<1e-8,"local section preserves area times length");}}std::cout<<"contact_min_section_axis_ratio="<<minimum_ratio<<"\n";require(minimum_ratio<.99,"floor contact locally flattens an arm section");}
+{auto c=isolated();c.floor=true;c.gravity={0,-9.81,0};c.spawn_height=.12;PhysicsWorld w(c);double minimum_ratio=1;for(int tick=0;tick<90;++tick){require(w.step(),"contact-driven section stays finite");auto s=w.snapshot();auto&arm=s.animals[0].arms[0];for(unsigned j=0;j<c.segments;++j){double u=double(j)/c.segments,rest=arm_rest_radius(u,c.organic_profile),length=distance(arm.nodes[j],arm.nodes[j+1]);double ratio=arm.radii[j][1]/arm.radii[j][0];minimum_ratio=std::min(minimum_ratio,ratio);require(std::abs(arm.radii[j][0]*arm.radii[j][1]*length/(rest*rest*(.9/c.segments))-1)<1e-8,"local section preserves area times length");}}std::cout<<"contact_min_section_axis_ratio="<<minimum_ratio<<"\n";require(minimum_ratio<.99,"floor contact locally flattens an arm section");}
 {auto c=isolated();c.animals=0;c.rigid_count=2;c.collisions=true;PhysicsWorld w(c);require(!w.impulse_rigid(2,{1,0,0}),"invalid prop impulse rejected");require(!w.impulse_rigid(0,{std::numeric_limits<double>::infinity(),0,0}),"nonfinite impulse rejected");require(w.impulse_rigid(0,{200,0,0}),"center impulse accepted");require(w.step(),"fast prop crossing remains finite");auto s=w.snapshot();std::cout<<"fast_swept_contacts="<<s.diagnostics.swept_contacts<<" centers="<<s.rigids[0].center.x<<","<<s.rigids[1].center.x<<" momentum="<<s.diagnostics.linear_momentum.x<<"\n";require(s.diagnostics.swept_contacts>0,"world detects swapped-endpoint prop crossing");require(s.rigids[0].center.x<s.rigids[1].center.x,"fast crossing does not exchange rigid-body order");require(std::abs(s.diagnostics.linear_momentum.x-200)<1e-5,"swept response transfers momentum without loss");}
 {auto c=isolated();c.animals=0;c.rigid_count=2;c.collisions=true;PhysicsWorld w(c);require(w.impulse_rigid(0,{400,0,0}),"strong impulse accepted");require(w.step(),"strong impact stays finite");auto s=w.snapshot();std::cout<<"strong_swept_contacts="<<s.diagnostics.swept_contacts<<" centers="<<s.rigids[0].center.x<<","<<s.rigids[1].center.x<<" momentum="<<s.diagnostics.linear_momentum.x<<"\n";require(s.diagnostics.swept_contacts>0,"whole prop sweep detects strong crossing");require(s.rigids[0].center.x<s.rigids[1].center.x,"strong impact retains prop order");require(s.rigids[1].center.x-s.rigids[0].center.x>=2*.16*std::sqrt(3.0)-1e-8,"strong impact center guard has no residual overlap");require(std::abs(s.diagnostics.linear_momentum.x-400)<1e-5,"strong impact conserves linear momentum");}
 {auto c=isolated();c.animals=0;c.rigid_count=2;c.collisions=true;PhysicsWorld w(c);require(w.impulse_rigid(0,{0,0,400}),"parallel impulse accepted");require(w.step(),"parallel trajectory stays finite");auto s=w.snapshot();require(s.diagnostics.swept_contacts==0,"separated parallel prop path creates no swept contact");require(std::abs(s.diagnostics.linear_momentum.z-400)<1e-5,"near miss preserves momentum");}
@@ -42,5 +43,31 @@ std::cout<<"idle_wave_max_shape_delta_m="<<max_difference<<" tip_time_delta_m="<
 require(max_difference>.001,"passive traveling wave changes actual node positions");
 require(max_time_change>.001,"passive wave remains time varying");
 require(a.diagnostics.nonfinite_count==0,"wriggling generates finite simulation state");
+}
+
+{auto c=isolated();c.organic_profile=true;PhysicsWorld organic(c);c.organic_profile=false;PhysicsWorld legacy(c);
+const auto organic_rest=organic.snapshot().animals[0].arms[0],legacy_rest=legacy.snapshot().animals[0].arms[0];
+const unsigned mid=c.segments/2;
+require(organic_rest.radii[mid][0]>legacy_rest.radii[mid][0]*1.6,"organic silhouette is plumper than original cone");
+require(organic_rest.radii[mid][0]>organic_rest.radii[0][0]*.8,"organic arm retains midsection thickness");
+require(organic_rest.radii.back()[0]<organic_rest.radii[mid][0]*.7,"organic arm narrows near tip");
+auto wave=c;wave.idle_wriggle=1;wave.damping=.4;PhysicsWorld squirm(wave);wave.idle_wriggle=0;PhysicsWorld static_profile(wave);
+double ratio_change=0,bulge_delta=0;auto first=squirm.snapshot();
+for(int tick=0;tick<180;++tick){require(squirm.step(),"longitudinal muscle wave remains finite");require(static_profile.step(),"passive profile remains finite");
+ auto x=squirm.snapshot().animals[0].arms[1],y=static_profile.snapshot().animals[0].arms[1];
+ for(unsigned j=1;j<12;++j){
+  const double rest=arm_rest_radius(double(j)/wave.segments,wave.organic_profile);
+  const double segment=distance(x.nodes[j],x.nodes[j+1]);
+  const double expected=(rest*rest)*(.9/wave.segments);
+  require(std::abs(x.radii[j][0]*x.radii[j][1]*segment/expected-1)<1e-8,
+          "moving local hydrostat conserves section volume");
+  bulge_delta=std::max(bulge_delta,std::abs(x.radii[j][0]-y.radii[j][0]));
+  ratio_change=std::max(ratio_change,std::abs(x.radii[j][0]/first.animals[0].arms[1].radii[j][0]-1));
+ }
+}
+std::cout<<"organic_bulge_delta_m="<<bulge_delta<<" organic_peak_radius_change="<<ratio_change<<"\n";
+require(bulge_delta>0.0003,"muscle wave actually changes radius");
+require(ratio_change>0.01,"organic arm dynamically contracts and bulges");
+require(squirm.snapshot().diagnostics.nonfinite_count==0,"deformable organic arms stay finite");
 }
 std::cout<<"physics checks passed\n";return 0;}catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}
