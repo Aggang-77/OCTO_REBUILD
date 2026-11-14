@@ -232,3 +232,20 @@ Linux benchmark two octopuses: prototype 2.45 ms mean vs baseline
 1.97 ms mean physics step (runner-dependent). No full GameReady GUI
 benchmark. Deformation/contact tests and demo-input path checked
 through CI.
+
+2026-11-15 living source-GLB skin pass: direct vertex shader deformation
+of the original GameReady mesh before its existing GPU skeletal
+skinning, driven by native arm tissue compression mapped to actual
+GLB bone indices. Source albedo/normal/roughness/metallic textures and
+UVs are preserved; unsupported transparent/custom materials stay
+unchanged. Stable micro-papillae, roughness variation, and slow
+chromatophore-like pigment changes added without per-frame CPU mesh
+rebuild. The player command path now releases unpressed arms to a
+lightly coiled asymmetric passive posture with zero idle sweep,
+instead of eight identical tight active coils. Added slow mantle
+respiratory skin scale. Godot synthetic skin/real shader test covers
+texture preservation, bone mapping, baseline control, and breathing.
+Original private GLB absent from GitHub, so full model screenshot/FPS
+and exact source surface-to-C++ contact accuracy remain unverified.
+Physics 3D tetra pilot remains deliberately opt-in due high local
+volume errors. Source GLB audit script and design report added.
