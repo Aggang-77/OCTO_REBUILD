@@ -49,6 +49,9 @@ func _convert_material(original: Material) -> ShaderMaterial:
     var material := ShaderMaterial.new()
     material.shader = SKIN_SHADER
     material.set_shader_parameter("base_albedo", standard.albedo_color)
+    material.set_shader_parameter("uv_scale", Vector2(standard.uv1_scale.x, standard.uv1_scale.y))
+    material.set_shader_parameter("uv_offset", Vector2(standard.uv1_offset.x, standard.uv1_offset.y))
+    material.set_shader_parameter("vertex_color_albedo", standard.vertex_color_use_as_albedo)
     material.set_shader_parameter("base_roughness", standard.roughness)
     material.set_shader_parameter("base_metallic", standard.metallic)
     material.set_shader_parameter("has_albedo_tex", standard.albedo_texture != null)
