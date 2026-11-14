@@ -26,6 +26,26 @@ func _exercise() -> void:
     await process_frame
     octo.animals = 2
     octo.selected = 1
+    # The prototype's real 3D shell surface is generated from physical
+    # ring positions, not from a fixed circular centerline tube.
+    var ring_a := [[0.0,0.0,0.0], [1.0,0.0,0.0],
+                   [1.0,1.0,0.0], [0.0,1.0,0.0]]
+    var ring_b := [[0.0,0.0,1.0], [1.0,0.0,1.0],
+                   [1.0,1.0,1.0], [0.0,1.0,1.0]]
+    var physical_preview := octo.create_volumetric_preview_mesh([ring_a,ring_b])
+    if not _check(physical_preview.get_surface_count() == 1 and
+            physical_preview.surface_get_array_len(0) == 8 and
+            physical_preview.surface_get_array_index_len(0) == 24,
+            "3D surface triangle topology follows two physical rings"):
+        return
+    OS.set_environment("OCTO_VOLUME_ARM", "1")
+    if not _check(octo.reset_command().ends_with(" 1"),"experimental native reset enabled"):
+        return
+    OS.set_environment("OCTO_VOLUME_ARM", "")
+    if not _check(not octo.reset_command().ends_with(" 1 1"),
+            "stable native reset remains unchanged"):
+        return
+    print("VOLUMETRIC_GODOT_PREVIEW_PASS physical_vertices=8 triangles=8")
     # Exercise GPU-bone mantle deformation independently of the private GLB:
     # the real GameReady skeleton has one shared root and 192 arm bones.
     var skeleton := Skeleton3D.new()
