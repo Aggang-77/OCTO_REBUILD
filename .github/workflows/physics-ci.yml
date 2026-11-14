@@ -26,3 +26,14 @@ jobs:
         run: ./build/octo_benchmark 2 60
       - name: Ten-animal dense physics benchmark smoke
         run: ./build/octo_benchmark 10 120 dense
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure MSVC
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Build Release
+        run: cmake --build build --config Release --parallel 2
+      - name: Native tests
+        run: ctest --test-dir build -C Release --output-on-failure
