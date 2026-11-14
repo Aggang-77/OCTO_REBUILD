@@ -70,4 +70,34 @@ require(bulge_delta>0.0003,"muscle wave actually changes radius");
 require(ratio_change>0.01,"organic arm dynamically contracts and bulges");
 require(squirm.snapshot().diagnostics.nonfinite_count==0,"deformable organic arms stay finite");
 }
+
+{auto c=isolated();c.damping=.4;PhysicsWorld forward(c),backward(c);
+ MuscleCommand go;go.arm=0;go.activation=1;go.extension=1.28;go.curvature=0;go.sweep=-1;
+ auto initial=forward.snapshot();
+ require(forward.command(go),"forward paddle command accepted");
+ go.sweep=1;require(backward.command(go),"backward paddle command accepted");
+ require(distance(initial.animals[0].arms[0].nodes.back(),forward.snapshot().animals[0].arms[0].nodes.back())==0,
+         "paddle target cannot teleport");
+ for(int tick=0;tick<90;++tick){require(forward.step(),"forward sweep stays finite");require(backward.step(),"backward sweep stays finite");}
+ auto a=forward.snapshot(),b=backward.snapshot();
+ double tip_difference=distance(a.animals[0].arms[0].nodes.back(),b.animals[0].arms[0].nodes.back());
+ std::cout<<"control_v1_sweep_tip_delta_m="<<tip_difference<<"\n";
+ require(tip_difference>.003,"independent signed sweep produces different positions");
+ require(a.diagnostics.nonfinite_count==0&&b.diagnostics.nonfinite_count==0,"sweep keeps physical state finite");
+}
+{auto c=isolated();c.gravity={0,-9.81,0};c.floor=true;c.spawn_height=.14;c.damping=.6;
+ c.auto_suction=true;PhysicsWorld sticky(c);
+ std::uint64_t max_suction=0;
+ for(int tick=0;tick<240;++tick){require(sticky.step(),"suction settling stays finite");
+  max_suction=std::max(max_suction,sticky.snapshot().diagnostics.attachments);}
+ std::cout<<"control_v1_auto_floor_suckers="<<max_suction<<"\n";
+ require(max_suction>0,"stable true-contact floor samples acquire suction");
+ sticky.release_all_suckers(true);
+ require(sticky.step(),"Space releases without destabilizing world");
+ auto released=sticky.snapshot();
+ require(released.diagnostics.attachments==0,"held Space releases every suction contact");
+ sticky.release_all_suckers(false);
+ for(int tick=0;tick<5;++tick){require(sticky.step(),"cooldown remains finite");
+  require(sticky.snapshot().diagnostics.attachments==0,"release cooldown prevents immediate regrab");}
+}
 std::cout<<"physics checks passed\n";return 0;}catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}
