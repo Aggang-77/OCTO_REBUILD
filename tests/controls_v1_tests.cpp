@@ -356,6 +356,43 @@ int main(){try{
    require(double(near_ground)/total>.55,
            "most passive arm nodes must stay close to the floor even with props");
   }
+  // Physical arm roots attach to deformable mantle tissue, not a
+  // fixed seven-strut torso hub. Pulling one arm must move the nearby
+  // mantle shell and allow the junction to deform relative to the cage.
+  {WorldConfig c;c.animals=1;c.rigid_count=0;c.grounded_rest=true;
+   c.auto_suction=false;c.spawn_height=.27;c.upright_strength=.08;
+   PhysicsWorld world(c);
+   const auto rest=world.snapshot();
+   DragCommand pull;pull.kind=DragCommand::Kind::ArmTip;
+   pull.index=0;pull.arm=0;
+   const auto tip=rest.animals[0].arms[0].nodes.back();
+   pull.target={tip.x+.25,tip.y+.48,tip.z+.24};
+   pull.stiffness=130;pull.max_force=28;
+   require(world.drag(pull),"arm pull accepted by shared solver");
+   double max_shell_shift=0,max_root_relative=0;
+   for(int i=0;i<120;++i){
+    require(world.step(),"compliant mantle joint remains finite under load");
+    const auto snap=world.snapshot();
+    for(size_t j=7;j<snap.animals[0].body_nodes.size();++j)
+     max_shell_shift=std::max(max_shell_shift,
+       distance(snap.animals[0].body_nodes[j],rest.animals[0].body_nodes[j]));
+    const auto& b=snap.animals[0];
+    const auto& original=rest.animals[0];
+    const Vec3 r{b.arms[0].nodes[0].x-b.center.x,
+                 b.arms[0].nodes[0].y-b.center.y,
+                 b.arms[0].nodes[0].z-b.center.z};
+    const Vec3 r0{original.arms[0].nodes[0].x-original.center.x,
+                  original.arms[0].nodes[0].y-original.center.y,
+                  original.arms[0].nodes[0].z-original.center.z};
+    max_root_relative=std::max(max_root_relative,distance(r,r0));
+   }
+   std::cout<<"ARM_MANTLE_JUNCTION shell_motion="<<max_shell_shift
+            <<" relative_root_motion="<<max_root_relative<<"\n";
+   require(max_shell_shift>.003,
+           "arm movement must deform the mantle shell through its junction");
+   require(max_root_relative>.003,
+           "arm root may not remain welded to the torso cage");
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
