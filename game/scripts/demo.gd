@@ -357,6 +357,18 @@ func exercise_input() -> void:
         Input.parse_input_event(event)
         input_phase = 4
 
+# Render-only HUD field: native snapshots produced before controls-v1
+# do not contain 'attached'. Keep the scene usable while those binaries
+# are being replaced; never infer active suction from missing fields.
+func count_grips_from_snapshot(state: Dictionary) -> int:
+    var count := 0
+    for animal in state.get("animals", []):
+        for arm in animal.get("arms", []):
+            for contact in arm.get("attached", []):
+                if contact == true:
+                    count += 1
+    return count
+
 func _process(delta: float) -> void:
     var start := Time.get_ticks_usec(); poll()
     if current.is_empty() or quitting: return
@@ -371,11 +383,7 @@ func _process(delta: float) -> void:
         inbox_lock.unlock()
     if first_tick_usec > 0 and current.tick > 1: frame_wall_ms.append(delta*1000.0)
     update_camera()
-    var grip_count := 0
-    for animal in current.animals:
-        for arm in animal.arms:
-            for contact in arm.attached:
-                if contact: grip_count += 1
+    var grip_count := count_grips_from_snapshot(current)
     label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d   Grips %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,grip_count,parse_ms,skin_ms,command_ms]
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
