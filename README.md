@@ -4,6 +4,14 @@ Independent 3D octopus simulator prototype. The original repository is preserved
 
 On Windows with MSVC, CMake, Ninja and Godot 4.6.2:
 
+Double-click `PLAY_DEMO.cmd` to open the interactive two-octopus scene. If the
+native server is not built yet, run `./tools/build.ps1` once in PowerShell.
+Click in the Godot window to focus it. Press Tab to switch octopuses, hold
+Q/W/E/R/A/S/D/F to move individual arms, and left-click and drag an octopus
+or a box to apply a bounded force. Hold Ctrl with an arm key to attach its tip;
+Z/X with an arm key twists it. Right-drag orbits the camera; F5 resets.
+Closing the Godot window ends the session and its native C++ server.
+
 ```powershell
 ./tools/build.ps1
 C:\Tools\Godot\godot.exe --headless --editor --import --path game
