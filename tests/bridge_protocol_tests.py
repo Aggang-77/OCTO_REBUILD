@@ -41,6 +41,11 @@ def main() -> None:
         moving = request(6, step2(0))
         assert moving["ok"] and moving["snapshot"]["tick"] == 1
         assert len(moving["snapshot"]["animals"][0]["arms"][0]["attached"]) == 16
+        assert len(moving["snapshot"]["animals"][0]["body_nodes"]) == 19, "physical mantle shell absent from bridge"
+        arm0 = moving["snapshot"]["animals"][0]["arms"][0]
+        assert len(arm0["tissue"]) == 16, "sectional tissue strain absent from bridge"
+        assert all(len(v) == 2 and min(v) > 0 for v in arm0["tissue"])
+        assert all(abs(v[0]*v[1]-1.0) < 1e-4 for v in arm0["tissue"]), "volume-conserving section anisotropy"
         releasing = request(7, step2(1))
         assert releasing["ok"] and releasing["snapshot"]["tick"] == 2
         assert all(not any(a["attached"]) for a in releasing["snapshot"]["animals"][0]["arms"])
