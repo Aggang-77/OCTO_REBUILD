@@ -6,6 +6,10 @@ const MODEL_YAW = -PI / 8.0
 var child := {}
 var pipe: FileAccess
 var buffer := PackedByteArray()
+var reader := Thread.new()
+var inbox_lock := Mutex.new()
+var inbox: Array[String] = []
+var stop_reader := false
 var pending := false
 var request_id := 0
 var sent_at := 0
@@ -29,7 +33,11 @@ var drag_plane: Plane
 var frame_sum := 0.0
 var frame_count := 0
 var rpc_ms := 0.0
+var parse_ms := 0.0
+var skin_ms := 0.0
+var command_ms := 0.0
 var quitting := false
+var first_tick_usec := 0
 
 func _ready() -> void:
     for arg in OS.get_cmdline_user_args():
@@ -48,17 +56,52 @@ func _ready() -> void:
         var skels := scene.find_children("*", "Skeleton3D", true, false)
         if skels.is_empty(): fail("Model skeleton missing"); return
         var skel: Skeleton3D = skels[0]
+        var bone_ids := []
+        var bone_rests := []
         for arm in 8:
+            var ids := []
+            var rests := []
             for j in 24:
-                if skel.find_bone("A%d_%02d" % [arm, j]) < 0: fail("Model arm bone missing"); return
-        views.append({"scene": scene, "skel": skel})
+                var id := skel.find_bone("A%d_%02d" % [arm, j])
+                if id < 0: fail("Model arm bone missing"); return
+                ids.append(id)
+                rests.append(skel.get_bone_global_rest(id))
+            bone_ids.append(ids)
+            bone_rests.append(rests)
+        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids, "bone_rests": bone_rests})
     print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
     var server := OS.get_environment("OCTO_SERVER")
     if server.is_empty(): fail("Set OCTO_SERVER to the octo_server executable"); return
     child = OS.execute_with_pipe(server, [], false)
     if child.is_empty(): fail("Could not start native server: " + server); return
     pipe = child.stdio
+    reader.start(read_pipe)
     send("reset %d" % animals)
+
+func read_pipe() -> void:
+    # Drain the pipe independently of render frames. Only complete lines cross
+    # to the main thread; physics and scene nodes remain on the main thread.
+    var pending_bytes := PackedByteArray()
+    while not stop_reader:
+        var available := pipe.get_length()
+        if available <= 0:
+            OS.delay_msec(1)
+            continue
+        pending_bytes.append_array(pipe.get_buffer(mini(available, 1048576)))
+        if pending_bytes.size() > 4194304:
+            inbox_lock.lock()
+            inbox.append("OVERSIZE")
+            inbox_lock.unlock()
+            pending_bytes.clear()
+            continue
+        var newline := pending_bytes.find(10)
+        while newline >= 0:
+            var complete := pending_bytes.slice(0, newline).get_string_from_utf8()
+            pending_bytes = pending_bytes.slice(newline+1)
+            inbox_lock.lock()
+            inbox.append(complete)
+            inbox_lock.unlock()
+            newline = pending_bytes.find(10)
 
 func make_stage() -> void:
     var env := WorldEnvironment.new(); var e := Environment.new()
@@ -93,17 +136,23 @@ func send(command: String) -> void:
 
 func poll() -> void:
     if pipe == null: return
-    var available := pipe.get_length()
-    if available > 0: buffer.append_array(pipe.get_buffer(mini(available, 1048576)))
-    if buffer.size() > 4194304: fail("Bridge response exceeded limit"); return
-    var newline := buffer.find(10)
-    if newline >= 0:
-        var line := buffer.slice(0,newline).get_string_from_utf8(); buffer = buffer.slice(newline+1)
+    inbox_lock.lock()
+    var line: String = inbox.pop_front() if not inbox.is_empty() else ""
+    inbox_lock.unlock()
+    if not line.is_empty():
+        if line == "OVERSIZE": fail("Bridge response exceeded limit"); return
+        var parse_start := Time.get_ticks_usec()
         var parsed = JSON.parse_string(line)
+        parse_ms = float(Time.get_ticks_usec()-parse_start)/1000.0
         if not parsed is Dictionary or not pending or int(parsed.get("id", -1)) != request_id or int(parsed.get("version", 0)) != 1: fail("Invalid or stale bridge response"); return
         pending = false; rpc_ms = float(Time.get_ticks_usec()-sent_at)/1000.0
         if not parsed.get("ok", false): fail("Bridge: " + str(parsed.get("error", "unknown"))); return
-        if parsed.has("snapshot"): current = parsed.snapshot; update_scene()
+        if parsed.has("snapshot"):
+            current = parsed.snapshot
+            if current.tick == 1: first_tick_usec = Time.get_ticks_usec()
+            var skin_start := Time.get_ticks_usec()
+            update_scene()
+            skin_ms = float(Time.get_ticks_usec()-skin_start)/1000.0
     if pending and Time.get_ticks_usec()-sent_at > 15000000: fail("Native solver timed out")
     if child.has("pid") and not OS.is_process_running(child.pid) and not quitting: fail("Native solver exited")
 
@@ -126,12 +175,14 @@ func update_scene() -> void:
             if nodes.size() < 2: continue
             var globals := {}
             var art := (7-arm)%8
+            var ids: Array = view.bone_ids[art]
+            var rests: Array = view.bone_rests[art]
             for j in 24:
-                var id := skel.find_bone("A%d_%02d" % [art,j])
-                var rest := skel.get_bone_global_rest(id)
+                var id: int = ids[j]
+                var rest: Transform3D = rests[j]
                 var j0 := maxi(j-1,0); var j1 := mini(j+1,23)
-                var rest0 := skel.get_bone_global_rest(skel.find_bone("A%d_%02d" % [art,j0])).origin
-                var rest1 := skel.get_bone_global_rest(skel.find_bone("A%d_%02d" % [art,j1])).origin
+                var rest0: Vector3 = rests[j0].origin
+                var rest1: Vector3 = rests[j1].origin
                 var tangent := inverse * (point(nodes,float(j1)/23.0)-point(nodes,float(j0)/23.0)).normalized()
                 var swing := Quaternion.IDENTITY
                 if (rest1-rest0).length_squared() > 0.000001 and tangent.length_squared() > 0.000001: swing = Quaternion((rest1-rest0).normalized(), tangent)
@@ -161,11 +212,17 @@ func _process(delta: float) -> void:
     var start := Time.get_ticks_usec(); poll()
     if current.is_empty() or quitting: return
     update_camera()
-    label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d\nFrame CPU avg %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,frame_sum/maxi(frame_count,1)]
-    if not pending: send(step_command())
+    label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,parse_ms,skin_ms,command_ms]
+    if not pending:
+        var command_start := Time.get_ticks_usec()
+        var next_command := step_command()
+        command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
+        send(next_command)
     frame_sum += float(Time.get_ticks_usec()-start)/1000.0; frame_count += 1
     if smoke and current.tick >= 60:
-        print("SMOKE_OK tick=%d frame_cpu_avg_ms=%.3f rpc_ms=%.3f solver_ms=%.3f" % [current.tick,frame_sum/maxi(frame_count,1),rpc_ms,current.diagnostics.step_ms])
+        smoke = false
+        var elapsed_ms := float(Time.get_ticks_usec()-first_tick_usec)/1000.0
+        print("SMOKE_OK tick=%d elapsed_59_ticks_ms=%.3f effective_sim_tps=%.3f frame_cpu_avg_ms=%.3f rpc_ms=%.3f solver_ms=%.3f parse_ms=%.3f skin_ms=%.3f command_ms=%.3f" % [current.tick,elapsed_ms,59.0*1000.0/elapsed_ms,frame_sum/maxi(frame_count,1),rpc_ms,current.diagnostics.step_ms,parse_ms,skin_ms,command_ms])
         if not screenshot.is_empty() and DisplayServer.get_name() != "headless":
             await RenderingServer.frame_post_draw
             var err := get_viewport().get_texture().get_image().save_png(screenshot)
@@ -200,6 +257,8 @@ func fail(message: String) -> void:
     if smoke: get_tree().quit(2)
 
 func _exit_tree() -> void:
+    stop_reader = true
+    if reader.is_started(): reader.wait_to_finish()
     if pipe != null and child.has("pid") and OS.is_process_running(child.pid):
         if not pending: pipe.store_string("1 %d quit\n" % (request_id+1)); pipe.flush()
         pipe.close(); OS.kill(child.pid)

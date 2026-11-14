@@ -15,3 +15,9 @@ Original failure lessons: global nonlinear solve had high active-input latency;
 normal selection and endpoint contact caused regressions; body/skin mapping hid
 physical gaps. New benchmarks include active inputs, reports expose contact/skin
 limitations, and deterministic scenarios replace incompatible old binary checkpoints.
+
+2026-11-15 follow-up: main-thread pipe polling caused multi-frame response delay.
+Independent reader thread, compact render-only JSON and cached skeleton lookup
+reduce 10-animal last-response RPC from ~265 ms to ~19 ms. Actual visible Godot
+60-tick run took 1540 ms for 59 ticks (~38.3 simulation ticks/s). Ten-animal
+60 Hz remains FAIL. Read docs/validation/BRIDGE_PROFILE.md for measurements.
