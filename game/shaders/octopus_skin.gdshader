@@ -10,6 +10,12 @@ uniform bool has_albedo_tex = false;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform bool has_normal_tex = false;
 uniform float base_roughness : hint_range(0.05, 1.0) = 0.42;
+uniform sampler2D roughness_tex : filter_linear_mipmap, repeat_enable;
+uniform bool has_roughness_tex = false;
+uniform int roughness_channel = 0;
+uniform sampler2D metallic_tex : filter_linear_mipmap, repeat_enable;
+uniform bool has_metallic_tex = false;
+uniform int metallic_channel = 0;
 uniform float base_metallic : hint_range(0.0, 1.0) = 0.0;
 uniform float normal_strength : hint_range(0.0, 2.0) = 0.65;
 uniform float vertex_softness : hint_range(0.0, 0.15) = 0.075;
@@ -77,8 +83,23 @@ void fragment() {
                    sin(TIME * 0.38 + original_position.x * 6.2
                        - original_position.z * 4.6);
     ALBEDO = pigment * (0.94 + 0.06 * mottling + chroma);
-    METALLIC = base_metallic;
-    ROUGHNESS = clamp(base_roughness * 0.78 +
+    float authored_roughness = base_roughness;
+    if (has_roughness_tex) {
+        vec4 authored_map = texture(roughness_tex, UV);
+        float tex_rough = roughness_channel == 4 ?
+            dot(authored_map.rgb, vec3(0.3333333)) :
+            authored_map[clamp(roughness_channel, 0, 3)];
+        authored_roughness *= tex_rough;
+    }
+    float authored_metallic = base_metallic;
+    if (has_metallic_tex) {
+        vec4 metal_map = texture(metallic_tex, UV);
+        authored_metallic *= metallic_channel == 4 ?
+            dot(metal_map.rgb, vec3(0.3333333)) :
+            metal_map[clamp(metallic_channel, 0, 3)];
+    }
+    METALLIC = authored_metallic;
+    ROUGHNESS = clamp(authored_roughness * 0.78 +
                       0.055 * mottling - 0.065 * local_load, 0.17, 0.75);
     SPECULAR = 0.48;
     if (has_normal_tex) {
