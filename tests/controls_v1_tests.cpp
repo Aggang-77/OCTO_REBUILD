@@ -258,6 +258,27 @@ int main(){try{
             <<" max_elastic="<<max_elastic<<"\n";
    require(max_creep>1e-5,"sustained force must change physical rest-shape memory");
   }
+  // Experimental 3D flesh is a real collision/volume simulation, and
+  // opt-in until coupled geometry passes all long stress fixtures.
+  {auto c=isolated;c.volumetric_arm_prototype=true;c.coil_curvature=0;
+   c.creep_rate=0;c.bend_creep_rate=0;c.upright_strength=0;
+   PhysicsWorld volumetric(c);
+   auto initial=volumetric.snapshot();
+   require(initial.animals[0].arms[0].volume_rings.size()==c.segments/2+1,
+           "3D arm prototype allocates four physical shell nodes per ring");
+   for(int tick=0;tick<120;++tick)
+    require(volumetric.step(),"3D volumetric arm remains finite at rest");
+   auto state=volumetric.snapshot();
+   require(state.animals[0].arms[0].volume_rings.size()==c.segments/2+1,
+           "3D ring positions survive simulation");
+   double displacement=0;
+   for(size_t j=0;j<state.animals[0].arms[0].volume_rings.size();++j)
+    for(int k=0;k<4;++k)
+     displacement=std::max(displacement,distance(initial.animals[0].arms[0].volume_rings[j][k],
+                                                state.animals[0].arms[0].volume_rings[j][k]));
+   std::cout<<"VOLUMETRIC_ARM_PROTOTYPE rings="<<state.animals[0].arms[0].volume_rings.size()
+            <<" rest_motion="<<displacement<<"\n";
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
