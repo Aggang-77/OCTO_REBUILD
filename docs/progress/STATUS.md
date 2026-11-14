@@ -49,3 +49,16 @@ native p95 5.04 ms. Godot two-animal active input PASS, ten passive display
 60 ticks PASS at 34.4 simulation ticks/s. This is still an approximate
 scalar torsion coupling, not full orientation Cosserat or 60 Hz.
 See docs/validation/TORSO_TORQUE.md.
+
+2026-11-15 asynchronous bridge update: Godot reader thread now sends the next
+native step on a 16.667 ms clock using the latest main-thread input, and the
+renderer consumes completed authoritative C++ snapshots. Render-only JSON uses
+six significant digits; C++ physics remains double. GPU 10-animal spread-active
+600-tick test: 59.965 simulation ticks/s, 1191 visible frames/9.99 s, p95
+frame interval 8.333 ms. Three dense-active 600-tick repeats: 59.766, 59.964,
+60.001 ticks/s; frame p95 8.639/8.333/8.333 ms. Earlier dense run also
+59.713 ticks/s. One additional run ended after tick 1 without a completion
+record; cause unresolved. Runtime performance is PARTIAL for the tested scene,
+not a 10-animal worst-case guarantee. Reset during dense-active run observed
+and 600 further ticks completed. Build and CTest 3/3 PASS including bridge
+protocol errors/dense reset. Read docs/validation/ASYNC_10_PERFORMANCE.md.

@@ -9,7 +9,13 @@ var buffer := PackedByteArray()
 var reader := Thread.new()
 var inbox_lock := Mutex.new()
 var inbox: Array[String] = []
+var inbox_times: Array[float] = []
 var stop_reader := false
+var auto_step := false
+var latest_command := ""
+var reset_requested := false
+var next_due_usec := 0
+var last_response_id := 0
 var pending := false
 var request_id := 0
 var sent_at := 0
@@ -19,7 +25,13 @@ var props: Array = []
 var selected := 0
 var animals := 2
 var smoke := false
+var benchmark_ticks := 60
 var test_actuation := false
+var test_all_active := false
+var test_reset := false
+var reset_issued := false
+var reset_observed := false
+var dense_scene := false
 var screenshot := ""
 var label: Label
 var camera: Camera3D
@@ -39,12 +51,17 @@ var skin_ms := 0.0
 var command_ms := 0.0
 var quitting := false
 var first_tick_usec := 0
+var frame_wall_ms: Array[float] = []
 
 func _ready() -> void:
     for arg in OS.get_cmdline_user_args():
         if arg.begins_with("--animals="): animals = int(arg.get_slice("=", 1))
         if arg == "--benchmark": smoke = true
+        if arg.begins_with("--benchmark-ticks="): benchmark_ticks = maxi(60,int(arg.get_slice("=",1))); smoke = true
         if arg == "--test-actuation": test_actuation = true
+        if arg == "--test-all-active": test_all_active = true
+        if arg == "--test-reset": test_reset = true
+        if arg == "--dense": dense_scene = true
         if arg.begins_with("--screenshot="): screenshot = arg.substr(13); smoke = true
     if animals not in [1, 2, 5, 10]: fail("Choose --animals=1, 2, 5 or 10"); return
     make_stage()
@@ -78,7 +95,10 @@ func _ready() -> void:
     if child.is_empty(): fail("Could not start native server: " + server); return
     pipe = child.stdio
     reader.start(read_pipe)
-    send("reset %d" % animals)
+    send(reset_command())
+
+func reset_command() -> String:
+    return "reset %d %f" % [animals,1.0 if dense_scene else 2.2]
 
 func read_pipe() -> void:
     # Drain the pipe independently of render frames. Only complete lines cross
@@ -102,7 +122,24 @@ func read_pipe() -> void:
             pending_bytes = pending_bytes.slice(newline+1)
             inbox_lock.lock()
             inbox.append(complete)
+            inbox_times.append(float(Time.get_ticks_usec()-sent_at)/1000.0)
+            var continuing := auto_step and complete.contains('"ok":true') and not stop_reader
             inbox_lock.unlock()
+            if continuing:
+                while not stop_reader and Time.get_ticks_usec() < next_due_usec:
+                    if next_due_usec-Time.get_ticks_usec() > 1500:
+                        OS.delay_msec(1)
+                inbox_lock.lock()
+                var command := reset_command() if reset_requested else latest_command
+                reset_requested = false
+                if not command.is_empty() and not stop_reader:
+                    request_id += 1
+                    pending = true
+                    sent_at = Time.get_ticks_usec()
+                    next_due_usec = maxi(next_due_usec + 16667, sent_at)
+                    pipe.store_string("1 %d %s\n" % [request_id,command])
+                    pipe.flush()
+                inbox_lock.unlock()
             newline = pending_bytes.find(10)
 
 func make_stage() -> void:
@@ -133,25 +170,33 @@ func update_camera() -> void:
 
 func send(command: String) -> void:
     if pending or pipe == null: return
+    inbox_lock.lock()
     request_id += 1; pending = true; sent_at = Time.get_ticks_usec()
+    next_due_usec = sent_at + 16667
     pipe.store_string("1 %d %s\n" % [request_id, command]); pipe.flush()
+    inbox_lock.unlock()
 
 func poll() -> void:
     if pipe == null: return
     inbox_lock.lock()
     var line: String = inbox.pop_front() if not inbox.is_empty() else ""
+    var line_rpc_ms: float = inbox_times.pop_front() if not inbox_times.is_empty() else 0.0
     inbox_lock.unlock()
     if not line.is_empty():
         if line == "OVERSIZE": fail("Bridge response exceeded limit"); return
         var parse_start := Time.get_ticks_usec()
         var parsed = JSON.parse_string(line)
         parse_ms = float(Time.get_ticks_usec()-parse_start)/1000.0
-        if not parsed is Dictionary or not pending or int(parsed.get("id", -1)) != request_id or int(parsed.get("version", 0)) != 1: fail("Invalid or stale bridge response"); return
-        pending = false; rpc_ms = float(Time.get_ticks_usec()-sent_at)/1000.0
+        if not parsed is Dictionary or int(parsed.get("id", -1)) != last_response_id+1 or int(parsed.get("version", 0)) != 1: fail("Invalid or stale bridge response"); return
+        last_response_id += 1
+        pending = false; rpc_ms = line_rpc_ms
         if not parsed.get("ok", false): fail("Bridge: " + str(parsed.get("error", "unknown"))); return
         if parsed.has("snapshot"):
             current = parsed.snapshot
-            if current.tick == 1: first_tick_usec = Time.get_ticks_usec()
+            if current.tick == 0 and reset_issued: reset_observed = true
+            if current.tick == 1:
+                first_tick_usec = Time.get_ticks_usec()
+                frame_wall_ms.clear()
             var skin_start := Time.get_ticks_usec()
             update_scene()
             skin_ms = float(Time.get_ticks_usec()-skin_start)/1000.0
@@ -205,11 +250,11 @@ func step_command() -> String:
     var out := "step %d" % (animals*8)
     for i in animals:
         for arm in 8:
-            var pressed := (i == selected and Input.is_physical_key_pressed(KEYS[arm])) or (test_actuation and i == 0 and arm == 0)
+            var pressed := test_all_active or (i == selected and Input.is_physical_key_pressed(KEYS[arm])) or (test_actuation and i == 0 and arm == 0)
             var shift := Input.is_physical_key_pressed(KEY_SHIFT)
             var ctrl := Input.is_physical_key_pressed(KEY_CTRL)
             var alt := Input.is_physical_key_pressed(KEY_ALT)
-            var twist := (3.0 if test_actuation or Input.is_physical_key_pressed(KEY_Z) else -3.0 if Input.is_physical_key_pressed(KEY_X) else 0.0) if pressed else 0.0
+            var twist := (3.0 if test_actuation or test_all_active or Input.is_physical_key_pressed(KEY_Z) else -3.0 if Input.is_physical_key_pressed(KEY_X) else 0.0) if pressed else 0.0
             out += " %d %d %f %f %f %f %f %d" % [i,arm,1.0 if pressed else 0.0,2.0 if pressed else 0.0,0.75 if pressed and shift else 1.0,twist,1.0 if pressed and alt else 0.0,1 if pressed and ctrl else 0]
     out += " %d %d 0 %f %f %f 30 20" % [drag_kind if dragging else 0,drag_index,drag_target.x,drag_target.y,drag_target.z]
     return out
@@ -217,22 +262,39 @@ func step_command() -> String:
 func _process(delta: float) -> void:
     var start := Time.get_ticks_usec(); poll()
     if current.is_empty() or quitting: return
+    if test_reset and current.tick >= 120 and not reset_issued:
+        reset_issued = true
+        inbox_lock.lock()
+        reset_requested = true
+        inbox_lock.unlock()
+    if first_tick_usec > 0 and current.tick > 1: frame_wall_ms.append(delta*1000.0)
     update_camera()
     label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,parse_ms,skin_ms,command_ms]
-    if not pending:
-        var command_start := Time.get_ticks_usec()
-        var next_command := step_command()
-        command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
+    var command_start := Time.get_ticks_usec()
+    var next_command := step_command()
+    command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
+    inbox_lock.lock()
+    latest_command = next_command
+    inbox_lock.unlock()
+    if not auto_step:
+        auto_step = true
         send(next_command)
     frame_sum += float(Time.get_ticks_usec()-start)/1000.0; frame_count += 1
-    if smoke and current.tick >= 60:
+    if smoke and current.tick >= benchmark_ticks and (not test_reset or reset_observed):
         smoke = false
+        if test_reset: print("RESET_CHECK issued=%s observed=%s" % [reset_issued,reset_observed])
         if test_actuation:
             var measured_roll := float(current.animals[0].arms[0].roll[8])
             print("ACTUATION_CHECK roll_mid_rad=%.5f tip_y_m=%.5f" % [measured_roll,float(current.animals[0].arms[0].nodes[-1][1])])
             if measured_roll < 0.25: fail("Nonzero twist did not reach the original-model renderer"); return
         var elapsed_ms := float(Time.get_ticks_usec()-first_tick_usec)/1000.0
-        print("SMOKE_OK tick=%d elapsed_59_ticks_ms=%.3f effective_sim_tps=%.3f frame_cpu_avg_ms=%.3f rpc_ms=%.3f solver_ms=%.3f parse_ms=%.3f skin_ms=%.3f command_ms=%.3f" % [current.tick,elapsed_ms,59.0*1000.0/elapsed_ms,frame_sum/maxi(frame_count,1),rpc_ms,current.diagnostics.step_ms,parse_ms,skin_ms,command_ms])
+        var ordered := frame_wall_ms.duplicate()
+        ordered.sort()
+        var wall_p95: float = ordered[mini(int(ceil(ordered.size()*0.95))-1,ordered.size()-1)] if not ordered.is_empty() else 0.0
+        var slow_frames := 0
+        for frame_ms in ordered:
+            if frame_ms > 16.667: slow_frames += 1
+        print("SMOKE_OK tick=%d elapsed_ms=%.3f effective_sim_tps=%.3f render_frames=%d wall_p95_ms=%.3f slow_frames=%d frame_cpu_avg_ms=%.3f rpc_ms=%.3f solver_ms=%.3f parse_ms=%.3f skin_ms=%.3f command_ms=%.3f" % [current.tick,elapsed_ms,float(current.tick-1)*1000.0/elapsed_ms,ordered.size(),wall_p95,slow_frames,frame_sum/maxi(frame_count,1),rpc_ms,current.diagnostics.step_ms,parse_ms,skin_ms,command_ms])
         if not screenshot.is_empty() and DisplayServer.get_name() != "headless":
             await RenderingServer.frame_post_draw
             var err := get_viewport().get_texture().get_image().save_png(screenshot)
@@ -243,7 +305,10 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_TAB: selected = (selected+1)%animals
-        if event.keycode == KEY_F5 and not pending: current = {}; send("reset %d" % animals)
+        if event.keycode == KEY_F5:
+            inbox_lock.lock()
+            reset_requested = true
+            inbox_lock.unlock()
     if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): yaw -= event.relative.x*.005; pitch = clampf(pitch+event.relative.y*.005,.12,1.45)
     if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not current.is_empty():
         dragging = false

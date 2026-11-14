@@ -11,4 +11,4 @@ C:\Tools\Godot\godot.exe --headless --editor --import --path game
 ./build/release-final/octo_benchmark.exe 10 600 dense
 ```
 
-The two-animal live scene uses Q W E R A S D F for eight independent arm activation inputs, Tab for animal selection, Ctrl for attachment and left-drag for capped force picking. The physics is an initial positional XPBD approximation. Ten-animal native step timing passes a provisional CPU budget, while the current Godot bridge does not meet 60 FPS. See the validation report for exact evidence and missing physical features.
+The two-animal live scene uses Q W E R A S D F for eight independent arm activation inputs, Tab for animal selection, Ctrl for attachment and left-drag for capped force picking. The physics remains an XPBD approximation rather than a full Cosserat rod. The asynchronous bridge reached 60 Hz simulation and over 60 visible frames/s in the measured 10-animal spread scene; dense active simulation remained close to 60 Hz. See `docs/validation/ASYNC_10_PERFORMANCE.md` for evidence, the one incomplete repeat, and remaining physical work.
