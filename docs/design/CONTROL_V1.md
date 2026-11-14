@@ -117,3 +117,33 @@ C++ 공통 물리 세계의 기본 `WorldConfig`에 다음 배율을 추가했�
   forced attachment is physically impossible and not invented.
 - Note: existing zero-input passive auto-suction behavior is maintained
   for backwards compatibility and historical tests.
+
+## 2026-11-15: soft uncoiling and grip response
+
+When the extend key is held, the C++ world advances
+`Arm::uncoil_front` from 0 to 1 at a maximum of
+`WorldConfig::uncoil_speed=2.0` of the arm length per second.
+For each section with normalised arclength `u`, a smooth transition
+around `u = uncoil_front` blends between high distal curl and
+uncoiled curvature. The hold/release target is filtered and applied
+via existing XPBD bend and Cosserat director constraints; motion
+is physical and sequential, not an immediate skeletal pose change.
+The arm's previous extend/retract target length ratios remain 1.48/0.58.
+
+The first contacted sucker now records surface normal, tangent,
+binormal and an approximate local wrap radius. The C++ surface-follow
+motor steers nearby not-yet-gripped nodes along a local tangent circle
+around a rigid contact or along the ground plane. Subsequent suction
+contacts remain subject to surface proximity, dwell, relative speed,
+Space suppression and force thresholds. There is **no** grasping
+without contact or collision-free wrapping around distant objects.
+
+A capped, dynamic upper/lower torso particle force pair mitigates
+repeated rollovers; it adds no fixed kinematic orientation.
+Default arm stroke motor multiplier is lowered from 4.0 to **2.2**;
+automatic suction break-strength multiplier from 3.0 to **2.2**.
+
+Existing GameReady surface textures get lower roughness and built-in
+clearcoat at load time for a moist look, with no new custom shader.
+This is **not simulated mucus fluid**, and actual cloth/skin volume
+and exact contact patch integration remain future research.
