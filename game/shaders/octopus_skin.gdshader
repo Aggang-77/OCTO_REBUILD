@@ -23,24 +23,26 @@ varying float local_load;
 varying float local_activity;
 varying vec3 original_position;
 
-float skinned_scalar(float field[256]) {
+vec2 skinned_fields() {
     ivec4 ids = ivec4(BONE_INDICES);
     ids = clamp(ids, ivec4(0), ivec4(255));
     vec4 weights = max(BONE_WEIGHTS, vec4(0.0));
     float total = dot(weights, vec4(1.0));
     if (total < 0.001) {
-        return 0.0;
+        return vec2(0.0);
     }
-    return (field[ids.x] * weights.x +
-            field[ids.y] * weights.y +
-            field[ids.z] * weights.z +
-            field[ids.w] * weights.w) / total;
+    vec4 compress = vec4(bone_compression[ids.x], bone_compression[ids.y],
+                         bone_compression[ids.z], bone_compression[ids.w]);
+    vec4 activity = vec4(bone_activity[ids.x], bone_activity[ids.y],
+                         bone_activity[ids.z], bone_activity[ids.w]);
+    return vec2(dot(compress, weights), dot(activity, weights)) / total;
 }
 
 void vertex() {
     original_position = VERTEX;
-    local_load = clamp(skinned_scalar(bone_compression), 0.0, 1.0);
-    local_activity = clamp(skinned_scalar(bone_activity), 0.0, 1.0);
+    vec2 fields = skinned_fields();
+    local_load = clamp(fields.x, 0.0, 1.0);
+    local_activity = clamp(fields.y, 0.0, 1.0);
     // A fixed, non-random geometric pattern. No fast temporal sine waves:
     // avoiding the previous rubbery, constantly vibrating skin.
     float micro = sin(VERTEX.x * 71.0 + VERTEX.z * 31.0)
