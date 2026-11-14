@@ -242,3 +242,33 @@ compare the old appearance. See
 [`docs/design/REALISTIC_OCTOPUS_SURFACE.md`](docs/design/REALISTIC_OCTOPUS_SURFACE.md).
 Run `python tools/audit_gameready_mesh.py game/assets/Octopus_GameReady_v5.glb`
 on the local asset to check vertex/face, skin and topological details.
+
+## Gravity-settled octopus rest pose (2026-11-15)
+
+The standard `PLAY_DEMO.cmd` now uses a distinct **grounded** native
+physics profile (the final optional field in `reset` is 1). Its spawn
+height is 0.27 m instead of 0.75 m, torso upright torque multiplier
+0.08 instead of 0.45, and uncommanded arm activation and curvature
+are both zero. Unpressed arms have long, slightly asymmetric lengths
+rather than actively bending into eight similar raised curls. The
+C++ bend and director compliance is higher when muscles are off,
+particularly toward the distal ends. At rest, sucker contact does not
+automatically glue every arm to the floor; pressing an arm control
+still activates its force-limited motion and suction.
+
+A native C++ 6-second gravity/floor regression measured torso center
+height **0.2247 m** and **100%** of sampled distal arm *centerline*
+nodes below 0.115 m. This is evidence of a physically grounded pose,
+**not proof that all triangles of the original GLB have collision
+contact**. Existing shared world collision and user input remain active.
+
+For an A/B comparison with the old posture, run PowerShell:
+```powershell
+$env:OCTO_REST_MODE = "legacy"
+.\\PLAY_DEMO.cmd
+Remove-Item Env:\\OCTO_REST_MODE
+```
+Actual GameReady GUI rendering is still unverified in CI because the
+private source GLB is not stored in Git. Screenshots should be checked
+for residual skinning mismatches against the now-correct floor-laying
+centerline physics.
