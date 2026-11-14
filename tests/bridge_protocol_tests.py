@@ -55,7 +55,14 @@ def main() -> None:
         assert not bad_release["ok"] and bad_release["error"] == "bad_drag"
         invalid_auto = request(9, "reset 2 2.2 3")
         assert not invalid_auto["ok"] and invalid_auto["error"] == "bad_config"
-        assert request(10, "quit")["ok"]
+        enabled_volume = request(10, "reset 1 2.2 1 1")
+        assert enabled_volume["ok"]
+        volume_arms = enabled_volume["snapshot"]["animals"][0]["arms"]
+        assert len(volume_arms[0]["volume_rings"]) == 9
+        assert all(len(ring) == 4 for ring in volume_arms[0]["volume_rings"])
+        assert len(volume_arms[1]["volume_rings"]) == 0
+        assert request(11, "reset 1 2.2 1 2")["error"] == "bad_config"
+        assert request(12, "quit")["ok"]
         proc.wait(timeout=5)
         assert proc.returncode == 0
     print("bridge protocol checks passed")
