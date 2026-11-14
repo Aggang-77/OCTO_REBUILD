@@ -164,11 +164,12 @@ func _ready() -> void:
     send(reset_command())
 
 func reset_command() -> String:
-    var command := "reset %d %f 1" % [animals,1.0 if dense_scene else 2.2]
-    if OS.get_environment("OCTO_VOLUME_ARM") == "1":
-        # Explicit experimental toggle, never activated in normal demo.
-        command += " 1"
-    return command
+    # The fifth field enables low, gravity-settled rest physics.
+    # Keep the tetrahedral arm prototype separate and opt-in.
+    var volume_arm := 1 if OS.get_environment("OCTO_VOLUME_ARM") == "1" else 0
+    var grounded := 0 if OS.get_environment("OCTO_REST_MODE") == "legacy" else 1
+    return "reset %d %f 1 %d %d" % [animals,
+        1.0 if dense_scene else 2.2, volume_arm, grounded]
 
 func read_pipe() -> void:
     # Drain the pipe independently of render frames. Only complete lines cross
@@ -459,9 +460,9 @@ func idle_arm_shape(animal: int, arm: int) -> Dictionary:
     # lightly coiled, ground-draped postures with no jitter or random
     # forces that would break repeatable native physics tests.
     var phase := float(arm) * 2.37 + float(animal) * 1.31
-    return {"extension": 0.88 + 0.07 * sin(phase),
-            "curvature": 1.65 + 0.58 * cos(phase * 1.2),
-            "activation": 0.40,
+    return {"extension": 1.10 + 0.06 * sin(phase),
+            "curvature": 0.0,
+            "activation": 0.0,
             "sweep": 0.0}
 
 func step_command() -> String:
