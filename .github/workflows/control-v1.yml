@@ -31,6 +31,14 @@ jobs:
         run: cmake --build build --config Release --parallel 2
       - name: CTest on Windows
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Verify executable supports live controls-v1 step2 protocol
+        shell: pwsh
+        run: |
+          $binary = Get-ChildItem -Path build -Recurse -Filter octo_server.exe |
+            Select-Object -First 1
+          if ($null -eq $binary) { throw 'No octo_server.exe was built' }
+          & ./tools/check-bridge.ps1 -Server $binary.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Native server step2 preflight failed' }
 
   godot-input:
     runs-on: ubuntu-latest
