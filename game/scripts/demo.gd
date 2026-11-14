@@ -1,5 +1,6 @@
 extends Node3D
 const MODEL = "res://assets/Octopus_GameReady_v5.glb"
+const JELLY_SURFACE = preload("res://scripts/jelly_surface.gd")
 const KEYS = [KEY_Q, KEY_W, KEY_E, KEY_R, KEY_A, KEY_S, KEY_D, KEY_F]
 const MODEL_SCALE = 1.35 / 2.3
 const MODEL_YAW = -PI / 8.0
@@ -48,6 +49,12 @@ var dense_scene := false
 var idle_wriggle := 1.0
 var arm_segments := 24
 var organic_profile := true
+var procedural_mode := false
+var jelly_enabled := true
+var jelly_explicit := false
+var jelly_visible := true
+var jelly_strength := 2.2
+var test_jelly := false
 var screenshot := ""
 var label: Label
 var camera: Camera3D
@@ -83,34 +90,85 @@ func _ready() -> void:
         if arg == "--no-wriggle": idle_wriggle = 0.0
         if arg.begins_with("--segments="): arm_segments = int(arg.get_slice("=",1))
         if arg == "--legacy-profile": organic_profile = false
+        if arg == "--procedural": procedural_mode = true
+        if arg == "--no-jelly": jelly_enabled = false
+        if arg == "--jelly": jelly_enabled = true; jelly_explicit = true
+        if arg == "--test-jelly": test_jelly = true; smoke = true
+        if arg.begins_with("--jelly-strength="): jelly_strength = float(arg.get_slice("=", 1))
         if arg.begins_with("--screenshot="): screenshot = arg.substr(13); smoke = true
     if animals not in [1, 2, 5, 10]: fail("Choose --animals=1, 2, 5 or 10"); return
     if arm_segments < 8 or arm_segments > 64: fail("Choose --segments between 8 and 64"); return
+    if jelly_strength < 0.0 or jelly_strength > 3.0 or not is_finite(jelly_strength):
+        fail("Choose --jelly-strength between 0 and 3"); return
+    if procedural_mode and not jelly_enabled: fail("--procedural requires jelly rendering"); return
+    if animals > 2 and not jelly_explicit and not procedural_mode:
+        jelly_enabled = false # High-density benchmark stays comparable.
     make_stage()
-    var packed := load(MODEL) as PackedScene
-    if packed == null: fail("GameReady model missing: " + MODEL); return
+    var packed: PackedScene = null
+    if not procedural_mode:
+        packed = load(MODEL) as PackedScene
+        if packed == null: fail("GameReady model missing: " + MODEL); return
     for i in animals:
-        var scene := packed.instantiate() as Node3D
-        add_child(scene)
-        scene.scale = Vector3.ONE * MODEL_SCALE
-        scene.rotation.y = MODEL_YAW
-        var skels := scene.find_children("*", "Skeleton3D", true, false)
-        if skels.is_empty(): fail("Model skeleton missing"); return
-        var skel: Skeleton3D = skels[0]
-        var bone_ids := []
-        var bone_rests := []
-        for arm in 8:
-            var ids := []
-            var rests := []
-            for j in 24:
-                var id := skel.find_bone("A%d_%02d" % [arm, j])
-                if id < 0: fail("Model arm bone missing"); return
-                ids.append(id)
-                rests.append(skel.get_bone_global_rest(id))
-            bone_ids.append(ids)
-            bone_rests.append(rests)
-        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids, "bone_rests": bone_rests})
-    print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
+        var view := {
+            "scene": null, "skel": null, "bone_ids": [], "bone_rests": [],
+            "jelly_arms": [], "jelly_head": null, "jelly_materials": [],
+            "last_tips": [], "recoil": 0.0
+        }
+        if not procedural_mode:
+            var scene := packed.instantiate() as Node3D
+            add_child(scene)
+            scene.scale = Vector3.ONE * MODEL_SCALE
+            scene.rotation.y = MODEL_YAW
+            var skels := scene.find_children("*", "Skeleton3D", true, false)
+            if skels.is_empty(): fail("Model skeleton missing"); return
+            var skel: Skeleton3D = skels[0]
+            var bone_ids := []
+            var bone_rests := []
+            for arm in 8:
+                var ids := []
+                var rests := []
+                for j in 24:
+                    var id := skel.find_bone("A%d_%02d" % [arm, j])
+                    if id < 0: fail("Model arm bone missing"); return
+                    ids.append(id)
+                    rests.append(skel.get_bone_global_rest(id))
+                bone_ids.append(ids)
+                bone_rests.append(rests)
+            view.scene = scene
+            view.skel = skel
+            view.bone_ids = bone_ids
+            view.bone_rests = bone_rests
+        if jelly_enabled:
+            for arm in 8:
+                var sleeve := MeshInstance3D.new()
+                sleeve.name = "JellySleeve_%d_%d" % [i, arm]
+                sleeve.extra_cull_margin = 0.15
+                var gel_mat: ShaderMaterial = JELLY_SURFACE.material_for(float(i) * 1.7 + float(arm) * 0.71, jelly_strength)
+                sleeve.material_override = gel_mat
+                add_child(sleeve)
+                view.jelly_arms.append(sleeve)
+                view.jelly_materials.append(gel_mat)
+            var head := MeshInstance3D.new()
+            head.name = "JellyMantle_%d" % i
+            var sphere := SphereMesh.new()
+            sphere.radius = 1.0
+            sphere.height = 2.0
+            sphere.radial_segments = 32
+            sphere.rings = 16
+            head.mesh = sphere
+            head.extra_cull_margin = 0.12
+            var head_mat: ShaderMaterial = JELLY_SURFACE.material_for(float(i) * 2.0, jelly_strength, true)
+            head.material_override = head_mat
+            add_child(head)
+            view.jelly_head = head
+            view.jelly_materials.append(head_mat)
+        views.append(view)
+    if not procedural_mode:
+        print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
+    else:
+        print("PROCEDURAL_JELLY animals=%d model_not_required=true" % animals)
+    if jelly_enabled:
+        print("JELLY_RENDERER_ON animals=%d strength=%.2f sleeves_per_animal=8" % [animals, jelly_strength])
     var server := OS.get_environment("OCTO_SERVER")
     if server.is_empty(): fail("Set OCTO_SERVER to the octo_server executable"); return
     child = OS.execute_with_pipe(server, [], false)
@@ -190,7 +248,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nOrganic arm sections, traveling compression + bending waves.\nUse --legacy-profile / --no-wriggle / --segments=16 to compare.\nArm skin follows bones; full tissue physics remains unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nJELLY skin: extreme GPU membrane ripple + C++ rod geometry.\nPageUp/PageDown: jelly +/-   F6: show/hide jelly.\n--procedural runs WITHOUT GameReady GLB.\nCosmetic shader does not change C++ collisions."; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -256,9 +314,43 @@ func point(nodes: Array, u: float) -> Vector3:
     var p3 := vec(nodes[mini(i+2,nodes.size()-1)])
     return (p1*2.0 + (p2-p0)*t + (p0*2.0-p1*5.0+p2*4.0-p3)*t*t + (-p0+p1*3.0-p2*3.0+p3)*t*t*t)*0.5
 
+func update_jelly(i: int, animal: Dictionary, view: Dictionary) -> void:
+    if not jelly_enabled or not jelly_visible: return
+    var next_tips := []
+    var tip_motion := 0.0
+    for arm in 8:
+        var state: Dictionary = animal.arms[arm]
+        var sleeve: MeshInstance3D = view.jelly_arms[arm]
+        sleeve.mesh = JELLY_SURFACE.build_arm_mesh(state.nodes, state.radii)
+        var tip := vec(state.nodes[-1])
+        if view.last_tips.size() == 8:
+            tip_motion = maxf(tip_motion, tip.distance_to(view.last_tips[arm]))
+        next_tips.append(tip)
+    view.last_tips = next_tips
+    var head: MeshInstance3D = view.jelly_head
+    head.position = vec(animal.center) + Vector3(0.0, 0.14, 0.0)
+    head.quaternion = quat(animal.orientation)
+    head.scale = Vector3(0.25, 0.26, 0.24)
+    var impulse := clampf(tip_motion * 14.0, 0.0, 1.0)
+    if dragging and drag_kind == 1 and drag_index == i:
+        impulse = maxf(impulse, 0.7)
+    view.recoil = maxf(impulse, float(view.recoil) * 0.89)
+    for mat in view.jelly_materials:
+        (mat as ShaderMaterial).set_shader_parameter("recoil", view.recoil)
+
+func set_jelly_strength(value: float) -> void:
+    jelly_strength = clampf(value, 0.0, 3.0)
+    for view in views:
+        for mat in view.jelly_materials:
+            (mat as ShaderMaterial).set_shader_parameter("jelly_strength", jelly_strength)
+
 func update_scene() -> void:
     for i in current.animals.size():
         var a: Dictionary = current.animals[i]; var view: Dictionary = views[i]
+        if jelly_enabled:
+            update_jelly(i, a, view)
+        if procedural_mode:
+            continue
         var scene: Node3D = view.scene; var skel: Skeleton3D = view.skel
         var center := vec(a.center); var orientation := quat(a.orientation)
         scene.position = center - orientation * Quaternion(Vector3.UP,MODEL_YAW) * (Vector3(0,.15,.1)*MODEL_SCALE)
@@ -378,7 +470,7 @@ func _process(delta: float) -> void:
         inbox_lock.unlock()
     if first_tick_usec > 0 and current.tick > 1: frame_wall_ms.append(delta*1000.0)
     update_camera()
-    label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,parse_ms,skin_ms,command_ms]
+    label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms\nJelly %s (%.1f)" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,parse_ms,skin_ms,command_ms,"ON" if jelly_visible and jelly_enabled else "OFF",jelly_strength]
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
@@ -393,6 +485,15 @@ func _process(delta: float) -> void:
         send(next_command)
     frame_sum += float(Time.get_ticks_usec()-start)/1000.0; frame_count += 1
     if smoke and current.tick >= benchmark_ticks and (not test_reset or reset_observed):
+        if test_jelly:
+            if not jelly_enabled or views[0].jelly_arms.size() != 8: fail("Jelly sleeves missing"); return
+            var test_sleeve: MeshInstance3D = views[0].jelly_arms[0]
+            if test_sleeve.mesh == null or test_sleeve.mesh.get_surface_count() != 1:
+                fail("Jelly sleeve surface missing"); return
+            var vertex_count: int = test_sleeve.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
+            if vertex_count < 300 or not test_sleeve.material_override is ShaderMaterial:
+                fail("Jelly sleeve shader not active"); return
+            print("JELLY_CHECK animals=%d arms=8 vertices_per_arm=%d strength=%.2f" % [animals, vertex_count, jelly_strength])
         if test_input:
             print("INPUT_CHECK selected=%d arm=%s drag=%s phase=%d arm_delta_m=%.5f center_delta_m=%.5f" % [selected,str(input_arm_seen),str(input_drag_seen),input_phase,input_arm_delta,input_center_delta])
             if not input_arm_seen or not input_drag_seen or input_arm_delta < .005 or input_center_delta < .002: fail("Key or mouse input did not produce physical response"); return
@@ -420,6 +521,13 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_TAB: selected = (selected+1)%animals
+        if event.keycode == KEY_PAGEUP: set_jelly_strength(jelly_strength + 0.3)
+        if event.keycode == KEY_PAGEDOWN: set_jelly_strength(jelly_strength - 0.3)
+        if event.keycode == KEY_F6 and jelly_enabled:
+            jelly_visible = not jelly_visible
+            for view in views:
+                for sleeve in view.jelly_arms: (sleeve as MeshInstance3D).visible = jelly_visible
+                (view.jelly_head as MeshInstance3D).visible = jelly_visible
         if event.keycode == KEY_F5:
             inbox_lock.lock()
             reset_requested = true
