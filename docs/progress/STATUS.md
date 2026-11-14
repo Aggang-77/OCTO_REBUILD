@@ -249,3 +249,20 @@ Original private GLB absent from GitHub, so full model screenshot/FPS
 and exact source surface-to-C++ contact accuracy remain unverified.
 Physics 3D tetra pilot remains deliberately opt-in due high local
 volume errors. Source GLB audit script and design report added.
+
+2026-11-15 physics posture correction after screenshot feedback: old
+GameReady demo was spider-like with a raised torso and 8 tense arms.
+Added opt-in `WorldConfig::grounded_rest` and a fourth optional native
+reset argument (0/1), and enabled grounded mode by default in the
+Godot demo. Native gameplay start height .27 m (was .75), anti-upright
+strength .08 (was .45); rest commands have zero motor activation,
+zero curvature, zero sweep, small asymmetric length variations. At
+zero muscle activation, distal centerline bending and director
+constraints are more compliant so gravity dominates rather than
+imposing curled spring shapes. Inactive suction contacts no longer
+create persistent floor anchors. Controls and Space remain intact.
+Isolated 360-tick / six-second physics regression: torso center height
+.224737 m, distal-node ground fraction 1.0 (<.115 m), with native
+floor contact. These measured metrics do not test the private
+GameReady model's visual triangle-to-floor clearance. Old mode can be
+enabled temporarily via `OCTO_REST_MODE=legacy` for A/B.
