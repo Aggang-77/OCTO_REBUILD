@@ -91,3 +91,29 @@ C++ 공통 물리 세계의 기본 `WorldConfig`에 다음 배율을 추가했�
 실제 물체를 끌어오는 힘은 물체 질량, 마찰, 팔 자세, 부착점 개수 및
 물리적 접촉 상태에 따라서도 달라진다. 설정 배율은 힘 배율이지
 이동 거리·속도 또는 물리적 접촉력의 4배/3배 보장을 의미하지 않는다.
+
+## Soft-body / reach-to-grip pass (2026-11-15)
+
+- `WorldConfig::softness=5.0`: torso edge, arm axial and root,
+  bending, shear and torsional *compliance* is increased about 5×
+  over the original XPBD constraints. Torso volume compliance is
+  increased more conservatively by sqrt(5) to avoid collapse.
+  This is not a physical Young modulus measurement and stiffness
+  cannot be inferred linearly from the multiplier.
+- V1 hold-extend uses an axial target of **1.48×** instead of 1.28×;
+  release target is **0.58×** rather than 0.70×. The C++ length
+  bounds were adjusted to 0.55–1.50×. Those are target rest-length
+  ratios, not a guarantee of actual stretched length.
+- Soft torso/arms deform further under collision and strain. Local
+  rendering uses the existing GameReady model and skeletal arms;
+  actual full mantle *surface* volumetric skinning is still unimplemented.
+- When extend is held without any grip, C++ applies downward bounded
+  forces to distal arm nodes to seek a reachable floor. It does not
+  teleport the octopus or create suction without real floor/rigid
+  contact. After contact, it prioritizes nearby movable objects and
+  falls back to floor adhesion after a shorter dwell. Space prevents
+  all acquisition, even during seeking; detached stationary suction
+  points still respect cooldown. If there is no reachable surface,
+  forced attachment is physically impossible and not invented.
+- Note: existing zero-input passive auto-suction behavior is maintained
+  for backwards compatibility and historical tests.
