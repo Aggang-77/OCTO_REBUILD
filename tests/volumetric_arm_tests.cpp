@@ -41,6 +41,25 @@ int main(){
   require(min_height>=-.001,"flesh surface particles respect floor");
   require(contact_sum>0,"volumetric flesh physically contacts floor");
   require(maximum_change>.001,"physical arm flesh moves independently");
+  // Full gameplay world fixture: two octopuses, rigid props and floor
+  // in the exact same C++ collision space (not separate simulations).
+  {WorldConfig gameplay=config;
+   gameplay.animals=2;gameplay.rigid_count=3;
+   gameplay.auto_suction=true;gameplay.spacing=1.5;
+   PhysicsWorld shared(gameplay);
+   double max_cage_error=0,max_soft=0;
+   for(int tick=0;tick<300;++tick){
+    require(shared.step(),"volumetric arm remains finite in two-animal world");
+    const auto snap=shared.snapshot();
+    require(snap.diagnostics.nonfinite_count==0,"finite two-animal flesh");
+    max_cage_error=std::max(max_cage_error,snap.diagnostics.max_volume_error);
+    max_soft=std::max(max_soft,snap.diagnostics.max_soft_volume_error);
+   }
+   std::cout<<"VOLUMETRIC_SHARED_WORLD cage_error="<<max_cage_error
+            <<" soft_error="<<max_soft<<"\n";
+   require(max_cage_error<.5,
+           "volumetric pilot must not destabilize original torso");
+  }
   std::cout<<"VOLUMETRIC_CONTACT_PASS surface_rings="<<initial_rings.size()
            <<" max_soft_volume_error="<<max_soft_error
            <<" max_surface_displacement="<<maximum_change
