@@ -26,7 +26,7 @@ Quat roll_frame(Quat q,double angle){const double half=.5*angle,s=std::sin(half)
 struct PhysicsWorld::Impl {
 struct P{Vec3 x,old,v;double inv,r;int animal,arm,node,rigid;double compression=0;};
 struct Bounds { Vec3 lo, hi; };
-struct D{int a,b;double rest,compliance,lambda=0;};
+struct D{int a,b;double rest,compliance,lambda=0,base_rest=0,creep=0;bool adaptive=false,arm_axial=false;};
 struct T{std::array<int,4> p;double rest,lambda=0;};
 struct Roll{double angle=0,old=0,omega=0,inv_inertia=0,lambda=0;};
 struct Director{Quat q{},old{};Vec3 omega{},bend_lambda{},shear_lambda{};double inv_inertia=0;};
@@ -38,11 +38,11 @@ struct Sucker{
  double wrap_radius=0; // local object curvature estimate (metres)
 };
 struct TissueSection{double transverse=1,rate=0,pressure=0;};
-struct Arm{std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
+struct Arm{std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda,bend_creep;std::vector<int> axial_edges;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
 struct Animal{std::vector<int> body;std::vector<int> shell;std::array<Arm,8> arms;};
 WorldConfig cfg;bool release_held=false;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;std::vector<Bounds> contact_bounds;std::vector<int> contact_order;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
 int particle(Vec3 x,double mass,double radius,int animal=-1,int arm=-1,int node=-1,int rigid=-1){p.push_back({x,x,{},1/mass,radius,animal,arm,node,rigid});return int(p.size()-1);}
-void edge(int a,int b,double compliance){d.push_back({a,b,norm(p[a].x-p[b].x),compliance});}
+void edge(int a,int b,double compliance){const double rest=norm(p[a].x-p[b].x);d.push_back({a,b,rest,compliance,0,rest,0,false,false});}
 double volume(const T&t)const{auto a=p[t.p[0]].x;return dot(p[t.p[1]].x-a,cross(p[t.p[2]].x-a,p[t.p[3]].x-a))/6;}
 explicit Impl(WorldConfig c):cfg(c){
 if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.iterations<1||c.iterations>100||!finite(c.gravity)||!std::isfinite(c.fixed_dt)||c.fixed_dt<=0||c.fixed_dt>.1||!std::isfinite(c.damping)||c.damping<0||!std::isfinite(c.friction)||c.friction<0||!std::isfinite(c.spacing)||c.spacing<0||!std::isfinite(c.spawn_height)||c.rigid_count>128||
@@ -55,7 +55,11 @@ if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.ite
    !std::isfinite(c.coil_curvature)||c.coil_curvature<0||c.coil_curvature>14.0||
    !std::isfinite(c.tissue_relaxation)||c.tissue_relaxation<.2||c.tissue_relaxation>20||
    !std::isfinite(c.tissue_viscosity)||c.tissue_viscosity<.5||c.tissue_viscosity>40||
-   !std::isfinite(c.arm_internal_viscosity)||c.arm_internal_viscosity<0||c.arm_internal_viscosity>40)throw std::invalid_argument("Invalid WorldConfig");
+   !std::isfinite(c.arm_internal_viscosity)||c.arm_internal_viscosity<0||c.arm_internal_viscosity>40||
+   !std::isfinite(c.creep_rate)||c.creep_rate<0||c.creep_rate>5||
+   !std::isfinite(c.creep_recovery)||c.creep_recovery<0||c.creep_recovery>2||
+   !std::isfinite(c.max_creep_strain)||c.max_creep_strain<0||c.max_creep_strain>.5||
+   !std::isfinite(c.bend_creep_rate)||c.bend_creep_rate<0||c.bend_creep_rate>5)throw std::invalid_argument("Invalid WorldConfig");
 for(unsigned n=0;n<c.animals;++n){Animal a;Vec3 center{(double(n)-double(c.animals-1)/2)*c.spacing,c.spawn_height,0};
 const double cr=std::cos(c.spawn_roll),sr=std::sin(c.spawn_roll);
 const auto rotate_spawn=[&](Vec3 v)->Vec3{
@@ -85,18 +89,29 @@ for(int x:{1,2})for(int y:{3,4})for(int z:{5,6}){T t{{a.body[0],a.body[x],a.body
   edge(a.shell[level*6],a.shell[level*6+5],1.2e-4*c.softness);
  }
  for(int k=0;k<6;++k)edge(a.shell[k],a.shell[6+k],1.0e-4*c.softness);
-for(int k=0;k<8;++k){auto& ar=a.arms[k];ar.arm_index=k;ar.uncoil_front=0;double angle=k*std::acos(-1.)/4;Vec3 radial=rotate_spawn({std::sin(angle),0,std::cos(angle)});for(unsigned j=0;j<=c.segments;++j){double u=double(j)/c.segments;double radius=.036*(1-.8*u);ar.radius.push_back(radius);ar.p.push_back(particle(center+radial*(.2+.9*u),.012,radius,int(n),k,int(j)));if(j)edge(ar.p[j-1],ar.p[j],3e-7*c.softness);}
+for(int k=0;k<8;++k){auto& ar=a.arms[k];ar.arm_index=k;ar.uncoil_front=0;double angle=k*std::acos(-1.)/4;Vec3 radial=rotate_spawn({std::sin(angle),0,std::cos(angle)});for(unsigned j=0;j<=c.segments;++j){double u=double(j)/c.segments;double radius=.036*(1-.8*u);ar.radius.push_back(radius);ar.p.push_back(particle(center+radial*(.2+.9*u),.012,radius,int(n),k,int(j)));if(j){edge(ar.p[j-1],ar.p[j],3e-7*c.softness);ar.axial_edges.push_back(int(d.size()-1));}}
 ar.squash.assign(c.segments,1.0);
 ar.tissue.resize(c.segments);
 for(unsigned j=0;j<c.segments;++j){const double radius=ar.radius[j],mass=.012;ar.roll.push_back({0,0,0,j?2.0/(mass*radius*radius):0,0});}
 for(unsigned j=0;j<c.segments;++j){const double length=.9/c.segments,radius=ar.radius[j];const double inertia=.012*(length*length+3*radius*radius)/12;Quat q=frame(radial);ar.directors.push_back({q,q,{},{},{},1/inertia});}
-ar.bend_lambda.resize(c.segments-1);
+ar.bend_lambda.resize(c.segments-1);ar.bend_creep.resize(c.segments-1);
 const unsigned spacing=std::max(3u,c.segments/6);for(unsigned j=spacing;j<=c.segments;j+=spacing)ar.suckers.push_back({j});if(ar.suckers.empty()||ar.suckers.back().node!=c.segments)ar.suckers.push_back({c.segments});
 // Root attached to every cage vertex; all reactions act on dynamic torso.
 for(int b:a.body)edge(ar.p[0],b,1e-7*c.softness);
 }
 animals.push_back(a);}
-for(unsigned k=0;k<c.rigid_count;++k){std::vector<int> ids;Vec3 center{double(k)*.65-.65,.32,1.35};for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})ids.push_back(particle(center+Vec3{x*.16,y*.16,z*.16},.125,.08,-1,-1,-1,int(k)));for(int i=0;i<8;++i)for(int j=i+1;j<8;++j)edge(ids[i],ids[j],1e-9);rigids.push_back(ids);}}
+// Adapt only arm axial and soft mantle-shell edges. Rigid prop
+ // edges and volume-constrained torso cage must not acquire creep.
+ for(auto& e:d){
+  const auto& a=p[e.a];const auto& b=p[e.b];
+  if(a.animal<0||a.animal!=b.animal)continue;
+  if(a.arm>=0&&a.arm==b.arm&&std::abs(a.node-b.node)==1){
+   e.adaptive=true;e.arm_axial=true;
+  }else if(a.arm==-1&&b.arm==-1&&(a.node>=7||b.node>=7)){
+   e.adaptive=true;
+  }
+ }
+ for(unsigned k=0;k<c.rigid_count;++k){std::vector<int> ids;Vec3 center{double(k)*.65-.65,.32,1.35};for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})ids.push_back(particle(center+Vec3{x*.16,y*.16,z*.16},.125,.08,-1,-1,-1,int(k)));for(int i=0;i<8;++i)for(int j=i+1;j<8;++j)edge(ids[i],ids[j],1e-9);rigids.push_back(ids);}}
 void distance(D& e,double h){auto&a=p[e.a];auto&b=p[e.b];Vec3 delta=b.x-a.x;double l=norm(delta);if(l<1e-12)return;double alpha=e.compliance/(h*h),dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);e.lambda+=dl;Vec3 impulse=delta*(dl/l);a.x=a.x-impulse*a.inv;b.x=b.x+impulse*b.inv;}
 void volumes(double h){for(auto&t:tetra){auto a=p[t.p[0]].x,b=p[t.p[1]].x,c=p[t.p[2]].x,e=p[t.p[3]].x;std::array<Vec3,4> g;g[1]=cross(c-a,e-a)/6;g[2]=cross(e-a,b-a)/6;g[3]=cross(b-a,c-a)/6;g[0]=(g[1]+g[2]+g[3])*(-1);double alpha=(1e-10*std::sqrt(cfg.softness))/(h*h),den=alpha;for(int i=0;i<4;++i)den+=p[t.p[i]].inv*dot(g[i],g[i]);double dl=(-(volume(t)-t.rest)-alpha*t.lambda)/den;t.lambda+=dl;for(int i=0;i<4;++i){auto&v=p[t.p[i]];v.x=v.x+g[i]*(v.inv*dl);}}}
 Vec3 coil_direction(const Arm& ar,unsigned joint)const{
@@ -120,7 +135,51 @@ void bending(double h){for(auto&a:animals){Vec3 up=unit(p[a.body[3]].x-p[a.body[
  const double coil=phase*phase*(3.-2.*phase);
  const double wanted=(ar.active.curvature+cfg.coil_curvature*coil)*ar.active.activation;
  const Vec3 curl=coil>0.02?coil_direction(ar,j):up;
- Vec3 target=curl*(wanted*length*length);Vec3 error=l.x-m.x*2+r.x-target;double alpha=(2e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
+ Vec3 target=curl*(wanted*length*length)+ar.bend_creep[j-1];Vec3 error=l.x-m.x*2+r.x-target;double alpha=(2e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
+void update_creep_memory(double h){
+ // Internal SLS-style delayed rest-shape adaptation: q relaxes toward
+ // the current total strain under sustained load, with a slower
+ // anatomical recovery term. This also relaxes residual spring force
+ // at a constant imposed deformation. Updated ONCE per substep.
+ const double rate=cfg.creep_rate+cfg.creep_recovery;
+ for(auto& e:d){
+  if(!e.adaptive||rate<=0)continue;
+  double nominal=e.base_rest;
+  if(e.arm_axial){
+   const auto& ar=animals[p[e.a].animal].arms[p[e.a].arm];
+   nominal*=ar.active.extension;
+  }
+  const double length=norm(p[e.a].x-p[e.b].x);
+  const double total=std::clamp(length/std::max(nominal,1e-7)-1.,-.5,.5);
+  const double equilibrium=cfg.creep_rate*total/rate;
+  e.creep=std::clamp(equilibrium+(e.creep-equilibrium)*std::exp(-rate*h),
+                     -cfg.max_creep_strain,cfg.max_creep_strain);
+ }
+ // Geometric curvature also holds a delayed stress-free correction.
+ // Do not overwrite the user's active motor command, which remains
+ // independent of accumulated passive deformation.
+ const double bend_rate=cfg.bend_creep_rate+cfg.creep_recovery;
+ if(bend_rate<=0)return;
+ for(auto& animal:animals)for(auto& ar:animal.arms){
+  const double segment=.9/double(cfg.segments)*ar.active.extension;
+  for(unsigned j=1;j<cfg.segments;++j){
+   const double u=double(j)/double(cfg.segments);
+   const double phase=std::clamp((u-ar.uncoil_front+.10)/.20,0.,1.);
+   const double coil=phase*phase*(3.-2.*phase);
+   const Vec3 curl=coil>.02?coil_direction(ar,j):
+       unit(p[animal.body[3]].x-p[animal.body[4]].x);
+   const Vec3 commanded=curl*((ar.active.curvature+cfg.coil_curvature*coil)*
+                               ar.active.activation*segment*segment);
+   const Vec3 measured=p[ar.p[j-1]].x-p[ar.p[j]].x*2+p[ar.p[j+1]].x-commanded;
+   auto& memory=ar.bend_creep[j-1];
+   const Vec3 equilibrium=measured*(cfg.bend_creep_rate/bend_rate);
+   memory=equilibrium+(memory-equilibrium)*std::exp(-bend_rate*h);
+   const double limit=.8*segment;
+   const double magnitude=norm(memory);
+   if(magnitude>limit)memory=memory*(limit/magnitude);
+  }
+ }
+}
 void torsion(double h){for(auto&a:animals)for(auto&ar:a.arms){const double desired=ar.active.activation*ar.active.twist*(.9/cfg.segments)*ar.active.extension;const double alpha=(1e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);
 // The first material section is attached to a deformable torso orientation.
 // Opposite displacements at two cage nodes transmit its torque into the world.
@@ -496,7 +555,14 @@ for(unsigned sub=0;sub<cfg.substeps;++sub){for(auto&a:animals)for(auto&ar:a.arms
  ar.uncoil_front+=std::clamp(uncoil_target-ar.uncoil_front,-max_change,max_change);
  double f=1-std::exp(-h*12);auto blend=[&](double&v,double t){v+=(t-v)*f;};blend(ar.active.activation,ar.target.activation);blend(ar.active.curvature,ar.target.curvature);blend(ar.active.extension,ar.target.extension);blend(ar.active.stiffness,ar.target.stiffness);blend(ar.active.twist,ar.target.twist);blend(ar.active.sweep,ar.target.sweep);}
 for(auto&particle:p)particle.compression=0;
-for(auto&e:d){e.lambda=0;if(p[e.a].arm>=0&&p[e.a].arm==p[e.b].arm&&p[e.a].animal==p[e.b].animal&&std::abs(p[e.a].node-p[e.b].node)==1)e.rest=.9/cfg.segments*animals[p[e.a].animal].arms[p[e.a].arm].active.extension;}
+for(auto&e:d){
+ e.lambda=0;
+ if(e.adaptive){
+  const double nominal=e.base_rest*(e.arm_axial?
+      animals[p[e.a].animal].arms[p[e.a].arm].active.extension:1.);
+  e.rest=nominal*(1.+e.creep);
+ }
+}
 for(auto&t:tetra)t.lambda=0;
 for(auto&a:animals)for(auto&ar:a.arms)std::fill(ar.bend_lambda.begin(),ar.bend_lambda.end(),Vec3{});
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&roll:ar.roll){roll.lambda=0;roll.old=roll.angle;roll.omega*=std::exp(-cfg.damping*h);roll.angle+=roll.omega*h;}
@@ -512,6 +578,7 @@ seek_floor_contact(h);
 rigid_center_sweeps();
 for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
 rigid_center_sweeps();
+update_creep_memory(h);
 tissue_dynamics(h);
 update_suckers(h);
 for(auto&a:animals)for(auto&ar:a.arms)for(unsigned j=0;j<cfg.segments;++j){double l=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);double pressure=std::max(p[ar.p[j]].compression,p[ar.p[j+1]].compression);(void)pressure;p[ar.p[j]].r=ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(l,1e-5));p[ar.p[j]].r=std::min(.1,p[ar.p[j]].r);}
@@ -521,7 +588,12 @@ for(auto&a:animals)for(auto&ar:a.arms)for(auto&roll:ar.roll){roll.omega=(roll.an
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&director:ar.directors){director.q=rod_math::normalize(director.q);director.omega=rod_math::mul(rod_math::log_rotation(rod_math::multiply(director.q,rod_math::inverse(director.old))),1/h);if(!finite(director.omega)||!std::isfinite(director.q.w)){++diag.nonfinite_count;return false;}}
 }
 for(auto&a:p){diag.linear_momentum=diag.linear_momentum+a.v/a.inv;diag.angular_momentum=diag.angular_momentum+cross(a.x,a.v/a.inv);diag.kinetic_energy+=.5*dot(a.v,a.v)/a.inv;}for(auto&a:animals)for(auto&ar:a.arms){Vec3 axis=unit(p[ar.p[1]].x-p[ar.p[0]].x);for(auto&roll:ar.roll)if(roll.inv_inertia>0){diag.kinetic_energy+=.5*roll.omega*roll.omega/roll.inv_inertia;diag.angular_momentum=diag.angular_momentum+axis*(roll.omega/roll.inv_inertia);}for(size_t j=0;j<ar.directors.size();++j){auto&director=ar.directors[j];diag.kinetic_energy+=.5*dot(director.omega,director.omega)/director.inv_inertia;diag.angular_momentum=diag.angular_momentum+director.omega/director.inv_inertia;Vec3 tangent=unit(p[ar.p[j+1]].x-p[ar.p[j]].x),material=rod_math::rotate(director.q,{0,0,1});diag.max_shear_error=std::max(diag.max_shear_error,norm(cross(tangent,material)));}}for(auto&t:tetra)diag.max_volume_error=std::max(diag.max_volume_error,std::abs((volume(t)-t.rest)/t.rest));for(auto&a:animals)for(auto&ar:a.arms){if(ar.attached!=-1)++diag.attachments;for(const auto& suction:ar.suckers)if(suction.attached!=-1)++diag.attachments;}++tick;time+=cfg.fixed_dt;diag.step_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();return true;}
-RenderSnapshot snapshot()const{RenderSnapshot s;s.tick=tick;s.time=time;s.diagnostics=diag;for(auto&a:animals){AnimalSnapshot as;as.center=p[a.body[0]].x;as.orientation=frame(p[a.body[5]].x-p[a.body[6]].x);for(int b:a.body)as.body_nodes.push_back(p[b].x);for(int shell:a.shell)as.body_nodes.push_back(p[shell].x);for(int k=0;k<8;++k){auto&ar=a.arms[k];auto&out=as.arms[k];out.uncoil_progress=ar.uncoil_front;for(int id:ar.p)out.nodes.push_back(p[id].x);for(unsigned j=0;j<cfg.segments;++j){Vec3 tangent=p[ar.p[j+1]].x-p[ar.p[j]].x;out.frames.push_back(roll_frame(ar.directors[j].q,ar.roll[j].angle));out.angular_velocities.push_back(ar.directors[j].omega);out.material_roll.push_back(ar.roll[j].angle);double r=std::min(.12,ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(norm(tangent),1e-6)));out.radii.push_back({std::min(.16,r/ar.squash[j]),r*ar.squash[j]});out.tissue_strain.push_back({1.0/ar.squash[j],ar.squash[j]});bool held=j==cfg.segments-1&&ar.attached!=-1;for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}}s.animals.push_back(as);}for(auto&ids:rigids){RigidSnapshot rs;for(int id:ids)rs.center=rs.center+p[id].x/8;rs.orientation=frame(p[ids[1]].x-p[ids[0]].x);s.rigids.push_back(rs);}return s;}
+RenderSnapshot snapshot()const{RenderSnapshot s;s.tick=tick;s.time=time;s.diagnostics=diag;for(auto&a:animals){AnimalSnapshot as;as.center=p[a.body[0]].x;as.orientation=frame(p[a.body[5]].x-p[a.body[6]].x);for(int b:a.body)as.body_nodes.push_back(p[b].x);for(int shell:a.shell)as.body_nodes.push_back(p[shell].x);for(int k=0;k<8;++k){auto&ar=a.arms[k];auto&out=as.arms[k];out.uncoil_progress=ar.uncoil_front;for(int id:ar.p)out.nodes.push_back(p[id].x);for(unsigned j=0;j<cfg.segments;++j){Vec3 tangent=p[ar.p[j+1]].x-p[ar.p[j]].x;out.frames.push_back(roll_frame(ar.directors[j].q,ar.roll[j].angle));out.angular_velocities.push_back(ar.directors[j].omega);out.material_roll.push_back(ar.roll[j].angle);double r=std::min(.12,ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(norm(tangent),1e-6)));out.radii.push_back({std::min(.16,r/ar.squash[j]),r*ar.squash[j]});out.tissue_strain.push_back({1.0/ar.squash[j],ar.squash[j]});
+ const auto& strand=d[ar.axial_edges[j]];
+ out.creep_strain.push_back(strand.creep);
+ const double axial=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);
+ out.elastic_strain.push_back(axial/std::max(strand.rest,1e-7)-1.);
+bool held=j==cfg.segments-1&&ar.attached!=-1;for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}}s.animals.push_back(as);}for(auto&ids:rigids){RigidSnapshot rs;for(int id:ids)rs.center=rs.center+p[id].x/8;rs.orientation=frame(p[ids[1]].x-p[ids[0]].x);s.rigids.push_back(rs);}return s;}
 };
 PhysicsWorld::PhysicsWorld(const WorldConfig& c):impl_(std::make_unique<Impl>(c)){}
 PhysicsWorld::~PhysicsWorld()=default;PhysicsWorld::PhysicsWorld(PhysicsWorld&&) noexcept=default;PhysicsWorld&PhysicsWorld::operator=(PhysicsWorld&&) noexcept=default;

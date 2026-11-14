@@ -47,6 +47,13 @@ struct WorldConfig {
     double tissue_relaxation=3.2;       // s^-1, slow local flesh recovery
     double tissue_viscosity=10.0;       // s^-1, strain-rate dissipation
     double arm_internal_viscosity=14.0;  // s^-1, relative-velocity dissipation along rods
+    // Standard-linear-solid-inspired internal rest-shape adaptation.
+    // A sustained strain gradually moves the stress-free shape toward
+    // the loaded configuration; unloaded tissue recovers much more slowly.
+    double creep_rate=0.70;            // s^-1, delayed deformation/relaxation
+    double creep_recovery=0.06;        // s^-1, return toward anatomical rest
+    double max_creep_strain=0.25;      // fractional rest-length adaptation
+    double bend_creep_rate=0.45;       // s^-1, slow curvature memory
     bool reach_ground_on_extend=true;   // guide ungripped extended tips to contact
     std::uint32_t rigid_count=3;
     bool auto_suction=false;      // enabled for gameplay; original native tests retain passive baseline
@@ -59,6 +66,8 @@ struct ArmSnapshot {
     std::vector<Vec3> angular_velocities; // 3D director angular velocity, world rad/s
     std::vector<double> material_roll; // segments, physically solved torsion angle (radians)
     std::vector<std::array<double,2>> tissue_strain; // two dynamical transverse semiaxis scale factors
+    std::vector<double> creep_strain; // segment axial rest-shape adaptation
+    std::vector<double> elastic_strain; // instantaneous length/rest mismatch (stress proxy)
     std::vector<std::array<double,2>> radii; // segments, ellipse semiaxes metres
     std::vector<bool> attached;  // segments; physical attachment, not decoration
 };
