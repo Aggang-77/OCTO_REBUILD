@@ -23,10 +23,10 @@ varying float local_load;
 varying float local_activity;
 varying vec3 original_position;
 
-vec2 skinned_fields() {
-    ivec4 ids = ivec4(BONE_INDICES);
+vec2 skinned_fields(uvec4 bones, vec4 raw_weights) {
+    ivec4 ids = ivec4(bones);
     ids = clamp(ids, ivec4(0), ivec4(255));
-    vec4 weights = max(BONE_WEIGHTS, vec4(0.0));
+    vec4 weights = max(raw_weights, vec4(0.0));
     float total = dot(weights, vec4(1.0));
     if (total < 0.001) {
         return vec2(0.0);
@@ -40,7 +40,7 @@ vec2 skinned_fields() {
 
 void vertex() {
     original_position = VERTEX;
-    vec2 fields = skinned_fields();
+    vec2 fields = skinned_fields(BONE_INDICES, BONE_WEIGHTS);
     local_load = clamp(fields.x, 0.0, 1.0);
     local_activity = clamp(fields.y, 0.0, 1.0);
     // A fixed, non-random geometric pattern. No fast temporal sine waves:
