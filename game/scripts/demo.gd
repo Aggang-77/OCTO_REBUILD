@@ -561,7 +561,7 @@ func _process(delta: float) -> void:
             if views[0].lite_segments.material_override is ShaderMaterial:
                 fail("Legacy custom shader unexpectedly active"); return
             if not control_all_pairs_verified or not control_extend_stroke or not control_spring_return or not control_release_all:
-                fail("Dual-key extension, stroke return or Space release failed"); return
+                fail("Control flags mapping=%s dual=%s return=%s space=%s" % [str(control_all_pairs_verified),str(control_extend_stroke),str(control_spring_return),str(control_release_all)]); return
             print("CONTROL_V1_CHECK animals=2 arm_segments=%d no_shader=true" % arm_segments)
             print("CONTROL_KEYS_CHECK simultaneous=true spring_return=true space_override=true")
             print("KEYMAP_ALL16_CHECK passed=true")
