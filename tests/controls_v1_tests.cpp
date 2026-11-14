@@ -240,7 +240,8 @@ int main(){try{
    double max_creep=0,max_elastic=0;
    for(int tick=0;tick<240;++tick){
     require(loaded.step(),"native creep under sustained load stays finite");
-    const auto& arm=loaded.snapshot().animals[0].arms[0];
+    const auto snapshot=loaded.snapshot();
+    const auto& arm=snapshot.animals[0].arms[0];
     require(arm.creep_strain.size()==c.segments &&
             arm.elastic_strain.size()==c.segments,
             "creep state exposed for each rod segment");
