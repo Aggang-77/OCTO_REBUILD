@@ -163,6 +163,40 @@ int main(){try{
    require(best_assisted>best_passive+.10,
            "upright motor measurably corrects a rolled-over body");
   }
+  // Low-resolution mantle tissue is dynamic geometry with 12 genuine
+  // colliding mass nodes, not a decorative rubber shader.
+  {auto c=floor;c.spawn_height=.12;c.tissue_viscosity=10.0;
+   PhysicsWorld tissue_world(c);
+   auto start=tissue_world.snapshot();
+   require(start.animals[0].body_nodes.size()==19,
+           "mantle includes seven cage and twelve physical shell nodes");
+   require(start.animals[0].arms[0].tissue_strain.size()==c.segments,
+           "each arm section maintains two transverse material strains");
+   double max_strain=0;
+   for(int i=0;i<180;++i){
+    require(tissue_world.step(),"viscoelastic mantle remains finite");
+    auto snapshot=tissue_world.snapshot();
+    for(auto strain:snapshot.animals[0].arms[0].tissue_strain){
+     require(std::isfinite(strain[0])&&std::isfinite(strain[1]),
+             "section strains always finite");
+     require(strain[0]>=.49&&strain[0]<=2.51 &&
+             strain[1]>=.39&&strain[1]<=1.51,
+             "section strain stays inside mechanical yield bounds");
+     require(std::abs(strain[0]*strain[1]-1.)<1e-9,
+             "elliptic tissue redistributes transverse area");
+     max_strain=std::max(max_strain,std::abs(strain[1]-1.));
+    }
+    for(const auto& node:snapshot.animals[0].body_nodes)
+     require(node.y>=-.001,"colliding mantle nodes do not cross ground");
+   }
+   std::cout<<"TISSUE_PASS mantle_nodes="<<
+     tissue_world.snapshot().animals[0].body_nodes.size()<<
+     " max_transverse_strain="<<max_strain<<"\n";
+  }
+  {auto invalid=isolated;invalid.tissue_viscosity=-3;
+   bool rejected=false;try{PhysicsWorld no(invalid);}catch(const std::invalid_argument&){rejected=true;}
+   require(rejected,"negative tissue viscosity is not accepted");
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
