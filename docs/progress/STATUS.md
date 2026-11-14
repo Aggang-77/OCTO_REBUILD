@@ -174,3 +174,18 @@ Floor contacts peel on retraction, prop grips persist until release
 or failure, and Space enforces a timed re-grip cooldown.
 These are discrete node/normal/velocity approximations, not exact
 surface sucker or guaranteed ±60° kinematics.
+
+2026-11-15 controls-v1 verification gate: GitHub Actions run 43633894696
+Linux C++ native PASS, Windows MSVC native PASS, Godot 4.6.2 actual
+OpenGL software renderer PASS. Sequential synthetic input exercised all
+16 independent assigned keys: KEYMAP_ALL16_CHECK passed=true;
+F+D simultaneous, release-to-front, Space override all true.
+140-tick two-animal procedural MultiMesh screenshot 1280x720 PASS;
+effective simulation 55.779 ticks/s, wall interval p95 17.663ms,
+skin update 0.538ms, solver 1.922ms measured on hosted Linux
+software GL. This still misses a strict 60Hz test goal and is NOT
+a Windows hardware or original GameReady GLB FPS measurement.
+Previous jelly/web render ~13.17 ticks/s and 44.698ms skin cost
+on another hosted software GL run; the configurations also differ
+(24 vs 16 rod segments), so improvement is not a controlled
+shader-only benchmark. See https://github.com/songhh06/OCTO_REBUILD/actions/runs/43633894696.
