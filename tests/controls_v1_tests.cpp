@@ -137,6 +137,32 @@ int main(){try{
    bool rejected=false;try{PhysicsWorld no(invalid);}catch(const std::invalid_argument&){rejected=true;}
    require(rejected,"unbounded stabilization torque must be rejected");
   }
+  // Start genuinely rolled over, not merely upright and motionless.
+  // Both worlds have the same initial physical cage/arms. The unassisted
+  // one keeps its initial roll in zero gravity; the corrected one must
+  // develop a more upward top-to-bottom torso axis.
+  {WorldConfig passive=isolated;
+   passive.spawn_roll=2.65;passive.coil_curvature=0;
+   passive.upright_strength=0;passive.damping=.5;
+   WorldConfig assisted=passive;assisted.upright_strength=.45;
+   PhysicsWorld untreated(passive),restored(assisted);
+   auto cos_tilt=[](const RenderSnapshot& s)->double{
+    const auto& body=s.animals[0].body_nodes;
+    return (body[3].y-body[4].y)/distance(body[3],body[4]);
+   };
+   const double initial_tilt=cos_tilt(restored.snapshot());
+   double best_assisted=initial_tilt,best_passive=initial_tilt;
+   for(int i=0;i<240;++i){
+    require(untreated.step()&&restored.step(),"tilted-body recovery finite");
+    best_assisted=std::max(best_assisted,cos_tilt(restored.snapshot()));
+    best_passive=std::max(best_passive,cos_tilt(untreated.snapshot()));
+   }
+   std::cout<<"UPRIGHT_RECOVERY initial="<<initial_tilt
+            <<" best_assisted="<<best_assisted
+            <<" best_passive="<<best_passive<<"\n";
+   require(best_assisted>best_passive+.10,
+           "upright motor measurably corrects a rolled-over body");
+  }
   std::cout<<"control v1 tests passed\n";
   return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
