@@ -192,3 +192,18 @@ regression compared identical applied impulses without vs with this
 viscosity (integrated kinetic energy 7.65415 vs 5.7151 over sampled
 ticks on CI). This validates damping, not the subjective on-screen
 'goo' feeling. GameReady live visuals still require local play test.
+
+2026-11-15 delayed material creep and stress relaxation on main:
+introduced rest-shape memory on arm axial strands and mantle shell,
+plus slow geometric bend residual memory. Once each fixed physics
+substep, a bounded standard-linear-solid-inspired internal variable
+adapts toward sustained measured deformation; no changes inside
+individual XPBD iteration loops. An explicit slow recovery term brings
+rest shape back after unloading, and analytical exponential stepping
+keeps parameters independent of substep dt. Original volume-constrained
+torso cage and rigid-box edges are intentionally excluded. C++ bridge
+now reports per-segment internal creep and remaining elastic strain.
+Dedicated numerical tests verify under held 20% deformation that
+stress relaxes over seconds, and after release memory recovers;
+an integration fixture loads the actual physical arm tip. Tests must
+be verified against Linux+Windows CI and local GameReady visuals.
