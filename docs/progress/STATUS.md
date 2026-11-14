@@ -21,3 +21,12 @@ Independent reader thread, compact render-only JSON and cached skeleton lookup
 reduce 10-animal last-response RPC from ~265 ms to ~19 ms. Actual visible Godot
 60-tick run took 1540 ms for 59 ticks (~38.3 simulation ticks/s). Ten-animal
 60 Hz remains FAIL. Read docs/validation/BRIDGE_PROFILE.md for measurements.
+
+2026-11-15 torsion slice: each rod segment now owns a material roll angle and
+angular velocity with a tapered section inertia. Neighboring relative roll
+is solved by XPBD compliance, anchored at the root. Z/X plus an arm key commands
+opposite torsion; Godot receives and applies solved material roll. Build and
+CTest 2/2 PASS, 10-animal active twist native p95 4.87 ms over 600 measured
+ticks, 10-animal Godot passive smoke 60 ticks PASS but ~37.5 simulation ticks/s.
+This is not full orientation-based Cosserat: no coupled shear/bending material
+frames or torque reaction into torso. See docs/validation/TORSION_SLICE.md.

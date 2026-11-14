@@ -36,6 +36,7 @@ struct WorldConfig {
 struct ArmSnapshot {
     std::vector<Vec3> nodes;     // segments+1, root -> tip, world metres
     std::vector<Quat> frames;    // segments, local +Z is tangent
+    std::vector<double> material_roll; // segments, physically solved torsion angle (radians)
     std::vector<std::array<double,2>> radii; // segments, ellipse semiaxes metres
     std::vector<bool> attached;  // segments; physical attachment, not decoration
 };

@@ -119,7 +119,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); panel.add_child(box)
     var title := Label.new(); title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nTab: select   F5: reset   Right: orbit   Left: force\nBody skin is rigid; arm skin approximates rod state.\nXPBD prototype / native process / tissue unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.text = "Q W E R  A S D F  /  eight arms\nShift: contract   Ctrl: attach   Alt: stiffness\nZ/X + arm: twist left/right\nTab: select   F5: reset   Right: orbit   Left: force\nBody skin is rigid; arm skin approximates rod state.\nXPBD torsion slice / native process / tissue unvalidated"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -172,6 +172,7 @@ func update_scene() -> void:
         var inverse := Quaternion(Vector3.UP,-MODEL_YAW) * orientation.inverse()
         for arm in 8:
             var nodes: Array = a.arms[arm].nodes
+            var material_roll: Array = a.arms[arm].roll
             if nodes.size() < 2: continue
             var globals := {}
             var art := (7-arm)%8
@@ -186,7 +187,9 @@ func update_scene() -> void:
                 var tangent := inverse * (point(nodes,float(j1)/23.0)-point(nodes,float(j0)/23.0)).normalized()
                 var swing := Quaternion.IDENTITY
                 if (rest1-rest0).length_squared() > 0.000001 and tangent.length_squared() > 0.000001: swing = Quaternion((rest1-rest0).normalized(), tangent)
-                var target := Transform3D(Basis(swing)*rest.basis, Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
+                var roll_index := mini(int(float(j)*material_roll.size()/24.0),material_roll.size()-1)
+                var material_rotation := Quaternion(tangent, float(material_roll[roll_index])) * swing
+                var target := Transform3D(Basis(material_rotation)*rest.basis, Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
                 var parent := skel.get_bone_parent(id)
                 var parent_global: Transform3D = globals.get(parent, skel.get_bone_global_rest(parent) if parent >= 0 else Transform3D.IDENTITY)
                 skel.set_bone_pose(id,parent_global.affine_inverse()*target); globals[id] = target
@@ -204,7 +207,8 @@ func step_command() -> String:
             var shift := Input.is_physical_key_pressed(KEY_SHIFT)
             var ctrl := Input.is_physical_key_pressed(KEY_CTRL)
             var alt := Input.is_physical_key_pressed(KEY_ALT)
-            out += " %d %d %f %f %f 0 %f %d" % [i,arm,1.0 if pressed else 0.0,2.0 if pressed else 0.0,0.75 if pressed and shift else 1.0,1.0 if pressed and alt else 0.0,1 if pressed and ctrl else 0]
+            var twist := (3.0 if Input.is_physical_key_pressed(KEY_Z) else -3.0 if Input.is_physical_key_pressed(KEY_X) else 0.0) if pressed else 0.0
+            out += " %d %d %f %f %f %f %f %d" % [i,arm,1.0 if pressed else 0.0,2.0 if pressed else 0.0,0.75 if pressed and shift else 1.0,twist,1.0 if pressed and alt else 0.0,1 if pressed and ctrl else 0]
     out += " %d %d 0 %f %f %f 30 20" % [drag_kind if dragging else 0,drag_index,drag_target.x,drag_target.y,drag_target.z]
     return out
 
