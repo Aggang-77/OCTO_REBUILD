@@ -59,6 +59,14 @@ int main(){try{
   {auto invalid=isolated; invalid.arm_motor_strength=15.;
    bool rejected=false;try{PhysicsWorld bad(invalid);}catch(const std::invalid_argument&){rejected=true;}
    require(rejected,"reject unsafe actuator strength");}
+  // Friction parameter guard: static breakaway must be at least kinetic drag.
+  {auto invalid=isolated;
+   invalid.floor_static_friction=.05;
+   invalid.floor_kinetic_friction=.2;
+   bool rejected=false;
+   try{PhysicsWorld bad(invalid);}catch(const std::invalid_argument&){rejected=true;}
+   require(rejected,"reject kinetic floor friction exceeding static threshold");
+  }
   WorldConfig floor;
   floor.animals=1;floor.rigid_count=0;floor.floor=true;floor.collisions=false;
   floor.gravity={0,-9.81,0};floor.spawn_height=.14;
