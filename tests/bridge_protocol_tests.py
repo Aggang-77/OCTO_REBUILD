@@ -67,7 +67,10 @@ def main() -> None:
         assert grounded["ok"], "grounded low-mantle reset accepted"
         assert grounded["snapshot"]["animals"][0]["center"][1] < 0.35
         assert request(13, "reset 1 2.2 1 0 2")["error"] == "bad_config"
-        assert request(14, "quit")["ok"]
+        suction_disabled = request(14, step2(0))
+        assert suction_disabled["ok"]
+        assert all(not any(a["attached"]) for a in suction_disabled["snapshot"]["animals"][0]["arms"]), "Space-up clears all grips"
+        assert request(15, "quit")["ok"]
         proc.wait(timeout=5)
         assert proc.returncode == 0
     print("bridge protocol checks passed")
