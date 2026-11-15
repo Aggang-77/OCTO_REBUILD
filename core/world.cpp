@@ -287,17 +287,27 @@ Vec3 coil_direction(const Arm& ar,unsigned joint)const{
   return {0,1,0};
  return nearest->contact_normal*(-1);
 }
+// Mirror-symmetric weak passive bend with independent lobes along each arm.
+// No prescribed world-space shape: the XPBD rod may still deform under
+// gravity, obstacle contact and slow material creep.
+double passive_arm_curvature(const Arm& ar,double u)const{
+ if(!cfg.grounded_rest||ar.active.activation>=.15||u<.26)return 0.;
+ const double smooth=std::clamp((u-.26)/.36,0.,1.);
+ const double rear=1.0+.18*std::cos(double(ar.arm_index)*std::acos(-1.)/4.);
+ const double wave=std::sin((1.5*u+.15*double(std::min(ar.arm_index,8u-ar.arm_index)))*std::acos(-1.0));
+ return 1.35*rear*smooth*wave;
+}
 void bending(double h){for(auto&a:animals){Vec3 up=unit(p[a.body[3]].x-p[a.body[4]].x);for(auto&ar:a.arms){double length=.9/cfg.segments*ar.active.extension;for(unsigned j=1;j<cfg.segments;++j){auto&l=p[ar.p[j-1]];auto&m=p[ar.p[j]];auto&r=p[ar.p[j+1]];const double u=double(j)/double(cfg.segments);
  if(cfg.grounded_rest&&cfg.tissue_stiffness_ratio<.5&&j<=3&&ar.active.activation<.1)continue;
  // Release a smooth front root->tip. Coiled distal sections store
  // curvature even while the proximal arm has already unwound.
  const double phase=std::clamp((u-ar.uncoil_front+.10)/.20,0.,1.);
  const double coil=phase*phase*(3.-2.*phase);
- const double wanted=(ar.active.curvature+cfg.coil_curvature*coil)*ar.active.activation;
+ const double wanted=(ar.active.curvature+cfg.coil_curvature*coil)*ar.active.activation+passive_arm_curvature(ar,u);
  const Vec3 curl=coil>0.02?coil_direction(ar,j):up;
  Vec3 target=curl*(wanted*length*length)+ar.bend_creep[j-1];Vec3 error=l.x-m.x*2+r.x-target;// Muscle-off hydrostat bending offers very little resistance under
  // gravity: the *inactive* arm must not behave like a loaded spring.
- const double passive=cfg.grounded_rest?1.0+7.0*(1.0-ar.active.activation)*u*u:1.0;
+ const double passive=cfg.grounded_rest?1.0+2.5*(1.0-ar.active.activation)*u*u:1.0;
  double alpha=(2e-5*cfg.softness*(1-.9*ar.active.stiffness)*passive)/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
 void update_creep_memory(double h){
  // Internal SLS-style delayed rest-shape adaptation: q relaxes toward
@@ -352,7 +362,7 @@ for(size_t j=2;j<ar.roll.size();++j){auto&left=ar.roll[j-1];auto&right=ar.roll[j
 void director_constraints(double h){namespace rm=rod_math;
 for(auto&a:animals)for(auto&ar:a.arms){const double segment_length=.9/cfg.segments*ar.active.extension;
 const double shear_alpha=2e-6*cfg.softness/(h*h);
- const double muscle_off=cfg.grounded_rest?1.0+7.0*(1.0-ar.active.activation):1.0;
+ const double muscle_off=cfg.grounded_rest?1.0+2.5*(1.0-ar.active.activation):1.0;
  const double bend_alpha=2e-5*cfg.softness*(1-.9*ar.active.stiffness)*muscle_off/(h*h);
 for(size_t j=0;j<ar.directors.size();++j){auto&director=ar.directors[j];auto&left=p[ar.p[j]];auto&right=p[ar.p[j+1]];
 Vec3 e=rm::rotate(director.q,{0,0,1}),span=right.x-left.x;
@@ -373,7 +383,7 @@ axis=rm::mul(axis,1/axis_len);
 const double u=double(j)/double(cfg.segments);
  const double phase=std::clamp((u-ar.uncoil_front+.10)/.20,0.,1.);
  const double coil=phase*phase*(3.-2.*phase);
- const double wanted=ar.active.activation*(ar.active.curvature+cfg.coil_curvature*coil);
+ const double wanted=ar.active.activation*(ar.active.curvature+cfg.coil_curvature*coil)+passive_arm_curvature(ar,u);
  Quat target=rm::multiply(rm::rotation(rm::mul(axis,wanted*segment_length)),left.q);
 Vec3 error=rm::log_rotation(rm::multiply(target,rm::inverse(right.q)));
 double den=left.inv_inertia+right.inv_inertia+bend_alpha;
@@ -672,7 +682,7 @@ void rear_junction_folding(double h){
    // Let the socket itself slide around the soft mantle, rather than
    // trying to push a rear arm straight through the body's rear wall.
    socket_force=socket_force-up*dot(socket_force,up);
-   const double socket_magnitude=norm(socket_force),socket_cap=2.*lean;
+   const double socket_magnitude=norm(socket_force),socket_cap=.45*lean;
    if(socket_magnitude>socket_cap&&socket_magnitude>0)socket_force=socket_force*(socket_cap/socket_magnitude);
    base.x=base.x+socket_force*(base.inv*h*h);
    body.x=body.x-socket_force*(body.inv*h*h);
@@ -682,8 +692,8 @@ void rear_junction_folding(double h){
     auto& node=p[arm.p[j]];auto& root=p[arm.p[0]];
     const Vec3 desired=root.x+front*(.9*j/cfg.segments);
     const double leverage=k==4?2.:1.;
-    Vec3 force=(desired-node.x)*(200.*cfg.tissue_stiffness_ratio*lean*leverage);
-    const double magnitude=norm(force),cap=4.0*lean*leverage;
+    Vec3 force=(desired-node.x)*(38.*cfg.tissue_stiffness_ratio*lean*leverage);
+    const double magnitude=norm(force),cap=.75*lean*leverage;
     if(magnitude>cap&&magnitude>0)force=force*(cap/magnitude);
     node.x=node.x+force*(node.inv*h*h);
     root.x=root.x-force*(root.inv*h*h);
@@ -798,7 +808,9 @@ void sweep_motors(double h){
   Vec3 right=unit(cross({0,1,0},forward));
   for(auto&ar:animal.arms){
    const bool idle=ar.target.activation<.08&&ar.active.activation<.15&&std::abs(ar.target.sweep)<.01;
-   if(!idle&&std::abs(ar.active.sweep)<1e-5)continue;
+   // No radial straightening motor when the arm is idle: gravity,
+   // viscoelastic bend memory, and contact decide its resting contour.
+   if(idle||std::abs(ar.active.sweep)<1e-5)continue;
    const double angle=ar.arm_index*pi/4.0;
    const Vec3 home=right*std::sin(angle)+forward*std::cos(angle);
    const double sign=ar.arm_index<4?1.0:-1.0;
