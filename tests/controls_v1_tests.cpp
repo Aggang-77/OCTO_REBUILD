@@ -63,7 +63,12 @@ int main(){try{
    PhysicsWorld gripping(scene);
    MuscleCommand grab;grab.animal=0;grab.arm=0;
    grab.grab_mode=1;grab.activation=.9;grab.extension=1.4;
-   require(gripping.command(grab),"Shift grab opcode accepted");
+   grab.grab_target_kind=2;grab.grab_target_index=0;
+   grab.grab_target_point={-.65,.32,1.35};
+   require(gripping.command(grab),"selected prop grab accepted");
+   grab.grab_target_kind=3;
+   require(!gripping.command(grab),"invalid selected target kind rejected");
+   grab.grab_target_kind=2;
    grab.grab_mode=3;
    require(!gripping.command(grab),"invalid grab opcode rejected");
    for(int i=0;i<30;++i)
