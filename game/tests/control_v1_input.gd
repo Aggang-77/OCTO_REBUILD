@@ -232,6 +232,30 @@ func _exercise() -> void:
             return
         _key(key, false)
         await process_frame
+    # Native-reported object grab locks that specific arm's normal
+    # controls, independently of the local key-press state.
+    octo.current.animals[1].arms[0]["grabbed"] = true
+    _key(KEY_R, true)
+    _key(KEY_SHIFT, true)
+    await process_frame
+    var locked_parts := octo.step_command().split(" ")
+    var locked_base := 2 + 8 * 9
+    if not _check(locked_parts[locked_base + 7] == "0" and
+            float(locked_parts[locked_base + 2]) == 0.0 and
+            float(locked_parts[locked_base + 5]) == 0.0,
+            "grabbed arm ignores attack, muscle, and twist commands"):
+        return
+    _key(KEY_CTRL, true)
+    await process_frame
+    locked_parts = octo.step_command().split(" ")
+    if not _check(locked_parts[locked_base + 7] == "2",
+            "grabbed arm still accepts Ctrl release"):
+        return
+    _key(KEY_CTRL, false)
+    _key(KEY_SHIFT, false)
+    _key(KEY_R, false)
+    octo.current.animals[1].arms[0]["grabbed"] = false
+    await process_frame
     # A mouse-selected prop is transmitted as an explicit native target,
     # never inferred from whichever object happens to be nearest the arm.
     octo.target_kind = 2
