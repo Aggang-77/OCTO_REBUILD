@@ -1200,7 +1200,7 @@ void proximity_grabs(double h){
  for(size_t ai=0;ai<animals.size();++ai)for(auto& arm:animals[ai].arms){
   // The last 3 segments remain free to curl around a target; the
   // grasp joint is proximal to the tip rather than on the very end.
-  const unsigned grip_node=std::max(2u,cfg.segments-3);
+  const unsigned grip_node=cfg.segments>3?cfg.segments-3:std::max(1u,cfg.segments-1);
   P& grip=p[arm.p[grip_node]];
   arm.grab_node=grip_node;
   if(arm.grab_requested&&arm.grabbed<0&&arm.grab_target_kind!=0){
@@ -1256,7 +1256,7 @@ void proximity_grabs(double h){
   // three rod segments bend about the contact surface; opposite
   // impulses go back to the target mass (no visual-only wrapping).
   const Vec3 outward=unit(grip.x-other.x);
-  Vec3 tangent=p[arm.p[grip_node]].x-p[arm.p[grip_node-2]].x;
+  Vec3 tangent=p[arm.p[grip_node]].x-p[arm.p[grip_node>1?grip_node-2:0]].x;
   tangent=tangent-outward*dot(tangent,outward);
   if(norm(tangent)<1e-7)tangent=cross(outward,{0,1,0});
   if(norm(tangent)<1e-7)tangent=cross(outward,{1,0,0});
