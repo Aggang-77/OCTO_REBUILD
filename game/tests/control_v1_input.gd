@@ -201,7 +201,7 @@ func _exercise() -> void:
         for animal in 2:
             for j in 8:
                 var begin := 2 + (animal * 8 + j) * 9
-                if not _check(float(parts[begin + 2]) == (0.52 if animal == 1 and j == arm else 0.0), "independent arm and animal"):
+                if not _check(float(parts[begin + 2]) == (0.62 if animal == 1 and j == arm else 0.0), "independent arm and animal"):
                     return
         _key(KEY_SHIFT, true)
         await process_frame
@@ -222,7 +222,7 @@ func _exercise() -> void:
     _key(KEY_R, true)
     await process_frame
     var pair := octo.step_command().split(" ")
-    if not _check(float(pair[2 + (8 + 0) * 9 + 2]) == 0.52 and float(pair[2 + (8 + 7) * 9 + 2]) == 0.52, "two arms simultaneously"):
+    if not _check(float(pair[2 + (8 + 0) * 9 + 2]) == 0.62 and float(pair[2 + (8 + 7) * 9 + 2]) == 0.62, "two arms simultaneously"):
         return
     _key(KEY_U, false)
     _key(KEY_R, false)
