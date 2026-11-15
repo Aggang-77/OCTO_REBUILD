@@ -182,7 +182,7 @@ func _exercise() -> void:
             "grip count uses only explicitly present contacts"):
         return
     print("GRIP_HUD_COMPAT_PASS legacy_missing=true counted=3")
-    if not _check(DEMO.ARM_KEYS == [KEY_U, KEY_I, KEY_O, KEY_P, KEY_Q, KEY_W, KEY_E, KEY_R], "top-down radial two-hand arm mapping"):
+    if not _check(DEMO.ARM_KEYS == [KEY_R, KEY_E, KEY_W, KEY_Q, KEY_P, KEY_O, KEY_I, KEY_U], "top-down radial two-hand arm mapping"):
         return
     if not _check(DEMO.ARM_KEYS.size() == 8, "eight arm keys"):
         return
@@ -201,7 +201,7 @@ func _exercise() -> void:
         for animal in 2:
             for j in 8:
                 var begin := 2 + (animal * 8 + j) * 9
-                if not _check(float(parts[begin + 2]) == (0.78 if animal == 1 and j == arm else 0.0), "independent arm and animal"):
+                if not _check(float(parts[begin + 2]) == (0.52 if animal == 1 and j == arm else 0.0), "independent arm and animal"):
                     return
         _key(KEY_SHIFT, true)
         await process_frame
@@ -218,14 +218,14 @@ func _exercise() -> void:
         _key(KEY_SHIFT, false)
         _key(key, false)
         await process_frame
-    _key(KEY_R, true)
     _key(KEY_U, true)
+    _key(KEY_R, true)
     await process_frame
     var pair := octo.step_command().split(" ")
-    if not _check(float(pair[2 + (8 + 0) * 9 + 2]) == 0.78 and float(pair[2 + (8 + 7) * 9 + 2]) == 0.78, "two arms simultaneously"):
+    if not _check(float(pair[2 + (8 + 0) * 9 + 2]) == 0.52 and float(pair[2 + (8 + 7) * 9 + 2]) == 0.52, "two arms simultaneously"):
         return
-    _key(KEY_R, false)
     _key(KEY_U, false)
+    _key(KEY_R, false)
     _key(KEY_UP, true)
     await process_frame
     var assisted := octo.step_command()
