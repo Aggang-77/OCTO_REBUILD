@@ -190,3 +190,29 @@ no measured increase in per-stroke body travel and no on-screen proof
 that flipping has stopped. Required: compile, run all regression
 fixtures, and inspect GameReady skin under sustained suction while
 a root is pulled into the torso.
+
+
+## Controlled-arm-only suction and hard mantle/web angle limit
+
+**Current gameplay rule (supersedes earlier global-Space grip behavior):**
+Space held permits suction only on arms receiving an active muscle
+command (activation > 0.50). All other arms remain nonadhesive even if
+they touch the seabed. Space released disables all suction, as before.
+Moving arms can still extend, seal, pull, release and retry. The native
+legacy suction tests remain backwards compatible when an explicit
+per-frame Space gate has not been installed.
+
+For the grounded player model, the mantle's dorsal-to-ventral axis is
+constrained to a maximum **65-degree tilt relative to the deformable
+proximal arm web normal**, measured from arm nodes 0/2/4/6 at rod section
+2. A mass-weighted position-level projection enforces this cone in
+each solver contact iteration; it is not a camera transform correction
+or a soft restoring torque. The arm-root radial direction cone was
+also tightened to **85 degrees** for the very soft grounded profile.
+The first three rod joints retain their progressive 80/100/120-degree
+turn guards; distal joints have no additional angular clamp.
+
+These are provisional game stability parameters. The web is a
+deformable collision approximation, and the model still requires
+Godot visualization plus native test runs to establish that neither
+body inversion nor skin self-intersection occurs in all scenarios.
