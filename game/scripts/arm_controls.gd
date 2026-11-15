@@ -1,8 +1,8 @@
 extends RefCounted
 ## Contact-gated muscle targets. Time is native simulation time, never FPS.
-## Physical layout: left hand Q/W/A/S controls arms 7/6/5/4;
-## right hand U/I/J/K controls arms 0/1/2/3.
-const KEYS = [KEY_U, KEY_I, KEY_J, KEY_K, KEY_S, KEY_A, KEY_W, KEY_Q]
+## Top-down radial layout: right hand U/I/O/P = arms 0/1/2/3;
+## left hand Q/W/E/R = arms 4/5/6/7, as viewed from above.
+const KEYS = [KEY_U, KEY_I, KEY_O, KEY_P, KEY_Q, KEY_W, KEY_E, KEY_R]
 const PHASES = ["reach", "pull", "release"]
 var phases: Array[String] = []
 var starts: Array[float] = []
