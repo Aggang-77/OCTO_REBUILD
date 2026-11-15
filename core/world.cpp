@@ -1369,7 +1369,7 @@ RenderSnapshot snapshot()const{RenderSnapshot s;s.tick=tick;s.time=time;s.diagno
  const double axial=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);
  out.elastic_strain.push_back(axial/std::max(strand.rest,1e-7)-1.);
 
-bool held=j==cfg.segments-1&&(ar.attached!=-1||ar.grabbed!=-1);for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}
+bool held=(j==cfg.segments-1&&ar.attached!=-1)||(j+1==ar.grab_node&&ar.grabbed!=-1);for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}
  for(const auto& ring:ar.volume_rings){
   std::array<Vec3,4> world_ring{};
   for(int v=0;v<4;++v)world_ring[v]=p[ring[v]].x;
