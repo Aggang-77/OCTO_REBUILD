@@ -716,6 +716,7 @@ func exercise_input() -> void:
         input_phase = 1
     if current.tick >= 55 and input_phase == 1:
         inject_key(KEY_R,false)
+        inject_key(KEY_ALT,true)
         input_center_baseline = vec(current.animals[1].center)
         var event := InputEventMouseButton.new()
         event.button_index = MOUSE_BUTTON_LEFT
@@ -733,6 +734,7 @@ func exercise_input() -> void:
         event.button_index = MOUSE_BUTTON_LEFT
         event.pressed = false
         Input.parse_input_event(event)
+        inject_key(KEY_ALT,false)
         input_phase = 4
 
 # Render-only HUD field: native snapshots produced before controls-v1
