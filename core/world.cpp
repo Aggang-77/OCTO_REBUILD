@@ -890,7 +890,10 @@ void update_suckers(double h){
   else ar.peel_clock=0;
   for(auto&s:ar.suckers){
    s.cooldown=std::max(0.0,s.cooldown-h);
-   if(release_held){s.attached=-1;s.dwell=0;s.cooldown=.18;continue;}
+   if(release_held||(ar.target.activation<.1&&ar.target.extension<.82)){
+    // Clear timed push-stroke grips before the next shortening phase.
+    s.attached=-1;s.dwell=0;s.cooldown=.12;continue;
+   }
    if(s.attached==-2&&ar.active.extension<.87){
     const double delay=double(cfg.segments-s.node)/cfg.segments*.22;
     if(ar.peel_clock>=delay){s.attached=-1;s.cooldown=.18;s.dwell=0;}
