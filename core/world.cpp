@@ -48,7 +48,9 @@ double volume(const T&t)const{auto a=p[t.p[0]].x;return dot(p[t.p[1]].x-a,cross(
 explicit Impl(WorldConfig c):cfg(c),requested_cfg(c){
 if(!std::isfinite(c.tissue_stiffness_ratio)||c.tissue_stiffness_ratio<.1||c.tissue_stiffness_ratio>1.)throw std::invalid_argument("Invalid tissue stiffness ratio");
 if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.iterations<1||c.iterations>100||!finite(c.gravity)||!std::isfinite(c.fixed_dt)||c.fixed_dt<=0||c.fixed_dt>.1||!std::isfinite(c.damping)||c.damping<0||!std::isfinite(c.friction)||c.friction<0||!std::isfinite(c.spacing)||c.spacing<0||!std::isfinite(c.spawn_height)||c.rigid_count>128||
-   !std::isfinite(c.arm_motor_strength)||c.arm_motor_strength<0.1||c.arm_motor_strength>12.0||
+   !std::isfinite(c.floor_static_friction)||c.floor_static_friction<0||c.floor_static_friction>8.0||
+    !std::isfinite(c.floor_kinetic_friction)||c.floor_kinetic_friction<0||c.floor_kinetic_friction>c.floor_static_friction||
+    !std::isfinite(c.arm_motor_strength)||c.arm_motor_strength<0.1||c.arm_motor_strength>12.0||
    !std::isfinite(c.sucker_strength)||c.sucker_strength<0.1||c.sucker_strength>12.0||
    !std::isfinite(c.softness)||c.softness<0.5||c.softness>10.0||
    !std::isfinite(c.upright_strength)||c.upright_strength<0||c.upright_strength>2.0||
@@ -435,10 +437,47 @@ double floor_surface_radius(const P& particle)const{
  }
  return radius;
 }
-void project_floor(){if(cfg.floor)for(auto&a:p){
- const double surface_radius=floor_surface_radius(a);
- if(a.x.y<surface_radius){double depth=surface_radius-a.x.y;a.compression=std::max(a.compression,depth);diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=surface_radius;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,(cfg.grounded_rest&&a.animal>=0?(l/(cfg.fixed_dt/cfg.substeps)>.12?.14:.34):cfg.friction)*depth)/l);}
-}}
+void project_floor(){
+ if(!cfg.floor)return;
+ const double h=cfg.fixed_dt/cfg.substeps;
+ for(auto& a:p){
+  const double support=floor_surface_radius(a);
+  const double depth=std::max(0.,support-a.x.y);
+  const bool touching=a.x.y<=support+1e-7;
+  if(!touching)continue;
+  if(depth>0){
+   a.compression=std::max(a.compression,depth);
+   diag.max_penetration=std::max(diag.max_penetration,depth);
+   ++diag.contact_count;
+   a.x.y=support;
+  }
+  const Vec3 travel{a.x.x-a.old.x,0,a.x.z-a.old.z};
+  const double displacement=norm(travel);
+  if(displacement<1e-12)continue;
+  // A grounded particle receives an upward support impulse even when
+  // it begins exactly at the contact plane; using penetration alone
+  // makes static friction vanish as constraints converge.
+  const double normal_budget=std::max(depth,std::max(0.,-cfg.gravity.y)*h*h);
+  if(cfg.grounded_rest){
+   const double static_limit=cfg.floor_static_friction*normal_budget;
+   if(displacement<=static_limit){
+    // Sticking: cancel tangential movement up to the Coulomb threshold.
+    a.x.x=a.old.x;
+    a.x.z=a.old.z;
+   }else{
+    // Sliding: only kinetic friction applies after breakaway.
+    const double reduction=std::min(displacement,cfg.floor_kinetic_friction*normal_budget);
+    a.x.x-=travel.x*(reduction/displacement);
+    a.x.z-=travel.z*(reduction/displacement);
+   }
+  }else{
+   // Preserve existing legacy fixtures outside grounded gameplay.
+   const double reduction=std::min(displacement,cfg.friction*depth);
+   a.x.x-=travel.x*(reduction/displacement);
+   a.x.z-=travel.z*(reduction/displacement);
+  }
+ }
+}
 void arm_prop_surfaces(){
  if(!cfg.collisions||!cfg.grounded_rest)return;
  for(const auto& ids:rigids){
