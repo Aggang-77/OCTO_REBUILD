@@ -70,7 +70,16 @@ def main() -> None:
         suction_disabled = request(14, step2(0))
         assert suction_disabled["ok"]
         assert all(not any(a["attached"]) for a in suction_disabled["snapshot"]["animals"][0]["arms"]), "Space-up clears all grips"
-        assert request(15, "quit")["ok"]
+        # New step3 carries an explicit mouse-selected target after the
+        # backwards-compatible Space flag; an absent target must not grab.
+        target_commands = " ".join(
+            f"0 {arm} 0.9 0 1.4 0 0.02 {1 if arm == 7 else 0} 0"
+            for arm in range(8))
+        targeted = request(15, f"step3 8 {target_commands} 0 0 0 0 0 0 30 20 0 2 0 0.1 0.2 0.3")
+        assert targeted["ok"] and targeted["snapshot"]["tick"] == 2
+        invalid_target = request(16, f"step3 8 {target_commands} 0 0 0 0 0 0 30 20 0 3 0 0 0 0")
+        assert not invalid_target["ok"] and invalid_target["error"] == "bad_drag"
+        assert request(17, "quit")["ok"]
         proc.wait(timeout=5)
         assert proc.returncode == 0
     print("bridge protocol checks passed")
