@@ -407,7 +407,7 @@ double floor_surface_radius(const P& particle)const{
 }
 void project_floor(){if(cfg.floor)for(auto&a:p){
  const double surface_radius=floor_surface_radius(a);
- if(a.x.y<surface_radius){double depth=surface_radius-a.x.y;a.compression=std::max(a.compression,depth);diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=surface_radius;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,(cfg.grounded_rest&&a.animal>=0?(l/h>.12?.14:.34):cfg.friction)*depth)/l);}
+ if(a.x.y<surface_radius){double depth=surface_radius-a.x.y;a.compression=std::max(a.compression,depth);diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=surface_radius;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,(cfg.grounded_rest&&a.animal>=0?(l/(cfg.fixed_dt/cfg.substeps)>.12?.14:.34):cfg.friction)*depth)/l);}
 }}
 void arm_prop_surfaces(){
  if(!cfg.collisions||!cfg.grounded_rest)return;
