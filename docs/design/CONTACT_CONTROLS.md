@@ -61,3 +61,27 @@ These are gameplay approximations, not validated biomechanical parameters.
 The top-down drawing maps the eight radial arms clockwise from the top:
 `U` (arm 0), `I` (1), `O` (2), `P` (3), `Q` (4), `W` (5),
 `E` (6), `R` (7). This mapping supersedes the previous Q/W/A/S and U/I/J/K scheme.
+
+
+## Contact-gated push locomotion and mirrored skin mapping (2026-11-15)
+
+Actual GameReady arm rendering was reported mirrored relative to the prior
+keymap, so solver indices 0..7 now use physical keys R,E,W,Q,P,O,I,U.
+This reverses the previous mapping while preserving the requested spatial
+positions in the top-down drawing. The mesh-side correspondence still needs
+an on-device visual check.
+
+Holding a key cycles four contact-dependent phases:
+
+1. `shorten` (0.18s): contraction target 0.90 and curvature 0.8.
+2. `anchor` (max 0.42s): target 1.05, allowing middle/distal suckers to
+   form a real floor/prop contact. Transition only after confirmed attachment.
+3. `elongate` (max 0.34s): target 1.38 while the real anchor resists extension.
+   This pushes the body by reaction through XPBD constraints, without a
+   fabricated body force. Loss of attachment ends the powered stroke.
+4. `release` (min 0.19s): target 0.76 to peel floor suckers before retry.
+
+The actual cycle duration depends on contact and cannot be reduced to a fixed
+rhythmic gait. Unpressed arms remain weakly driven to symmetric neutral rest.
+Space forces all suckers to detach, Shift overrides to continuous reach and
+Ctrl overrides to bracing. No unconditional body propulsion is introduced.
