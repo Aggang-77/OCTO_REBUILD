@@ -249,3 +249,50 @@ Regressions added for keyboard opcode serialization, Ctrl-only release,
 invalid native opcodes and stable approach/release. **Not yet executed:**
 native build/CTest, Godot input tests, visual mesh contact, force
 calibration and physically verified grab persistence.
+
+
+## Mouse-picked target, proximal hold and wrapping attack (2026-11-15)
+
+This section replaces the previous **nearest-any-object** grab rule.
+
+1. **Left click** an exposed dynamic prop or *another* octopus to select
+   that exact target entity. A gold emissive target beacon floats above
+   it and follows the moving object's center. The originally clicked
+   world-space hit point is translated with the object's center so
+   native targeting follows moving targets. Clicking empty space clears
+   the selection. The currently controlled octopus is excluded.
+2. **Shift + arm key** launches that arm at the *selected* entity only.
+   A newly introduced backward-compatible **step3** command carries
+   explicit entity kind/index and clicked hit point through the Godot
+   to C++ boundary. The physics solver chooses the native target mass
+   closest to the marked hit *within that selected entity*, rather
+   than another nearby object. This is a coarse particle-based target
+   approximation; it is not precise rendered-triangle contact.
+3. The attack approach caps its translational drive at **52 N** with
+   a **90 N/m** attraction, exactly twice the previous strong grab
+   reach motor's 26 N / 45 N/m parameters. This does not claim measured
+   speed or impact impulse is precisely doubled.
+4. The grasp contact is now at arm **segment 13 of 16**, three
+   segments inward from the extreme tip. Only once contact clearance
+   is within 0.035 m is a bilateral XPBD joint acquired.
+   Remaining distal nodes 14–16 receive bounded compliant forces to
+   coil up to 1.7 radians around the actual contacted particle, with
+   opposite reactions on the target mass. This is not a rigid or
+   guaranteed complete wrap, and is not an independently simulated
+   sucker-array grasp.
+5. Shift can be released after a successful grasp; **Ctrl + arm**
+   detaches the chosen grip and **Ctrl alone** clears selected animal
+   grips. Space controls the separate suction system.
+6. The original **left-drag force** gesture is now **Alt + left drag**
+   to avoid accidental dragging while clicking to select targets.
+   Right-drag orbit and mouse-wheel camera zoom are unchanged.
+
+No new character body was invented. Non-octopus characters will be
+selectable only after being registered in the native shared collision
+world and exposed in a render snapshot.
+
+Regression scripts were updated for the step3 wire suffix, active
+target selection, the new object-grab contact index and Alt-drag.
+**No local Godot/C++ binary run was possible in this environment;**
+screen correctness, actual per-strike displacement, adhesion against
+moving objects, and wrapping fidelity remain unverified.
