@@ -125,3 +125,29 @@ large contact loads; the change is not yet build- or play-verified.
 Regression coverage: Godot key serialization, bridge protocol OFF transition,
 and native OFF / idle ON / immediate OFF sucker gates. These tests are
 committed but not executed in the current environment.
+
+
+## Passive soft-arm contour and rear root relaxation (2026-11-15)
+
+Previously, the idle sweep motor pulled each mid/distal particle toward a
+straight radial line; `demo.gd` also set idle curvature to zero.
+That deterministic straightening overrode most passive deformation despite
+soft XPBD material settings.
+
+In grounded gameplay the idle radial motor no longer runs. Instead, a
+weak, mirror-symmetric, nonuniform *passive curvature* target acts only
+beyond 26% of arm length, ramping in gradually to keep the root smooth.
+Bending and director constraints share the same target, while creep,
+gravity and collisions remain active. This is a weak physics-rest-shape
+bias, **not** a visual-only sinusoidal animation or a fixed skeleton pose.
+Non-grounded fixtures retain their original operation.
+
+The two rear-arm socket attraction gains/caps have been substantially
+reduced so that mantle recline does not forcibly pull their proximal
+rods into a sharp forward crease. The previously added proximal bend
+safeguards remain in place; distal segments remain able to fold or coil.
+
+This is a code-level correction, **not a verified rendered result**.
+After building, check a no-input 300-tick grounded settle, rear mantle
+lean and proximal arm angles, idle tip variance under perturbation,
+suction-off behaviour and GameReady GLB mesh skin contact.
