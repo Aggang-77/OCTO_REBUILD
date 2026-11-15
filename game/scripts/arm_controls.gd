@@ -1,6 +1,8 @@
 extends RefCounted
 ## Contact-gated muscle targets. Time is native simulation time, never FPS.
-const KEYS = [KEY_E, KEY_D, KEY_C, KEY_X, KEY_Z, KEY_A, KEY_Q, KEY_W]
+## Physical layout: left hand Q/W/A/S controls arms 7/6/5/4;
+## right hand U/I/J/K controls arms 0/1/2/3.
+const KEYS = [KEY_U, KEY_I, KEY_J, KEY_K, KEY_S, KEY_A, KEY_W, KEY_Q]
 const PHASES = ["reach", "pull", "release"]
 var phases: Array[String] = []
 var starts: Array[float] = []
@@ -20,12 +22,12 @@ func sample(arm: int, time: float, held: bool, stretch: bool,
         if phases[arm] != "rest" or release:
             phases[arm] = "rest"
             starts[arm] = time
-        return {"activation": 0.0, "extension": 0.78 if release or time - starts[arm] < 0.32 else 1.10,
+        return {"activation": 0.0, "extension": 0.86 if release or time - starts[arm] < 0.18 else 1.04,
             "curvature": 0.0, "sweep": 0.0}
     if stretch or brace:
         phases[arm] = "brace" if brace else "reach"
         starts[arm] = time
-        return {"activation": 1.0, "extension": 1.10 if brace else 1.48,
+        return {"activation": 0.78, "extension": 1.10 if brace else 1.35,
             "curvature": 0.0, "sweep": 0.0}
     if phases[arm] == "rest" or phases[arm] == "brace":
         phases[arm] = "reach"
@@ -34,12 +36,12 @@ func sample(arm: int, time: float, held: bool, stretch: bool,
     var next := phases[arm]
     match phases[arm]:
         "reach":
-            if attached and elapsed >= 0.12:
+            if attached and elapsed >= 0.07:
                 next = "pull"
-            elif elapsed >= 1.5:
+            elif elapsed >= 0.75:
                 next = "release" # Retry, never invent a remote grip.
         "pull":
-            if not attached or elapsed >= 0.65:
+            if not attached or elapsed >= 0.16:
                 next = "release"
         "release":
             if elapsed >= 0.32:
@@ -49,7 +51,7 @@ func sample(arm: int, time: float, held: bool, stretch: bool,
         starts[arm] = time
     match phases[arm]:
         "pull":
-            return {"activation": 1.0, "extension": 0.92, "curvature": 1.1, "sweep": sweep_sign}
+            return {"activation": 0.78, "extension": 0.95, "curvature": 0.9, "sweep": sweep_sign}
         "release":
-            return {"activation": 0.0, "extension": 0.76, "curvature": 0.0, "sweep": 0.0}
-    return {"activation": 1.0, "extension": 1.48, "curvature": 0.0, "sweep": 0.0}
+            return {"activation": 0.0, "extension": 0.86, "curvature": 0.0, "sweep": 0.0}
+    return {"activation": 0.78, "extension": 1.35, "curvature": 0.0, "sweep": 0.0}
