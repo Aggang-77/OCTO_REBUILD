@@ -558,7 +558,7 @@ func step_command() -> String:
     while arm_controllers.size() < animals:
         arm_controllers.append(ARM_CONTROLS.new())
     var time := float(current.get("time", 0.0))
-    var release := Input.is_physical_key_pressed(KEY_SPACE)
+    var suction_on := Input.is_physical_key_pressed(KEY_SPACE)
     var out := "step2 %d" % (animals * 8)
     for i in animals:
         for arm in 8:
@@ -571,8 +571,8 @@ func step_command() -> String:
             var sign := 1.0
             var cmd: Dictionary = arm_controllers[i].sample(arm, time, held,
                 manual and Input.is_physical_key_pressed(KEY_SHIFT),
-                manual and Input.is_physical_key_pressed(KEY_CTRL), release, attached, sign)
-            if not release and arm_controllers[i].phases[arm] == "rest":
+                manual and Input.is_physical_key_pressed(KEY_CTRL), false, attached and suction_on, sign)
+            if arm_controllers[i].phases[arm] == "rest":
                 # Symmetric resting configuration, with an active low-force
                 # restoring motor in the C++ world rather than a teleport.
                 cmd.extension = 1.04
@@ -587,7 +587,7 @@ func step_command() -> String:
     out += " %d %d 0 %f %f %f 30 20 %d" % [
         drag_kind if dragging else 0, drag_index,
         drag_target.x, drag_target.y, drag_target.z,
-        1 if release else 0]
+        1 if suction_on else 0]
     return out
 
 func inject_key(code: Key, pressed: bool) -> void:
