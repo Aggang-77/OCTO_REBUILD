@@ -100,3 +100,28 @@ retains its existing 65-degree bound. These are provisional gameplay
 limits, not measured octopus anatomy or guarantees of exact angles.
 The projection is compliant/incremental and may require tuning under
 large contact loads; the change is not yet build- or play-verified.
+
+
+## Space-held suction control (2026-11-15)
+
+**Current gameplay rule (supersedes the earlier Space-to-release descriptions):**
+- Space **not held**: suction OFF across all eight arms, even while the
+  user is pressing arm movement keys. Existing grips are released immediately;
+  ordinary geometric contact and friction still apply.
+- Space **held**: suction ON for all arms, including uncommanded/idle arms.
+  A sucker only attaches when it actually meets the existing contact,
+  orientation, and dwell requirements. Holding Space is permission to grip,
+  not an unconditional weld or remote attachment.
+- Space does **not** stop or override muscle commands. Arm keys, Shift, Ctrl
+  and Space can be held together. Timed stroke-release phases may still peel
+  their own sucker contacts when contraction demands it.
+- The `step2` protocol's final bit now denotes `suction_enabled`, not
+  `release_all`. The historical `PhysicsWorld::release_all_suckers`
+  native API is retained for legacy tests, while `set_suction_enabled`
+  provides the new per-frame gameplay gate.
+- Native legacy `step` protocol and physics fixtures without an explicit
+  Space gate preserve their previous automatic-suction semantics.
+
+Regression coverage: Godot key serialization, bridge protocol OFF transition,
+and native OFF / idle ON / immediate OFF sucker gates. These tests are
+committed but not executed in the current environment.
