@@ -5,6 +5,7 @@
 #include <string>
 #include <cmath>
 #include <chrono>
+#include <algorithm>
 using namespace octo;
 static void v(Vec3 p){std::cout<<'['<<p.x<<','<<p.y<<','<<p.z<<']';}
 static void q(Quat p){std::cout<<'['<<p.x<<','<<p.y<<','<<p.z<<','<<p.w<<']';}
@@ -44,7 +45,7 @@ int main(){std::cout<<std::setprecision(6);WorldConfig cfg;PhysicsWorld world(cf
  parsed=parsed&&tokens.size()<=4&&number(0,spacing)&&number(1,suction)&&number(2,volume_arm)&&number(3,grounded);
  if(!parsed||n<1||n>10||!std::isfinite(spacing)||spacing<.5||spacing>4||!(suction==0||suction==1)||!(volume_arm==0||volume_arm==1)||!(grounded==0||grounded==1))error="bad_config";
  else{cfg.animals=n;cfg.spacing=spacing;cfg.auto_suction=suction==1;cfg.volumetric_arm_prototype=volume_arm==1;cfg.grounded_rest=grounded==1;cfg.tissue_stiffness_ratio=cfg.grounded_rest?.2:1.;cfg.spawn_height=cfg.grounded_rest?.27:.75;cfg.upright_strength=cfg.grounded_rest?.08:.45;world.reset(cfg);}
-}else if(op=="step"||op=="step2"){const bool v1=op=="step2";unsigned n=0;in>>n;std::vector<MuscleCommand> commands; if(!in||n!=cfg.animals*8)error="bad_count";else{for(unsigned i=0;i<n;++i){MuscleCommand c;int attach=0;in>>c.animal>>c.arm>>c.activation>>c.curvature>>c.extension>>c.twist>>c.stiffness>>attach;if(v1)in>>c.sweep;c.attach=attach!=0;if(!in||c.animal!=i/8||c.arm!=i%8||!std::isfinite(c.activation)||!std::isfinite(c.curvature)||!std::isfinite(c.extension)||!std::isfinite(c.twist)||!std::isfinite(c.stiffness)||!std::isfinite(c.sweep)||(attach!=0&&attach!=1)){error="bad_command";break;}commands.push_back(c);}DragCommand d;int kind=0;in>>kind>>d.index>>d.arm>>d.target.x>>d.target.y>>d.target.z>>d.stiffness>>d.max_force;int release=0;if(v1)in>>release;
+}else if(op=="step"||op=="step2"){const bool v1=op=="step2";unsigned n=0;in>>n;std::vector<MuscleCommand> commands; if(!in||n!=cfg.animals*8)error="bad_count";else{for(unsigned i=0;i<n;++i){MuscleCommand c;int attach=0;in>>c.animal>>c.arm>>c.activation>>c.curvature>>c.extension>>c.twist>>c.stiffness>>attach;if(v1)in>>c.sweep;c.attach=!v1&&attach!=0;c.grab_mode=v1?unsigned(std::clamp(attach,0,2)):0;if(!in||c.animal!=i/8||c.arm!=i%8||!std::isfinite(c.activation)||!std::isfinite(c.curvature)||!std::isfinite(c.extension)||!std::isfinite(c.twist)||!std::isfinite(c.stiffness)||!std::isfinite(c.sweep)||(attach<0||attach>(v1?2:1))){error="bad_command";break;}commands.push_back(c);}DragCommand d;int kind=0;in>>kind>>d.index>>d.arm>>d.target.x>>d.target.y>>d.target.z>>d.stiffness>>d.max_force;int release=0;if(v1)in>>release;
 if(!in||kind<0||kind>3||!std::isfinite(d.target.x)||!std::isfinite(d.target.y)||!std::isfinite(d.target.z)||!std::isfinite(d.stiffness)||!std::isfinite(d.max_force)||(v1&&release!=0&&release!=1))error="bad_drag";
 std::string extra;if(in>>extra)error="extra_data";
 d.kind=static_cast<DragCommand::Kind>(kind);if(error.empty()){world.release_all_suckers(false);if(v1)world.set_suction_enabled(release==1);for(auto& c:commands)if(!world.command(c)){error="command_rejected";break;}if(error.empty()&&!world.drag(d))error="drag_rejected";if(error.empty()&&!world.step())error="step_failed";}}}else if(op!="snapshot")error="bad_operation";}
