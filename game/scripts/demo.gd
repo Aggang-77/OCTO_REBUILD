@@ -64,6 +64,10 @@ var camera: Camera3D
 var yaw := 0.35
 var pitch := 0.85
 var distance := 8.0
+var target_kind := 0 # 0 none, 1 another octopus, 2 physics prop
+var target_index := -1
+var target_hit := Vector3.ZERO
+var target_marker: Node3D
 var dragging := false
 var drag_kind := 0
 var drag_index := 0
@@ -280,12 +284,37 @@ func make_stage() -> void:
     camera = Camera3D.new(); camera.fov = 48; add_child(camera)
     distance = 7.0 + maxf(0, animals - 2) * 0.7
     update_camera()
+    target_marker = Node3D.new()
+    target_marker.visible = false
+    add_child(target_marker)
+    var beacon := MeshInstance3D.new()
+    var sphere := SphereMesh.new()
+    sphere.radius = 0.09
+    sphere.height = 0.18
+    beacon.mesh = sphere
+    var beacon_mat := StandardMaterial3D.new()
+    beacon_mat.albedo_color = Color(1.0, 0.68, 0.08)
+    beacon_mat.emission_enabled = true
+    beacon_mat.emission = Color(1.0, 0.52, 0.02)
+    beacon_mat.emission_energy_multiplier = 2.5
+    beacon_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    beacon.material_override = beacon_mat
+    target_marker.add_child(beacon)
+    var stem := MeshInstance3D.new()
+    var cylinder := CylinderMesh.new()
+    cylinder.top_radius = 0.012
+    cylinder.bottom_radius = 0.012
+    cylinder.height = 0.22
+    stem.mesh = cylinder
+    stem.position.y = -0.16
+    stem.material_override = beacon_mat
+    target_marker.add_child(stem)
     var layer := CanvasLayer.new(); add_child(layer)
     var panel := PanelContainer.new(); panel.position = Vector2(20,20); panel.custom_minimum_size = Vector2(450,0); panel.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(panel)
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "U I O P / Q W E R: independent arm controls\\nHold arm: reach > contact > pull > release\\nShift + arm: grab nearest object / other octopus\\nCtrl + arm: release that arm   Ctrl alone: release all\\nSpace + arm: enable sucker adhesion\\nComma / Period + arm: twist\\nMouse wheel: zoom   Right drag: orbit\\nLeft drag: force   Tab: select octopus   F5: reset"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "U I O P / Q W E R: independent arm controls\\nHold arm: reach > contact > pull > release\\nLeft click: choose target (gold marker)\\nShift + arm: attack targeted object and wrap\\nCtrl + arm: release that arm   Ctrl alone: release all\\nSpace + arm: enable sucker adhesion\\nComma / Period + arm: twist\\nMouse wheel: zoom   Right drag: orbit\\nAlt + left drag: force   Tab: select octopus   F5: reset"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -294,6 +323,58 @@ func update_camera() -> void:
         center = vec(states[clampi(selected, 0, states.size() - 1)].center)
     camera.position = center + Vector3(sin(yaw)*cos(pitch), sin(pitch), cos(yaw)*cos(pitch))*distance
     camera.look_at(center, Vector3.UP)
+
+func target_center() -> Vector3:
+    if current.is_empty():
+        return target_hit
+    if target_kind == 1 and target_index >= 0 and target_index < current.animals.size():
+        return vec(current.animals[target_index].center)
+    if target_kind == 2 and target_index >= 0 and target_index < current.rigids.size():
+        return vec(current.rigids[target_index].center)
+    return target_hit
+
+func update_target_marker() -> void:
+    if target_marker == null:
+        return
+    target_marker.visible = target_kind != 0
+    if not target_marker.visible:
+        return
+    var base := target_center()
+    target_marker.position = base + Vector3.UP * (0.52 if target_kind == 1 else 0.40)
+
+func select_mouse_target(screen_point: Vector2) -> void:
+    if camera == null or current.is_empty():
+        return
+    var origin := camera.project_ray_origin(screen_point)
+    var direction := camera.project_ray_normal(screen_point)
+    var closest := INF
+    var kind := 0
+    var index := -1
+    var point := Vector3.ZERO
+    for i in current.animals.size():
+        if i == selected:
+            continue
+        var center := vec(current.animals[i].center)
+        var hit = AABB(center - Vector3(.48, .38, .48),
+            Vector3(.96, .76, .96)).intersects_ray(origin, direction)
+        if hit != null and origin.distance_to(hit) < closest:
+            closest = origin.distance_to(hit)
+            kind = 1
+            index = i
+            point = hit
+    for i in current.rigids.size():
+        var center := vec(current.rigids[i].center)
+        var dimensions := Vector3.ONE * .36
+        var hit = AABB(center - dimensions, dimensions * 2).intersects_ray(origin, direction)
+        if hit != null and origin.distance_to(hit) < closest:
+            closest = origin.distance_to(hit)
+            kind = 2
+            index = i
+            point = hit
+    target_kind = kind
+    target_index = index
+    target_hit = point
+    update_target_marker()
 
 func send(command: String) -> void:
     if pending or pipe == null: return
@@ -563,12 +644,12 @@ func step_command() -> String:
     var any_arm_pressed := false
     for key in ARM_KEYS:
         any_arm_pressed = any_arm_pressed or Input.is_physical_key_pressed(key)
-    var out := "step2 %d" % (animals * 8)
+    var out := "step3 %d" % (animals * 8)
     for i in animals:
         for arm in 8:
             var manual := i == selected and Input.is_physical_key_pressed(ARM_KEYS[arm])
             var release_grab := i == selected and ctrl_on and (manual or not any_arm_pressed)
-            var grab_nearest := manual and Input.is_physical_key_pressed(KEY_SHIFT) and not release_grab
+            var grab_nearest := manual and Input.is_physical_key_pressed(KEY_SHIFT) and not release_grab and target_kind != 0
             var held := (manual and not release_grab) or test_all_active or (test_actuation and i == 0 and arm == 0)
             var attached := false
             if not current.is_empty():
@@ -601,6 +682,8 @@ func step_command() -> String:
         drag_kind if dragging else 0, drag_index,
         drag_target.x, drag_target.y, drag_target.z,
         1 if suction_on else 0]
+    out += " %d %d %f %f %f" % [
+        target_kind, maxi(target_index, 0), target_hit.x, target_hit.y, target_hit.z]
     return out
 
 func inject_key(code: Key, pressed: bool) -> void:
@@ -685,6 +768,7 @@ func _process(delta: float) -> void:
         inbox_lock.unlock()
     if first_tick_usec > 0 and current.tick > 1: frame_wall_ms.append(delta*1000.0)
     update_camera()
+    update_target_marker()
     var grip_count := count_grips_from_snapshot(current)
     label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d   Grips %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,grip_count,parse_ms,skin_ms,command_ms]
     var active_labels := PackedStringArray()
@@ -760,14 +844,24 @@ func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not current.is_empty():
         dragging = false
         if event.pressed:
-            var origin := camera.project_ray_origin(event.position); var dir := camera.project_ray_normal(event.position); var nearest := INF
-            for i in current.animals.size()+current.rigids.size():
-                var center: Vector3 = vec(current.animals[i].center) if i < animals else vec(current.rigids[i-animals].center)
-                var extent := Vector3.ONE * (0.4 if i < animals else 0.25)
-                var hit = AABB(center-extent,extent*2).intersects_ray(origin,dir)
-                if hit != null and origin.distance_to(hit)<nearest:
-                    nearest = origin.distance_to(hit); dragging = true; drag_kind = 1 if i < animals else 3; drag_index = i if i < animals else i-animals; drag_target = center
-            if dragging: drag_plane = Plane(camera.global_basis.z,drag_target)
+            if Input.is_physical_key_pressed(KEY_ALT):
+                var origin := camera.project_ray_origin(event.position)
+                var direction := camera.project_ray_normal(event.position)
+                var nearest := INF
+                for i in current.animals.size() + current.rigids.size():
+                    var center: Vector3 = vec(current.animals[i].center) if i < animals else vec(current.rigids[i-animals].center)
+                    var extent := Vector3.ONE * (0.4 if i < animals else 0.25)
+                    var hit = AABB(center-extent, extent*2).intersects_ray(origin, direction)
+                    if hit != null and origin.distance_to(hit) < nearest:
+                        nearest = origin.distance_to(hit)
+                        dragging = true
+                        drag_kind = 1 if i < animals else 3
+                        drag_index = i if i < animals else i-animals
+                        drag_target = center
+                if dragging:
+                    drag_plane = Plane(camera.global_basis.z, drag_target)
+            else:
+                select_mouse_target(event.position)
     if event is InputEventMouseMotion and dragging:
         var hit = drag_plane.intersects_ray(camera.project_ray_origin(event.position),camera.project_ray_normal(event.position))
         if hit != null: drag_target = hit
