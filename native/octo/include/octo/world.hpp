@@ -17,6 +17,8 @@ struct MuscleCommand {
     double stiffness=0;          // [0,1]
     bool attach=false;           // legacy explicit tip attachment
     double sweep=0;              // [-1,1] body-relative anterior/posterior muscle drive
+    bool explicit_control=false; // step4 keeps extend/stroke independent of activation
+    bool extend=false, stroke=false, carry=false;
 };
 struct DragCommand {
     enum class Kind { None, Animal, ArmTip, Rigid };
@@ -31,6 +33,11 @@ struct WorldConfig {
     Vec3 gravity{0,-9.81,0};
     double fixed_dt=1.0/60.0, damping=0.4, friction=0.65;
     double spacing=2.2, spawn_height=0.75;
+    double size_scale=1.0;         // metres and kg scale together; game uses 1.5
+    double sweep_limit_degrees=27.0;
+    double idle_friction_ratio=0.06;
+    double body_friction=0.22;
+    bool locomotion_assist=true;
     // Gameplay actuator and adhesion strength multipliers. Applied in the
     // C++ shared world (not Godot forces or visual animation).
     double arm_motor_strength=2.2;      // moderated from the overpowered 4.0 profile
@@ -68,6 +75,14 @@ struct SceneForce { int arm=-1, node=0; Vec3 force{}; };
 struct SceneContact { int arm=-1, node=0; Vec3 point{}, normal{0,1,0}; std::uint32_t collider=0; };
 struct SceneReaction { std::uint32_t collider=0; Vec3 impulse{}, point{}; };
 struct ArmSnapshot {
+    // 0 recover, 1 contact preparation, 2 support, 3 releasing, 4 carry, 5 air stroke.
+    unsigned phase=0;
+    bool extend=false, stroke=false, carry=false, rearm_required=false;
+    double home_angle=0;
+    unsigned model_arm=0;
+    std::vector<Vec3> sucker_directions;
+    std::vector<double> contact_radii;
+    std::vector<double> grip_coverage;
     double uncoil_progress=0;      // base-to-tip unwound fraction [0,1]
     std::vector<Vec3> nodes;     // segments+1, root -> tip, world metres
     std::vector<Quat> frames;    // segments, local +Z is tangent
@@ -102,6 +117,8 @@ struct RenderSnapshot {
     std::vector<AnimalSnapshot> animals;
     std::vector<RigidSnapshot> rigids;
     Diagnostics diagnostics{};
+    double size_scale=1.0;
+    std::uint64_t static_triangles=0;
     std::vector<SceneReaction> scene_reactions;
 };
 // Single-thread owner. Inputs persist until replaced; snapshots are owned copies.
@@ -120,6 +137,7 @@ public:
     void release_all_suckers(bool held); // Space overrides all grips while held
     bool impulse_rigid(std::uint32_t index, Vec3 impulse); // N·s at the prop center, for controlled physical fixtures
     bool terrain(unsigned width, double origin_x, double origin_z, double cell, const std::vector<double>& heights);
+    bool static_geometry(const std::vector<Vec3>& triangle_vertices);
     bool scene_inputs(const std::vector<SceneForce>& forces, const std::vector<SceneContact>& contacts);
     bool step();                 // exactly config.fixed_dt; false on invalid state
     RenderSnapshot snapshot() const;

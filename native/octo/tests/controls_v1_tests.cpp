@@ -64,13 +64,34 @@ int main(){try{
   floor.gravity={0,-9.81,0};floor.spawn_height=.14;
   floor.auto_suction=true;floor.damping=.6;
   PhysicsWorld sticky(floor);
-  std::uint64_t grip=0;
+  std::uint64_t idle_grip=0;
   for(int i=0;i<240;++i){
-    require(sticky.step(),"automatic grip stable");
-    grip=std::max(grip,sticky.snapshot().diagnostics.attachments);
+    require(sticky.step(),"idle contact remains stable");
+    idle_grip=std::max(idle_grip,sticky.snapshot().diagnostics.attachments);
   }
-  std::cout<<"CONTROL_V1_GRIP max_auto_floor_contacts="<<grip<<"\n";
-  require(grip>0,"stable real-contact floor probes should grip");
+  std::cout<<"CONTROL_V1_IDLE max_floor_contacts="<<idle_grip<<"\n";
+  require(idle_grip==0,"unused arms must never acquire automatic floor suction");
+  MuscleCommand hold;hold.arm=0;hold.explicit_control=true;hold.extend=true;
+  hold.activation=1;hold.extension=1.48;hold.curvature=0;hold.sweep=-1;
+  require(sticky.command(hold),"explicit extend input accepted");
+  std::uint64_t grip=0;
+  std::vector<bool> prior_attached;
+  for(int i=0;i<240;++i){
+    require(sticky.step(),"explicit floor grip stays finite");
+    const auto state=sticky.snapshot();
+    grip=std::max(grip,state.diagnostics.attachments);
+    for(unsigned arm=1;arm<8;++arm)
+      for(bool attached:state.animals[0].arms[arm].attached)
+        require(!attached,"other seven arms stay ungripped under one-arm input");
+    const auto& active=state.animals[0].arms[0];
+    for(unsigned segment=0;segment<active.attached.size();++segment)
+      if(active.attached[segment]&&(prior_attached.empty()||!prior_attached[segment]))
+        require(active.nodes[segment+1].y<=active.contact_radii[segment+1]+.012,
+                "floor suction is acquired only at actual physical surface contact");
+    prior_attached=active.attached;
+  }
+  std::cout<<"CONTROL_V1_GRIP max_explicit_floor_contacts="<<grip<<"\n";
+  require(grip>0,"stable real-contact floor probes grip while extend is held");
   sticky.release_all_suckers(true);
   require(sticky.step(),"Space release stable");
   require(sticky.snapshot().diagnostics.attachments==0,"Space releases every grip");
@@ -79,15 +100,30 @@ int main(){try{
     require(sticky.snapshot().diagnostics.attachments==0,"held Space forbids new grip");
   }
   sticky.release_all_suckers(false);
-  for(int i=0;i<5;++i){
-    require(sticky.step(),"cooldown stable");
-    require(sticky.snapshot().diagnostics.attachments==0,"no instantaneous regrip");
+  for(int i=0;i<60;++i){
+    require(sticky.step(),"released Space with unchanged extend remains stable");
+    require(sticky.snapshot().diagnostics.attachments==0,
+            "holding the old extend key cannot regrip after the cooldown expires");
   }
+  require(sticky.snapshot().animals[0].arms[0].rearm_required,
+          "Space leaves the old extend cycle disarmed");
+  hold.extend=false;hold.activation=0;hold.extension=.58;hold.sweep=0;
+  require(sticky.command(hold)&&sticky.step(),"extend key release reaches native control state");
+  hold.extend=true;hold.activation=1;hold.extension=1.48;hold.sweep=-1;
+  require(sticky.command(hold),"fresh extend edge accepted");
+  std::uint64_t fresh_grip=0;
+  for(int i=0;i<240;++i){
+    require(sticky.step(),"fresh contact attempt remains finite");
+    fresh_grip=std::max(fresh_grip,sticky.snapshot().diagnostics.attachments);
+  }
+  std::cout<<"CONTROL_V1_FRESH_EDGE max_floor_contacts="<<fresh_grip<<"\n";
+  require(fresh_grip>0,"a fresh extend edge enables real floor acquisition again");
   // Extension must seek an actual floor contact, then acquire an
   // ordinary suction constraint; no distant/teleported attachment.
   {auto reach_cfg=floor;reach_cfg.spawn_height=.75;reach_cfg.softness=5.;
    PhysicsWorld reaching(reach_cfg);
    MuscleCommand extend;extend.arm=0;extend.activation=1;
+   extend.explicit_control=true;extend.extend=true;
    extend.extension=1.48;extend.curvature=0;extend.sweep=-1;
    require(reaching.command(extend),"reach-for-floor command accepted");
    std::uint64_t acquired=0;
@@ -141,7 +177,7 @@ int main(){try{
   // Both worlds have the same initial physical cage/arms. The unassisted
   // one keeps its initial roll in zero gravity; the corrected one must
   // develop a more upward top-to-bottom torso axis.
-  {WorldConfig passive=isolated;
+  {WorldConfig passive=isolated;passive.locomotion_assist=false;
    passive.spawn_roll=2.65;passive.coil_curvature=0;
    passive.upright_strength=0;passive.damping=.5;
    WorldConfig assisted=passive;assisted.upright_strength=.45;
@@ -165,7 +201,7 @@ int main(){try{
   }
   // Low-resolution mantle tissue is dynamic geometry with 12 genuine
   // colliding mass nodes, not a decorative rubber shader.
-  {auto c=floor;c.spawn_height=.12;c.tissue_viscosity=10.0;
+  {auto c=floor;c.spawn_height=.12;c.tissue_viscosity=10.0;c.locomotion_assist=false;
    PhysicsWorld tissue_world(c);
    auto start=tissue_world.snapshot();
    require(start.animals[0].body_nodes.size()==19,
@@ -202,7 +238,7 @@ int main(){try{
   // Viscoelastic damping must remove oscillatory energy without a
   // global/kinematic position lock. Same impulse, same initial world;
   // only relative rod viscosity differs. Both are closed systems.
-  {auto c=isolated;c.auto_suction=false;c.damping=0;
+  {auto c=isolated;c.locomotion_assist=false;c.auto_suction=false;c.damping=0;
    c.coil_curvature=0;c.upright_strength=0;
    c.arm_internal_viscosity=0;
    PhysicsWorld spring(c);
@@ -229,7 +265,7 @@ int main(){try{
   }
   // Native world integration: a held load must evolve actual rod
   // rest-shape memory rather than merely changing a render material.
-  {WorldConfig c=isolated;
+  {WorldConfig c=isolated;c.locomotion_assist=false;
    c.coil_curvature=0;c.upright_strength=0;c.gravity={0,0,0};
    c.auto_suction=false;c.creep_rate=1.2;c.creep_recovery=.04;
    PhysicsWorld loaded(c);
@@ -260,7 +296,7 @@ int main(){try{
   }
   // Experimental 3D flesh is a real collision/volume simulation, and
   // opt-in until coupled geometry passes all long stress fixtures.
-  {auto c=isolated;c.volumetric_arm_prototype=true;c.coil_curvature=0;
+  {auto c=isolated;c.locomotion_assist=false;c.volumetric_arm_prototype=true;c.coil_curvature=0;
    c.creep_rate=0;c.bend_creep_rate=0;c.upright_strength=0;
    PhysicsWorld volumetric(c);
    auto initial=volumetric.snapshot();

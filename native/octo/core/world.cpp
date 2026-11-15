@@ -2,6 +2,8 @@
 #include "octo/collision.hpp"
 #include "octo/rod_math.hpp"
 #include "octo/viscoelastic.hpp"
+#include "octo/arm_layout.hpp"
+#include "octo/static_geometry.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -25,7 +27,7 @@ return q;}
 Quat roll_frame(Quat q,double angle){const double half=.5*angle,s=std::sin(half),c=std::cos(half);return {q.x*c+q.y*s,q.y*c-q.x*s,q.z*c+q.w*s,q.w*c-q.z*s};}
 }
 struct PhysicsWorld::Impl {
-struct P{Vec3 x,old,v;double inv,r;int animal,arm,node,rigid;double compression=0;};
+struct P{Vec3 x,old,v;double inv,r;int animal,arm,node,rigid;double compression=0;Vec3 surface_normal{0,1,0};bool static_contact=false;};
 struct Bounds { Vec3 lo, hi; };
 struct D{int a,b;double rest,compliance,lambda=0,base_rest=0,creep=0;bool adaptive=false,arm_axial=false;};
 struct T{std::array<int,4> p;double rest,lambda=0;bool soft_volume=false;};
@@ -37,13 +39,16 @@ struct Sucker{
  // ungripped suckers against the contacted terrain or moving object.
  Vec3 contact_normal{0,1,0},contact_tangent{1,0,0},contact_binormal{0,0,1};
  double wrap_radius=0; // local object curvature estimate (metres)
+ double coverage=1.0;std::uint64_t last_cycle=0;
 };
 struct TissueSection{double transverse=1,rate=0,pressure=0;};
-struct Arm{std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda,bend_creep;std::vector<int> axial_edges;std::vector<std::array<int,4>> volume_rings;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
+enum Phase : unsigned {Recover,Prepare,Support,Releasing,Carry,AirStroke};
+struct Arm{unsigned phase=Recover;bool previous_extend=false,rearm_required=false,ever_supported=false;std::uint64_t cycle=0;std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda,bend_creep;std::vector<int> axial_edges;std::vector<std::array<int,4>> volume_rings;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
 struct Animal{std::vector<int> body;std::vector<int> shell;std::array<Arm,8> arms;};
 WorldConfig cfg;bool release_held=false;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;std::vector<Bounds> contact_bounds;std::vector<int> contact_order;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
 unsigned terrain_width=0;double terrain_x=0,terrain_z=0,terrain_cell=1;
 std::vector<double> heights;
+geometry::StaticGeometry static_mesh;
 std::vector<SceneForce> scene_forces;std::vector<SceneContact> scene_contacts;std::vector<SceneReaction> reactions;
 int scene_particle(int arm,int node)const{
  if(animals.empty()||arm < -1||arm>7||node<0)return -1;
@@ -70,6 +75,7 @@ Vec3 floor_normal(Vec3 at)const{
  return unit({floor_height(at+Vec3{-e,0,0})-floor_height(at+Vec3{e,0,0}),
               2*e,floor_height(at+Vec3{0,0,-e})-floor_height(at+Vec3{0,0,e})});
 }
+#include "locomotion.inl"
 void scene_constraints(double h){
  for(size_t i=0;i<scene_contacts.size();++i){const auto& c=scene_contacts[i];auto& site=p[scene_particle(c.arm,c.node)];
   double depth=site.r-dot(site.x-c.point,c.normal);if(depth<=0)continue;
@@ -86,6 +92,7 @@ void edge(int a,int b,double compliance){const double rest=norm(p[a].x-p[b].x);d
 double volume(const T&t)const{auto a=p[t.p[0]].x;return dot(p[t.p[1]].x-a,cross(p[t.p[2]].x-a,p[t.p[3]].x-a))/6;}
 explicit Impl(WorldConfig c):cfg(c){
 if(!finite(c.spawn_origin))throw std::invalid_argument("Invalid spawn origin");
+if(!std::isfinite(c.size_scale)||c.size_scale<.5||c.size_scale>3||!std::isfinite(c.sweep_limit_degrees)||c.sweep_limit_degrees<1||c.sweep_limit_degrees>45||!std::isfinite(c.idle_friction_ratio)||c.idle_friction_ratio<0||c.idle_friction_ratio>1||!std::isfinite(c.body_friction)||c.body_friction<0||c.body_friction>2)throw std::invalid_argument("Invalid locomotion config");
 if(c.animals>64||c.segments<2||c.segments>64||c.substeps<1||c.substeps>64||c.iterations<1||c.iterations>100||!finite(c.gravity)||!std::isfinite(c.fixed_dt)||c.fixed_dt<=0||c.fixed_dt>.1||!std::isfinite(c.damping)||c.damping<0||!std::isfinite(c.friction)||c.friction<0||!std::isfinite(c.spacing)||c.spacing<0||!std::isfinite(c.spawn_height)||c.rigid_count>128||
    !std::isfinite(c.arm_motor_strength)||c.arm_motor_strength<0.1||c.arm_motor_strength>12.0||
    !std::isfinite(c.sucker_strength)||c.sucker_strength<0.1||c.sucker_strength>12.0||
@@ -131,7 +138,7 @@ for(int x:{1,2})for(int y:{3,4})for(int z:{5,6}){T t{{a.body[0],a.body[x],a.body
   edge(a.shell[level*6],a.shell[level*6+5],1.2e-4*c.softness);
  }
  for(int k=0;k<6;++k)edge(a.shell[k],a.shell[6+k],1.0e-4*c.softness);
-for(int k=0;k<8;++k){auto& ar=a.arms[k];ar.arm_index=k;ar.uncoil_front=0;double angle=k*std::acos(-1.)/4;Vec3 radial=rotate_spawn({std::sin(angle),0,std::cos(angle)});for(unsigned j=0;j<=c.segments;++j){double u=double(j)/c.segments;double radius=.036*(1-.8*u);ar.radius.push_back(radius);ar.p.push_back(particle(center+radial*(.2+.9*u),.012,radius,int(n),k,int(j)));if(j){edge(ar.p[j-1],ar.p[j],3e-7*c.softness);ar.axial_edges.push_back(int(d.size()-1));}}
+for(int k=0;k<8;++k){auto& ar=a.arms[k];ar.arm_index=k;ar.uncoil_front=0;double angle=layout::angle(k);Vec3 radial=rotate_spawn({std::sin(angle),0,std::cos(angle)});for(unsigned j=0;j<=c.segments;++j){double u=double(j)/c.segments;double radius=.036*(1-.8*u);ar.radius.push_back(radius);ar.p.push_back(particle(center+radial*(.2+.9*u),.012,radius,int(n),k,int(j)));if(j){edge(ar.p[j-1],ar.p[j],3e-7*c.softness);ar.axial_edges.push_back(int(d.size()-1));}}
 ar.squash.assign(c.segments,1.0);
 ar.tissue.resize(c.segments);
 for(unsigned j=0;j<c.segments;++j){const double radius=ar.radius[j],mass=.012;ar.roll.push_back({0,0,0,j?2.0/(mass*radius*radius):0,0});}
@@ -194,7 +201,21 @@ animals.push_back(a);}
    e.adaptive=true;
   }
  }
- for(unsigned k=0;k<c.rigid_count;++k){std::vector<int> ids;Vec3 center{double(k)*.65-.65,.32,1.35};for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})ids.push_back(particle(center+Vec3{x*.16,y*.16,z*.16},.125,.08,-1,-1,-1,int(k)));for(int i=0;i<8;++i)for(int j=i+1;j<8;++j)edge(ids[i],ids[j],1e-9);rigids.push_back(ids);}}
+ for(unsigned k=0;k<c.rigid_count;++k){std::vector<int> ids;Vec3 center{double(k)*.65-.65,.32,1.35};for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})ids.push_back(particle(center+Vec3{x*.16,y*.16,z*.16},.125,.08,-1,-1,-1,int(k)));for(int i=0;i<8;++i)for(int j=i+1;j<8;++j)edge(ids[i],ids[j],1e-9);rigids.push_back(ids);}
+// Scale geometry, mass and rotational inertia together about each spawn.
+const double scale=c.size_scale,mass_factor=scale*scale*scale;
+for(auto& site:p)if(site.animal>=0){
+ const Vec3 center=c.spawn_origin+Vec3{(double(site.animal)-double(c.animals-1)/2)*c.spacing,c.spawn_height,0};
+ site.x=center+(site.x-center)*scale;site.old=site.x;site.r*=scale;site.inv/=mass_factor;
+}
+for(auto& edge:d)if(p[edge.a].animal>=0){edge.rest*=scale;edge.base_rest*=scale;edge.compliance/=scale;}
+for(auto& element:tetra)element.rest*=mass_factor;
+for(auto& animal:animals)for(auto& ar:animal.arms){
+ for(auto& radius:ar.radius)radius*=scale;
+ for(auto& roll:ar.roll)roll.inv_inertia/=mass_factor*scale*scale;
+ for(auto& director:ar.directors)director.inv_inertia/=mass_factor*scale*scale;
+}
+}
 void distance(D& e,double h){auto&a=p[e.a];auto&b=p[e.b];Vec3 delta=b.x-a.x;double l=norm(delta);if(l<1e-12)return;double alpha=e.compliance/(h*h),dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);e.lambda+=dl;Vec3 impulse=delta*(dl/l);a.x=a.x-impulse*a.inv;b.x=b.x+impulse*b.inv;}
 void volumes(double h){for(auto&t:tetra){auto a=p[t.p[0]].x,b=p[t.p[1]].x,c=p[t.p[2]].x,e=p[t.p[3]].x;std::array<Vec3,4> g;g[1]=cross(c-a,e-a)/6;g[2]=cross(e-a,b-a)/6;g[3]=cross(b-a,c-a)/6;g[0]=(g[1]+g[2]+g[3])*(-1);double alpha=(t.soft_volume?cfg.volumetric_compliance:1e-10*std::sqrt(cfg.softness))/(h*h),den=alpha;for(int i=0;i<4;++i)den+=p[t.p[i]].inv*dot(g[i],g[i]);double dl=(-(volume(t)-t.rest)-alpha*t.lambda)/den;t.lambda+=dl;for(int i=0;i<4;++i){auto&v=p[t.p[i]];v.x=v.x+g[i]*(v.inv*dl);}}}
 void section_area_constraints(double h){
@@ -218,11 +239,11 @@ void section_area_constraints(double h){
    for(int k=0;k<4;++k)
     area+=.5*dot(cross(points[k],points[(k+1)%4]),tangent);
    const double u=double(center_index)/cfg.segments;
-   const double r0=.036*(1-.8*u);
+   const double r0=.036*cfg.size_scale*(1-.8*u);
    const double anatomical_area=2*r0*r0;
    // Nominal axial stretch of the centerline changes the necessary
    // section area for approximately conserved material volume.
-   const double rest_span=.9/double(cfg.segments)*2*arm.active.extension;
+   const double rest_span=arm_length()/double(cfg.segments)*2*arm.active.extension;
    const double actual_span=norm(p[arm.p[next_index]].x-p[arm.p[previous_index]].x);
    const double target=anatomical_area*std::clamp(rest_span/std::max(actual_span,1e-5),.55,1.8);
    Vec3 gradients[4];
@@ -253,14 +274,14 @@ Vec3 coil_direction(const Arm& ar,unsigned joint)const{
   return {0,1,0};
  return nearest->contact_normal*(-1);
 }
-void bending(double h){for(auto&a:animals){Vec3 up=unit(p[a.body[3]].x-p[a.body[4]].x);for(auto&ar:a.arms){double length=.9/cfg.segments*ar.active.extension;for(unsigned j=1;j<cfg.segments;++j){auto&l=p[ar.p[j-1]];auto&m=p[ar.p[j]];auto&r=p[ar.p[j+1]];const double u=double(j)/double(cfg.segments);
+void bending(double h){for(auto&a:animals){Vec3 up=unit(p[a.body[3]].x-p[a.body[4]].x);for(auto&ar:a.arms){double length=arm_length()/cfg.segments*ar.active.extension;for(unsigned j=1;j<cfg.segments;++j){auto&l=p[ar.p[j-1]];auto&m=p[ar.p[j]];auto&r=p[ar.p[j+1]];const double u=double(j)/double(cfg.segments);
  // Release a smooth front root->tip. Coiled distal sections store
  // curvature even while the proximal arm has already unwound.
  const double phase=std::clamp((u-ar.uncoil_front+.10)/.20,0.,1.);
- const double coil=phase*phase*(3.-2.*phase);
- const double wanted=(ar.active.curvature+cfg.coil_curvature*coil)*ar.active.activation;
+ const double coil=ar.target.explicit_control&&extend_input(ar)?0.0:phase*phase*(3.-2.*phase);
+ double wanted=(ar.active.curvature+cfg.coil_curvature*coil)*ar.active.activation;
  const Vec3 curl=coil>0.02?coil_direction(ar,j):up;
- Vec3 target=curl*(wanted*length*length)+ar.bend_creep[j-1];Vec3 error=l.x-m.x*2+r.x-target;double alpha=(2e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
+ if(cfg.locomotion_assist&&j<=3)wanted=0; Vec3 target=curl*(wanted*length*length)+(cfg.locomotion_assist&&j<=3?Vec3{}:ar.bend_creep[j-1]);Vec3 error=l.x-m.x*2+r.x-target;double alpha=(2e-5*cfg.softness*(1-.9*ar.active.stiffness)*pose_compliance(ar))/(h*h);auto&lambda=ar.bend_lambda[j-1];Vec3 dl=(error+lambda*alpha)*(-1/(l.inv+4*m.inv+r.inv+alpha));lambda=lambda+dl;l.x=l.x+dl*l.inv;m.x=m.x-dl*(2*m.inv);r.x=r.x+dl*r.inv;}}}}
 void update_creep_memory(double h){
  // Internal SLS-style delayed rest-shape adaptation: q relaxes toward
  // the current total strain under sustained load, with a slower
@@ -285,11 +306,11 @@ void update_creep_memory(double h){
  const double bend_rate=cfg.bend_creep_rate+cfg.creep_recovery;
  if(bend_rate<=0)return;
  for(auto& animal:animals)for(auto& ar:animal.arms){
-  const double segment=.9/double(cfg.segments)*ar.active.extension;
+  const double segment=arm_length()/double(cfg.segments)*ar.active.extension;
   for(unsigned j=1;j<cfg.segments;++j){
    const double u=double(j)/double(cfg.segments);
    const double phase=std::clamp((u-ar.uncoil_front+.10)/.20,0.,1.);
-   const double coil=phase*phase*(3.-2.*phase);
+   const double coil=ar.target.explicit_control&&extend_input(ar)?0.0:phase*phase*(3.-2.*phase);
    const Vec3 curl=coil>.02?coil_direction(ar,j):
        unit(p[animal.body[3]].x-p[animal.body[4]].x);
    const Vec3 commanded=curl*((ar.active.curvature+cfg.coil_curvature*coil)*
@@ -304,7 +325,7 @@ void update_creep_memory(double h){
   }
  }
 }
-void torsion(double h){for(auto&a:animals)for(auto&ar:a.arms){const double desired=ar.active.activation*ar.active.twist*(.9/cfg.segments)*ar.active.extension;const double alpha=(1e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);
+void torsion(double h){for(auto&a:animals)for(auto&ar:a.arms){const double desired=ar.active.activation*ar.active.twist*(arm_length()/cfg.segments)*ar.active.extension;const double alpha=(1e-5*cfg.softness*(1-.9*ar.active.stiffness))/(h*h);
 // The first material section is attached to a deformable torso orientation.
 // Opposite displacements at two cage nodes transmit its torque into the world.
 const Vec3 axis=unit(p[ar.p[1]].x-p[ar.p[0]].x),up{0,1,0};Vec3 side=cross(axis,up);if(norm(side)<1e-5)side=cross(axis,Vec3{1,0,0});side=unit(side);
@@ -312,11 +333,13 @@ auto&top=p[a.body[3]];auto&bottom=p[a.body[4]];Vec3 span=top.x-bottom.x;double v
 if(den>1e-8){const double body_angle=std::atan2(lateral,vertical);Vec3 grad=(side*vertical-up*lateral)/den;auto&first=ar.roll[1];double error=first.angle-body_angle-desired;double weight=first.inv_inertia+(top.inv+bottom.inv)*dot(grad,grad);double delta=(-error-alpha*first.lambda)/(weight+alpha);first.lambda+=delta;first.angle+=first.inv_inertia*delta;top.x=top.x-grad*(top.inv*delta);bottom.x=bottom.x+grad*(bottom.inv*delta);span=top.x-bottom.x;ar.roll[0].angle=std::atan2(dot(span,side),dot(span,up));}
 for(size_t j=2;j<ar.roll.size();++j){auto&left=ar.roll[j-1];auto&right=ar.roll[j];const double error=right.angle-left.angle-desired;const double delta=(-error-alpha*right.lambda)/(left.inv_inertia+right.inv_inertia+alpha);right.lambda+=delta;left.angle-=left.inv_inertia*delta;right.angle+=right.inv_inertia*delta;}}}
 void director_constraints(double h){namespace rm=rod_math;
-for(auto&a:animals)for(auto&ar:a.arms){const double segment_length=.9/cfg.segments*ar.active.extension;
-const double shear_alpha=2e-6*cfg.softness/(h*h),bend_alpha=2e-5*cfg.softness*(1-.9*ar.active.stiffness)/(h*h);
+for(auto&a:animals)for(auto&ar:a.arms){const double segment_length=arm_length()/cfg.segments*ar.active.extension;
+const double shear_alpha=2e-6*cfg.softness/(h*h),bend_alpha=2e-5*cfg.softness*(1-.9*ar.active.stiffness)*pose_compliance(ar)/(h*h);
 for(size_t j=0;j<ar.directors.size();++j){auto&director=ar.directors[j];auto&left=p[ar.p[j]];auto&right=p[ar.p[j+1]];
 Vec3 e=rm::rotate(director.q,{0,0,1}),span=right.x-left.x;
-Vec3 error=rm::sub(span,rm::mul(e,rm::dot(span,e)));
+// Signed axial coupling also rejects a segment flipped 180 degrees through
+// its material frame; a perpendicular-only error silently accepts that fold.
+Vec3 error=rm::sub(span,rm::mul(e,segment_length));
 double den=left.inv+right.inv+segment_length*segment_length*director.inv_inertia+shear_alpha;
 Vec3 correction=rm::mul(rm::add(error,rm::mul(director.shear_lambda,shear_alpha)),1/den);
 director.shear_lambda=rm::sub(director.shear_lambda,correction);
@@ -331,8 +354,8 @@ if(axis_len<1e-8)axis=rm::cross(tangent,{1,0,0}),axis_len=rm::length(axis);
 axis=rm::mul(axis,1/axis_len);
 const double u=double(j)/double(cfg.segments);
  const double phase=std::clamp((u-ar.uncoil_front+.10)/.20,0.,1.);
- const double coil=phase*phase*(3.-2.*phase);
- const double wanted=ar.active.activation*(ar.active.curvature+cfg.coil_curvature*coil);
+ const double coil=ar.target.explicit_control&&extend_input(ar)?0.0:phase*phase*(3.-2.*phase);
+ const double wanted=cfg.locomotion_assist&&j<=3?0.0:ar.active.activation*(ar.active.curvature+cfg.coil_curvature*coil);
  Quat target=rm::multiply(rm::rotation(rm::mul(axis,wanted*segment_length)),left.q);
 Vec3 error=rm::log_rotation(rm::multiply(target,rm::inverse(right.q)));
 double den=left.inv_inertia+right.inv_inertia+bend_alpha;
@@ -357,7 +380,7 @@ for(int id:rigids[i])p[id].x=p[id].x-n*(correction*.5);
 for(int id:rigids[j])p[id].x=p[id].x+n*(correction*.5);
 ++diag.swept_contacts;
 }}
-void contacts(){if(cfg.floor)for(auto&a:p){double ground=floor_height(a.x);if(a.x.y<ground+a.r){double depth=ground+a.r-a.x.y;a.compression=std::max(a.compression,depth);diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=ground+a.r;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,cfg.friction*depth)/l);}}
+void contacts(){static_contacts();
 if(!cfg.collisions)return;
 // Swept AABB broadphase includes both endpoints so fast crossing paths remain candidates.
 contact_bounds.resize(p.size());contact_order.resize(p.size());
@@ -378,7 +401,7 @@ if(a.animal>=0&&b.animal>=0&&a.animal!=b.animal)++diag.cross_animal_contacts;
 if((a.animal>=0&&b.rigid>=0)||(b.animal>=0&&a.rigid>=0))++diag.animal_prop_contacts;
 double w=a.inv+b.inv;a.x=a.x-n*(depth*a.inv/w);b.x=b.x+n*(depth*b.inv/w);
 Vec3 relative=(b.x-b.old)-(a.x-a.old);Vec3 tangent=relative-n*dot(relative,n);double tl=norm(tangent);
-if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}
+if(tl>0){Vec3 corr=tangent*(std::min(tl,std::min(contact_friction(a),contact_friction(b))*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}
 }}}
 
 
@@ -394,7 +417,7 @@ void upright_motors(double h){
   const Vec3 axis=top.x-bottom.x;
   const double span=norm(axis);
   if(span<1e-8)continue;
-  const Vec3 world_up{0,1,0};
+  const Vec3 world_up=support_up(p[animal.body[0]].x);
   const Vec3 axis_unit=axis/span;
   // Project the desired up direction onto the local rotation tangent.
   // Unlike simply dampening lateral offset, this makes inverted poses
@@ -408,9 +431,9 @@ void upright_motors(double h){
   }
   const Vec3 relative_v=top.v-bottom.v;
   const Vec3 lateral_v=relative_v-axis_unit*dot(relative_v,axis_unit);
-  Vec3 force=(turn*(9.0*span)-lateral_v*1.8)*cfg.upright_strength;
+  Vec3 force=(turn*(60.0*span)-lateral_v*8.0)*cfg.upright_strength*mass_scale();
   const double magnitude=norm(force);
-  const double limit=2.5*cfg.upright_strength;
+  const double limit=12.0*cfg.upright_strength*mass_scale();
   if(magnitude>limit)force=force*(limit/magnitude);
   top.x=top.x+force*(top.inv*h*h);
   bottom.x=bottom.x-force*(bottom.inv*h*h);
@@ -419,135 +442,6 @@ void upright_motors(double h){
 // Choose a surface frame at contact. This frame is descriptive,
 // not an invented physical joint: its tangent tracks neighbouring
 // rod nodes and its binormal points around the contacted object.
-void record_sucker_frame(Arm& ar,Sucker& s){
- const P& site=p[ar.p[s.node]];
- const Vec3 axial=p[ar.p[std::min(unsigned(cfg.segments),s.node+1)]].x-
-                  p[ar.p[s.node-1]].x;
- Vec3 normal{0,1,0};
- double radius=0;
- if(s.attached>=0){
-  normal=unit(site.x-p[s.attached].x);
-  radius=p[s.attached].r+site.r;
- }else if(s.attached==-2){
-  normal=floor_normal(site.x);
- }
- Vec3 tangent=axial-normal*dot(axial,normal);
- if(norm(tangent)<1e-6){
-  tangent=cross(normal,{0,0,1});
-  if(norm(tangent)<1e-6)tangent=cross(normal,{1,0,0});
- }
- tangent=unit(tangent);
- s.contact_normal=normal;
- s.contact_tangent=tangent;
- s.contact_binormal=unit(cross(normal,tangent));
- s.wrap_radius=radius;
-}
-void follow_surface(double h){
- if(!cfg.auto_suction||release_held)return;
- for(auto& animal:animals)for(auto& ar:animal.arms){
-  if(ar.target.activation<.5||ar.target.extension<1.0)continue;
-  const Sucker* latest=nullptr;
-  for(const auto& s:ar.suckers)
-   if(s.attached!=-1&&(!latest||s.node>latest->node))latest=&s;
-  if(!latest)continue;
-  Vec3 guide=latest->contact_tangent;
-  Vec3 normal=latest->contact_normal;
-  for(auto& candidate:ar.suckers){
-   if(candidate.attached!=-1||candidate.cooldown>0)continue;
-   // Following the already attached distal site, gradually bring
-   // the next nearby sucker onto the same tangent surface.
-   if(candidate.node+cfg.segments/3<latest->node)continue;
-   P& site=p[ar.p[candidate.node]];
-   const double along=(.9/cfg.segments)*(int(candidate.node)-int(latest->node));
-   Vec3 desired=latest->anchor+guide*along;
-   if(latest->attached>=0){
-    // Local tangent/normal/binormal of the first real sucker contact
-    // approximates wrapping along the curved target's surface.
-    const Vec3 center=p[latest->attached].x;
-    const double radius=std::max(.025,p[latest->attached].r+site.r);
-    const double angle=std::clamp(along/radius,-1.5,1.5);
-    const Vec3 normal=unit(latest->contact_normal*std::cos(angle)
-                          +guide*std::sin(angle));
-    desired=center+normal*radius;
-   }else{
-    desired.y=floor_height(desired)+site.r;
-   }
-   Vec3 force=(desired-site.x)*3.0;
-   const double magnitude=norm(force);
-   if(magnitude>.8)force=force*(.8/magnitude);
-   site.x=site.x+force*(site.inv*h*h);
-  }
- }
-}
-
-void sweep_motors(double h){
- // Muscle drive is force-limited and applies equal/opposite torso reactions.
- // At -1 target the arm sweeps anterior, at +1 it sweeps posterior.
- // ±60 deg is a *target*; rigid body contact can limit achieved angle.
- const double pi=std::acos(-1.0);
- for(auto&animal:animals){
-  Vec3 forward=unit(p[animal.body[5]].x-p[animal.body[6]].x);
-  Vec3 right=unit(cross({0,1,0},forward));
-  for(auto&ar:animal.arms){
-   if(std::abs(ar.active.sweep)<1e-5)continue;
-   const double angle=ar.arm_index*pi/4.0;
-   const Vec3 home=right*std::sin(angle)+forward*std::cos(angle);
-   const double sign=ar.arm_index<4?1.0:-1.0;
-   const double turn=sign*(pi/3.0)*ar.active.sweep;
-   const Vec3 goal=home*std::cos(turn)+cross({0,1,0},home)*std::sin(turn);
-   const Vec3 root=p[ar.p[0]].x;
-   for(unsigned j=std::max(2u,cfg.segments/3);j<=cfg.segments;++j){
-    const double u=double(j)/cfg.segments;
-    auto&site=p[ar.p[j]];
-    Vec3 force=(root+goal*(.9*u*ar.active.extension)-site.x)*(1.3*cfg.arm_motor_strength);
-    const double mag=norm(force);
-    const double max_motor_force=.085*cfg.arm_motor_strength;
-    if(mag>max_motor_force)force=force*(max_motor_force/mag);
-    site.x=site.x+force*(site.inv*h*h);
-    for(int b:animal.body)p[b].x=p[b].x-force*(p[b].inv*h*h/animal.body.size());
-   }
-  }
- }
-}
-void seek_floor_contact(double h){
- if(!cfg.auto_suction||!cfg.floor||!cfg.reach_ground_on_extend||release_held)return;
- for(auto&animal:animals)for(auto&ar:animal.arms){
-  if(ar.target.activation<.5||ar.target.extension<1.0)continue;
-  bool has_grip=false;
-  for(const auto& s:ar.suckers)if(s.attached!=-1){has_grip=true;break;}
-  if(has_grip||ar.attached!=-1)continue;
-  // Move distal arm nodes down via bounded forces. Their rod constraints
-  // react on the rest of the arm/body; no fake remote floor attachment.
-  for(unsigned j=std::max(2u,cfg.segments/2);j<=cfg.segments;++j){
-   auto& tip=p[ar.p[j]];
-   const double gap=tip.x.y-floor_height(tip.x)-tip.r; if(gap<.015)continue;
-   const double weight=double(j)/double(cfg.segments);
-   const double force=std::min(2.5,8.0*gap)*weight;
-   tip.x.y-=force*tip.inv*h*h;
-  }
- }
-}
-void suction_constraints(double h){
- if(!cfg.auto_suction||release_held)return;
- for(auto&animal:animals)for(auto&ar:animal.arms)for(auto&s:ar.suckers){
-  if(s.attached==-1)continue;
-  auto&node=p[ar.p[s.node]];
-  const Vec3 target=s.attached==-2?s.anchor:p[s.attached].x;
-  const Vec3 delta=target-node.x;
-  const double len=norm(delta);
-  if(len<1e-10)continue;
-  const double error=len-(s.attached==-2?0:s.rest);
-  const double w=node.inv+(s.attached>=0?p[s.attached].inv:0);
-  const double lambda=error/(w+4e-7/(h*h));
-  const double area_scale=std::max(.002,node.r/.035);
-  if(std::abs(lambda)/(h*h)>12.0*cfg.sucker_strength*area_scale*area_scale){
-   s.attached=-1;s.dwell=0;s.cooldown=.18;++diag.broken_attachments;continue;
-  }
-  const Vec3 move=delta*(lambda/len);
-  node.x=node.x+move*node.inv;
-  if(s.attached>=0)p[s.attached].x=p[s.attached].x-move*p[s.attached].inv;
- }
-}
 void damp_mantle_tissue(double h){
  // Internal Kelvin-Voigt-like dashpot: exchange equal-and-opposite
  // impulses between shell and central cage. This removes jiggle while
@@ -619,67 +513,16 @@ void tissue_dynamics(double h){
   }
  }
 }
-void update_suckers(double h){
- if(!cfg.auto_suction)return;
- for(auto&animal:animals)for(auto&ar:animal.arms){
-  if(ar.active.extension<.87)ar.peel_clock+=h;
-  else ar.peel_clock=0;
-  for(auto&s:ar.suckers){
-   s.cooldown=std::max(0.0,s.cooldown-h);
-   if(release_held){s.attached=-1;s.dwell=0;s.cooldown=.18;continue;}
-   if(s.attached==-2&&ar.active.extension<.87){
-    const double delay=double(cfg.segments-s.node)/cfg.segments*.22;
-    if(ar.peel_clock>=delay){s.attached=-1;s.cooldown=.18;s.dwell=0;}
-   }
-   if(s.attached!=-1){
-    record_sucker_frame(ar,s);
-    continue;
-   }
-   if(s.cooldown>0)continue;
-   auto&node=p[ar.p[s.node]];
-   Vec3 tangent=unit(p[ar.p[std::min(unsigned(cfg.segments),s.node+1)]].x-p[ar.p[s.node-1]].x);
-   const Vec3 down{0,-1,0};
-   Vec3 face=down-tangent*dot(down,tangent);
-   if(norm(face)<.25){s.dwell=0;continue;}
-   face=unit(face);
-   if(norm(node.v)>.75){s.dwell=0;continue;}
-   int target=-1;
-   Vec3 anchor{};
-   double rest=0;
-   // Prefer an actually contacted movable object to terrain.
-   if(cfg.collisions){
-    double best=.020;
-    for(size_t j=0;j<p.size();++j){
-     if(p[j].rigid<0)continue;
-     const Vec3 to=p[j].x-node.x;
-     const double gap=norm(to)-(p[j].r+node.r);
-     if(gap<best&&norm(p[j].v-node.v)<1.2&&dot(face,unit(to))>.15){
-      target=int(j);rest=norm(to);best=gap;
-     }
-    }
-   }
-   // Only make a floor anchor after the sucker has really reached it.
-   if(target==-1&&cfg.floor&&node.x.y-floor_height(node.x)-node.r<.020&&dot(face,down)>.30){
-    target=-2;anchor={node.x.x,floor_height(node.x)+node.r,node.x.z};
-   }
-   if(target==-1||std::acos(-1.0)*node.r*node.r<.000035){s.dwell=0;continue;}
-   s.dwell+=h;
-   if(s.dwell<.020)continue;
-   s.attached=target;s.anchor=anchor;s.rest=rest;s.dwell=0;
-   record_sucker_frame(ar,s);
-  }
- }
-}
-
-void attachments(double h){for(auto&a:animals)for(auto&ar:a.arms){auto&tip=p[ar.p.back()];if(release_held||!ar.target.attach){ar.attached=-1;continue;}if(ar.attached==-1){if(cfg.floor&&tip.x.y-floor_height(tip.x)-tip.r<.025){ar.attached=-2;ar.anchor={tip.x.x,floor_height(tip.x)+tip.r,tip.x.z};}else for(size_t i=0;i<p.size();++i)if(p[i].rigid>=0&&norm(p[i].x-tip.x)<p[i].r+tip.r+.025){ar.attached=int(i);ar.attach_rest=norm(p[i].x-tip.x);break;}}
+void attachments(double h){for(auto&a:animals)for(auto&ar:a.arms){auto&tip=p[ar.p.back()];if(release_held||!ar.target.attach||!extend_input(ar)){ar.attached=-1;continue;}if(ar.attached==-1){if(cfg.floor&&tip.x.y-floor_height(tip.x)-tip.r<.025){ar.attached=-2;ar.anchor={tip.x.x,floor_height(tip.x)+tip.r,tip.x.z};}else for(size_t i=0;i<p.size();++i)if(p[i].rigid>=0&&norm(p[i].x-tip.x)<p[i].r+tip.r+.025){ar.attached=int(i);ar.attach_rest=norm(p[i].x-tip.x);break;}}
 if(ar.attached==-1)continue;Vec3 target=ar.attached==-2?ar.anchor:p[ar.attached].x;Vec3 delta=target-tip.x;double l=norm(delta);double rest=ar.attached==-2?0:ar.attach_rest;double w=tip.inv+(ar.attached>=0?p[ar.attached].inv:0);double impulse=(l-rest)/(w+1e-7/(h*h));if(std::abs(impulse)/(h*h)>8*cfg.sucker_strength){ar.attached=-1;++diag.broken_attachments;continue;}if(l>1e-10){Vec3 correction=delta*(impulse/l);tip.x=tip.x+correction*tip.inv;if(ar.attached>=0)p[ar.attached].x=p[ar.attached].x-correction*p[ar.attached].inv;}}}
 bool step(){auto start=std::chrono::steady_clock::now();diag={};double h=cfg.fixed_dt/cfg.substeps;
+update_locomotion();
 reactions.clear();for(const auto& c:scene_contacts)reactions.push_back({c.collider,{},c.point});
 for(unsigned sub=0;sub<cfg.substeps;++sub){for(auto&a:animals)for(auto&ar:a.arms){
- const double uncoil_target=(ar.target.activation>.5&&ar.target.extension>=1.0)?1.0:0.0;
+ const double uncoil_target=extend_input(ar)?1.0:(ar.phase==Releasing?ar.uncoil_front:(carrying(ar)?.55:0.0));
  const double max_change=cfg.uncoil_speed*h;
  ar.uncoil_front+=std::clamp(uncoil_target-ar.uncoil_front,-max_change,max_change);
- double f=1-std::exp(-h*12);auto blend=[&](double&v,double t){v+=(t-v)*f;};blend(ar.active.activation,ar.target.activation);blend(ar.active.curvature,ar.target.curvature);blend(ar.active.extension,ar.target.extension);blend(ar.active.stiffness,ar.target.stiffness);blend(ar.active.twist,ar.target.twist);blend(ar.active.sweep,ar.target.sweep);}
+ const double commanded_extension=ar.target.extension*(ar.target.explicit_control&&extend_input(ar)&&stroke_input(ar)&&!carrying(ar)?.72:1.0); double f=1-std::exp(-h*12);auto blend=[&](double&v,double t){v+=(t-v)*f;};blend(ar.active.activation,ar.target.activation);blend(ar.active.curvature,ar.target.curvature);blend(ar.active.extension,ar.phase==Releasing?ar.active.extension:(carrying(ar)&&!extend_input(ar)?std::max(.95,ar.target.extension):(quiet(ar)&&cfg.locomotion_assist?.58:commanded_extension)));blend(ar.active.stiffness,ar.target.stiffness);blend(ar.active.twist,ar.target.twist);blend(ar.active.sweep,ar.target.sweep);}
 for(auto&particle:p)particle.compression=0;
 for(auto&e:d){
  e.lambda=0;
@@ -697,6 +540,7 @@ int dragged=-1;if(drag.kind==DragCommand::Kind::Animal)dragged=animals[drag.inde
 for(size_t i=0;i<p.size();++i){auto&a=p[i];a.old=a.x;Vec3 force{};if(int(i)==dragged){force=(drag.target-a.x)*drag.stiffness;double l=norm(force);if(l>drag.max_force)force=force*(drag.max_force/l);}for(const auto& load:scene_forces)if(scene_particle(load.arm,load.node)==int(i))force=force+load.force;a.v=(a.v+(cfg.gravity+force*a.inv)*h)*std::exp(-cfg.damping*h);}
 damp_mantle_tissue(h);
 for(auto& particle:p)particle.x=particle.x+particle.v*h;
+recover_arms(h);
 sweep_motors(h);
 upright_motors(h);
 follow_surface(h);
@@ -704,11 +548,12 @@ seek_floor_contact(h);
 rigid_center_sweeps();
 for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);section_area_constraints(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
 scene_constraints(h);
+terrain_material_motors(h);
 rigid_center_sweeps();
 update_creep_memory(h);
 tissue_dynamics(h);
 update_suckers(h);
-for(auto&a:animals)for(auto&ar:a.arms)for(unsigned j=0;j<cfg.segments;++j){double l=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);double pressure=std::max(p[ar.p[j]].compression,p[ar.p[j+1]].compression);(void)pressure;p[ar.p[j]].r=ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(l,1e-5));p[ar.p[j]].r=std::min(.1,p[ar.p[j]].r);}
+for(auto&a:animals)for(auto&ar:a.arms)for(unsigned j=0;j<cfg.segments;++j){double l=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);double pressure=std::max(p[ar.p[j]].compression,p[ar.p[j+1]].compression);(void)pressure;p[ar.p[j]].r=ar.radius[j]*std::sqrt((arm_length()/cfg.segments)/std::max(l,1e-5));p[ar.p[j]].r=std::min(.1*cfg.size_scale,p[ar.p[j]].r);}
 for(auto&a:p){a.v=(a.x-a.old)/h;if(!finite(a.x)||!finite(a.v)){++diag.nonfinite_count;return false;}}
 damp_arm_relative_velocities(h);
 for(auto&a:animals)for(auto&ar:a.arms)for(auto&roll:ar.roll){roll.omega=(roll.angle-roll.old)/h;if(!std::isfinite(roll.angle)||!std::isfinite(roll.omega)){++diag.nonfinite_count;return false;}}
@@ -719,7 +564,7 @@ for(auto&a:p){diag.linear_momentum=diag.linear_momentum+a.v/a.inv;diag.angular_m
  if(t.soft_volume)diag.max_soft_volume_error=std::max(diag.max_soft_volume_error,error);
  else diag.max_volume_error=std::max(diag.max_volume_error,error);
 }for(auto&a:animals)for(auto&ar:a.arms){if(ar.attached!=-1)++diag.attachments;for(const auto& suction:ar.suckers)if(suction.attached!=-1)++diag.attachments;}++tick;time+=cfg.fixed_dt;diag.step_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();return true;}
-RenderSnapshot snapshot()const{RenderSnapshot s;s.tick=tick;s.time=time;s.diagnostics=diag;for(auto&a:animals){AnimalSnapshot as;as.center=p[a.body[0]].x;as.orientation=frame(p[a.body[5]].x-p[a.body[6]].x);for(int b:a.body)as.body_nodes.push_back(p[b].x);for(int shell:a.shell)as.body_nodes.push_back(p[shell].x);for(int k=0;k<8;++k){auto&ar=a.arms[k];auto&out=as.arms[k];out.uncoil_progress=ar.uncoil_front;for(int id:ar.p)out.nodes.push_back(p[id].x);for(unsigned j=0;j<cfg.segments;++j){Vec3 tangent=p[ar.p[j+1]].x-p[ar.p[j]].x;out.frames.push_back(roll_frame(ar.directors[j].q,ar.roll[j].angle));out.angular_velocities.push_back(ar.directors[j].omega);out.material_roll.push_back(ar.roll[j].angle);double r=std::min(.12,ar.radius[j]*std::sqrt((.9/cfg.segments)/std::max(norm(tangent),1e-6)));if(!ar.volume_rings.empty()){
+RenderSnapshot snapshot()const{RenderSnapshot s;s.size_scale=cfg.size_scale;s.static_triangles=static_mesh.triangle_count();s.tick=tick;s.time=time;s.diagnostics=diag;for(auto&a:animals){AnimalSnapshot as;as.center=p[a.body[0]].x;as.orientation=frame(p[a.body[5]].x-p[a.body[6]].x);for(int b:a.body)as.body_nodes.push_back(p[b].x);for(int shell:a.shell)as.body_nodes.push_back(p[shell].x);for(int k=0;k<8;++k){auto&ar=a.arms[k];auto&out=as.arms[k];out.phase=ar.phase;out.extend=extend_input(ar);out.stroke=stroke_input(ar);out.carry=carrying(ar);out.rearm_required=ar.rearm_required;out.home_angle=layout::angle(k);out.model_arm=layout::model_arms[k];for(unsigned node=0;node<ar.p.size();++node){out.sucker_directions.push_back(sucker_face(ar,node));out.contact_radii.push_back(p[ar.p[node]].r);}for(const auto& sucker:ar.suckers)out.grip_coverage.push_back(sucker.coverage);out.uncoil_progress=ar.uncoil_front;for(int id:ar.p)out.nodes.push_back(p[id].x);for(unsigned j=0;j<cfg.segments;++j){Vec3 tangent=p[ar.p[j+1]].x-p[ar.p[j]].x;out.frames.push_back(roll_frame(ar.directors[j].q,ar.roll[j].angle));out.angular_velocities.push_back(ar.directors[j].omega);out.material_roll.push_back(ar.roll[j].angle);double r=std::min(.12*cfg.size_scale,ar.radius[j]*std::sqrt((arm_length()/cfg.segments)/std::max(norm(tangent),1e-6)));if(!ar.volume_rings.empty()){
   // The four material surface masses determine the displayed section,
   // rather than prescribing an ellipse from the centerline. The
   // imported bone weights still limit the visual approximation.
@@ -757,6 +602,26 @@ bool PhysicsWorld::terrain(unsigned width,double x,double z,double cell,const st
  if(width<2||width>65||values.size()!=size_t(width)*width||!std::isfinite(x)||!std::isfinite(z)||!std::isfinite(cell)||cell<=0)return false;
  for(double v:values)if(!std::isfinite(v)||std::abs(v)>1000)return false;
  impl_->terrain_width=width;impl_->terrain_x=x;impl_->terrain_z=z;impl_->terrain_cell=cell;impl_->heights=values;return true;
+}
+bool PhysicsWorld::static_geometry(const std::vector<Vec3>& vertices){
+ if(!impl_->static_mesh.assign(vertices))return false;
+ // Initial placement must be above the real terrain. A horizontal spawn on an
+ // incline otherwise starts distal arms underneath the two-sided mesh. Move
+ // the whole animal together once, preserving its rest shape and zero motion;
+ // subsequent movement is exclusively solved from contacts and muscle forces.
+ if(impl_->tick==0&&impl_->cfg.floor&&impl_->static_mesh.triangle_count()){
+  for(unsigned animal=0;animal<impl_->animals.size();++animal){
+   double lift=0;
+   for(const auto& site:impl_->p)if(site.animal==int(animal)){
+    const auto ground=impl_->support_surface(site.x,4*impl_->cfg.size_scale,8*impl_->cfg.size_scale);
+    if(ground.hit&&ground.normal.y>.25)lift=std::max(lift,ground.point.y+site.r-site.x.y);
+   }
+   if(lift>0)for(auto& site:impl_->p)if(site.animal==int(animal)){
+    site.x.y+=lift+.005*impl_->cfg.size_scale;site.old=site.x;
+   }
+  }
+ }
+ return true;
 }
 bool PhysicsWorld::scene_inputs(const std::vector<SceneForce>& forces,const std::vector<SceneContact>& contacts){
  if(forces.size()>64||contacts.size()>192)return false;

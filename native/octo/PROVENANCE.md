@@ -51,7 +51,28 @@ sites, and native scene-contact impulses are applied back to Godot bodies once.
 This is explicit sample-and-hold coupling between two solvers, not a migration
 of the character or map props into the original single C++ world. Large/fast
 contacts can need tuning; the contact bridge is discrete, not general CCD.
-Terrain uses a 65 by 65 bilinear heightfield plus nearby actual scene contacts.
+Static terrain is now exported from enabled Godot static collision shapes as
+world-space triangles. A native BVH resolves body spheres and full tapered arm
+segments against that mesh, with per-contact surface normals. The 65 by 65
+heightfield remains a compatibility fallback when no triangles are provided.
+Dynamic hunters/props still use the explicit two-solver coupling above.
+
+## Selective-arm locomotion
+
+`config/arm_layout.json` is the shared source for symmetric home angles, model
+arm correspondence and both independent input keys. `tools/generate_arm_layout.ps1`
+generates the native and both Godot tables. Game geometry, mass, inertia and
+rendered model use a 1.5 size scale.
+
+Protocol `step4` carries explicit extend, stroke and carried-target flags for
+each arm. Empty inactive arms release and recover with low tangential friction;
+carried targets retain their own state. Static suction requires an extend cycle,
+stable real contact, the actual material sucker direction and supported contact
+area. Broken or Space-released grips require a fresh extend press, independently
+of cooldown. Releasing peels suckers from tip to root before shortening the arm.
+Power strokes combine a 27-degree sweep with a smooth muscle-length contraction.
+Proximal ordering uses the torso material frame; distal segments remain free to
+wrap. Recovery and placement use bounded internal forces, not input teleports.
 
 Controls preserve the original bounded muscle targets and force drag. A sword
 can disable an arm's threat, grabbing and control until round reset. The visible

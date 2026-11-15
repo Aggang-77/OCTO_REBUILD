@@ -1,12 +1,14 @@
 extends Node3D
 const MODEL = "res://assets/Octopus_GameReady_v5.glb"
-# Solver arms 0..7 go around the body: right-front, right-side-front,
-# right-side-rear, right-rear, left-rear, left-side-rear,
-# left-side-front, left-front. Heading is torso-local +Z.
-const EXTEND_KEYS = [KEY_J, KEY_L, KEY_U, KEY_O, KEY_W, KEY_R, KEY_S, KEY_F]
-const STROKE_KEYS = [KEY_K, KEY_SEMICOLON, KEY_I, KEY_P, KEY_Q, KEY_E, KEY_A, KEY_D]
+# Input, spawn directions and skin mapping share one generated layout.
+const ARM_LAYOUT = preload("res://scripts/arm_layout.gd")
+const EXTEND_KEYS = ARM_LAYOUT.EXTEND_KEYS
+const STROKE_KEYS = ARM_LAYOUT.STROKE_KEYS
+const MODEL_ARM_IDS = ARM_LAYOUT.MODEL_ARM_IDS
+const HOME_DEGREES = ARM_LAYOUT.HOME_DEGREES
 const MODEL_SCALE = 1.35 / 2.3
-const MODEL_YAW = -PI / 8.0
+const MODEL_YAW = ARM_LAYOUT.MODEL_YAW
+var creature_scale := 1.0
 var child := {}
 var pipe: FileAccess
 var buffer := PackedByteArray()
@@ -58,6 +60,8 @@ var distance := 8.0
 var dragging := false
 var drag_kind := 0
 var drag_index := 0
+var drag_stiffness := 30.0
+var drag_max_force := 20.0
 var drag_target := Vector3.ZERO
 var drag_plane: Plane
 var frame_sum := 0.0
@@ -97,7 +101,7 @@ func _ready() -> void:
         # inexpensive built-in PBR parameters; no jelly vertex shader.
         var coated_surfaces := apply_slime_finish(scene)
         print("SLIME_FINISH animal=%d coated_surfaces=%d shader=none" % [i,coated_surfaces])
-        scene.scale = Vector3.ONE * MODEL_SCALE
+        scene.scale = Vector3.ONE * MODEL_SCALE * creature_scale
         scene.rotation.y = MODEL_YAW
         var skels := scene.find_children("*", "Skeleton3D", true, false)
         if skels.is_empty(): fail("Model skeleton missing"); return
@@ -237,7 +241,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "F/D: left front    J/K: right front\nS/A: left side-front    L/;: right side-front\nR/E: left side-rear    U/I: right side-rear\nW/Q: left rear    O/P: right rear\nHold extend / release retract; hold stroke / release return\nSPACE: release every sucker; hold to prevent gripping\nTab: select octopus   F5: reset\nLeft drag: force   Right drag: orbit"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "R/E: left front    U/I: right front\nW/Q: left side-front    O/P: right side-front\nF/D: left side-rear    J/K: right side-rear\nS/A: left rear    L/;: right rear\nHold extend / stroke; release returns an unheld arm\nSPACE: release every sucker; hold to prevent gripping\nTab: select octopus   F5: reset\nLeft drag: force   Right drag: orbit"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -276,7 +280,7 @@ func poll() -> void:
         if not parsed.get("ok", false):
             var bridge_error := str(parsed.get("error", "unknown"))
             if bridge_error == "bad_operation":
-                fail("C++ server cannot handle controls-v1 'step2'. Close the game, run tools/build.ps1 and relaunch PLAY_DEMO.cmd. Server: " + OS.get_environment("OCTO_SERVER"))
+                fail("C++ server cannot handle controls-v2 'step4'. Close the game, run tools/build.ps1 and relaunch PLAY_DEMO.cmd. Server: " + OS.get_environment("OCTO_SERVER"))
             else:
                 fail("Bridge: " + bridge_error)
             return
@@ -313,9 +317,9 @@ func mantle_scale_from_shell(nodes: Array, center: Vector3, inverse: Quaternion)
         maximum = maximum.max(local_point)
     var span := maximum - minimum
     return Vector3(
-        clampf(span.x / 0.44, 0.55, 1.55),
-        clampf(span.y / 0.25, 0.50, 1.65),
-        clampf(span.z / 0.38, 0.55, 1.55))
+        clampf(span.x / (0.44 * creature_scale), 0.55, 1.55),
+        clampf(span.y / (0.25 * creature_scale), 0.50, 1.65),
+        clampf(span.z / (0.38 * creature_scale), 0.55, 1.55))
 
 func apply_torso_root_skin(skel: Skeleton3D, root_id: int, rest: Transform3D, size: Vector3) -> void:
     if root_id < 0:
@@ -326,11 +330,14 @@ func apply_torso_root_skin(skel: Skeleton3D, root_id: int, rest: Transform3D, si
     skel.set_bone_pose(root_id, parent_rest.affine_inverse() * global_target)
 
 func update_scene() -> void:
+    creature_scale = float(current.get("size_scale", creature_scale))
+    var render_scale := MODEL_SCALE * creature_scale
     for i in current.animals.size():
         var a: Dictionary = current.animals[i]; var view: Dictionary = views[i]
         var scene: Node3D = view.scene; var skel: Skeleton3D = view.skel
         var center := vec(a.center); var orientation := quat(a.orientation)
-        scene.position = center - orientation * Quaternion(Vector3.UP,MODEL_YAW) * (Vector3(0,.15,.1)*MODEL_SCALE)
+        scene.scale = Vector3.ONE * render_scale
+        scene.position = center - orientation * Quaternion(Vector3.UP,MODEL_YAW) * (Vector3(0,.15,.1)*render_scale)
         scene.quaternion = orientation * Quaternion(Vector3.UP,MODEL_YAW)
         var inverse := Quaternion(Vector3.UP,-MODEL_YAW) * orientation.inverse()
         # A physical shell of 12 particles controls the gross mantle
@@ -360,7 +367,7 @@ func update_scene() -> void:
                 # Seed the parent transform with the physically deformed
                 # torso root so arm targets stay world-space correct.
                 globals[torso_root] = skel.get_bone_global_pose(torso_root)
-            var art := (7-arm)%8
+            var art: int = MODEL_ARM_IDS[arm]
             var ids: Array = view.bone_ids[art]
             var rests: Array = view.bone_rests[art]
             for j in 24:
@@ -374,9 +381,9 @@ func update_scene() -> void:
                 if (rest1-rest0).length_squared() > 0.000001 and tangent.length_squared() > 0.000001: swing = Quaternion((rest1-rest0).normalized(), tangent)
                 var roll_index := mini(int(float(j)*material_roll.size()/24.0),material_roll.size()-1)
                 var material_rotation := Quaternion(tangent, float(material_roll[roll_index])) * swing
-                var base_radius := .036 * (1.0-.8*float(roll_index)/float(material_roll.size()))
+                var base_radius := .036 * creature_scale * (1.0-.8*float(roll_index)/float(material_roll.size()))
                 var cross_section := Vector3(clampf(float(radii[roll_index][0])/base_radius,.40,2.5),1.0,clampf(float(radii[roll_index][1])/base_radius,.40,2.5))
-                var target := Transform3D(Basis(material_rotation)*rest.basis*Basis.from_scale(cross_section), Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
+                var target := Transform3D(Basis(material_rotation)*rest.basis*Basis.from_scale(cross_section), Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/render_scale)
                 var parent := skel.get_bone_parent(id)
                 var parent_global: Transform3D = globals.get(parent, skel.get_bone_global_rest(parent) if parent >= 0 else Transform3D.IDENTITY)
                 skel.set_bone_pose(id,parent_global.affine_inverse()*target); globals[id] = target
@@ -387,9 +394,9 @@ func update_scene() -> void:
     if current.tick == 0 or current.tick == 1: print("SNAPSHOT tick=%d animals=%d arms=%d first_node=%s" % [current.tick,current.animals.size(),current.animals[0].arms.size(),str(current.animals[0].arms[0].nodes[0])])
 
 func step_command() -> String:
-    # The C++ step2 protocol carries independent extension/sweep and global
+    # The C++ step4 protocol carries explicit extend/stroke/carry phases and global
     # Space release. Neither channel writes positions directly.
-    var out := "step2 %d" % (animals * 8)
+    var out := "step4 %d" % (animals * 8)
     for i in animals:
         for arm in 8:
             var controlled := i == selected
@@ -399,13 +406,14 @@ func step_command() -> String:
                 controlled and Input.is_physical_key_pressed(STROKE_KEYS[arm]))
             var extension := 1.48 if reach else 0.58
             var curvature := 0.0 if reach else 3.6
-            var sweep := 1.0 if paddle else -1.0
+            var sweep := 1.0 if paddle else (-1.0 if reach else 0.0)
             var twist := 3.0 if test_actuation and i == 0 and arm == 0 else 0.0
-            out += " %d %d %f %f %f %f %f %d %f" % [
-                i, arm, 1.0, curvature, extension, twist, 0.02, 0, sweep]
-    out += " %d %d 0 %f %f %f 30 20 %d" % [
+            out += " %d %d %f %f %f %f %f %d %f %d %d %d" % [
+                i, arm, 1.0 if reach or paddle else 0.0, curvature, extension, twist, 0.02, 0, sweep,
+                int(reach), int(paddle), 0]
+    out += " %d %d 0 %f %f %f %f %f %d" % [
         drag_kind if dragging else 0, drag_index,
-        drag_target.x, drag_target.y, drag_target.z,
+        drag_target.x, drag_target.y, drag_target.z, drag_stiffness * creature_scale * creature_scale, drag_max_force * pow(creature_scale, 3.0),
         1 if Input.is_physical_key_pressed(KEY_SPACE) else 0]
     return out
 
@@ -431,10 +439,10 @@ func exercise_input() -> void:
         input_arm_baseline = active_tip.distance_to(passive_tip)
         inject_key(KEY_TAB,true)
         inject_key(KEY_TAB,false)
-        inject_key(KEY_J,true)
+        inject_key(EXTEND_KEYS[0],true)
         input_phase = 1
     if current.tick >= 55 and input_phase == 1:
-        inject_key(KEY_J,false)
+        inject_key(EXTEND_KEYS[0],false)
         input_center_baseline = vec(current.animals[1].center)
         var event := InputEventMouseButton.new()
         event.button_index = MOUSE_BUTTON_LEFT
@@ -485,7 +493,7 @@ func _process(delta: float) -> void:
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
-        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_J) and next_command.contains(" 1 0 1.000000 0.000000 1.280000"))
+        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(EXTEND_KEYS[0]) and next_command.contains(" 1 0 1.000000 0.000000 1.480000"))
         input_drag_seen = input_drag_seen or (dragging and drag_kind == 1 and drag_index == 1 and drag_target.distance_to(vec(current.animals[1].center)) > .05)
     command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
     inbox_lock.lock()

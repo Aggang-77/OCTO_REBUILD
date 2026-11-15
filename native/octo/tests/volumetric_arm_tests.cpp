@@ -12,6 +12,7 @@ int main(){
   config.animals=1;config.rigid_count=0;config.segments=16;
   config.volumetric_arm_prototype=true;
   config.auto_suction=false;
+  config.locomotion_assist=false; // Isolate passive material/contact response.
   config.gravity={0,-9.81,0};config.floor=true;config.spawn_height=.13;
   config.upright_strength=0;
   PhysicsWorld world(config);
@@ -44,7 +45,7 @@ int main(){
   // Full gameplay world fixture: two octopuses, rigid props and floor
   // in the exact same C++ collision space (not separate simulations).
   {WorldConfig gameplay=config;
-   gameplay.animals=2;gameplay.rigid_count=3;
+   gameplay.animals=2;gameplay.rigid_count=3;gameplay.locomotion_assist=true;
    gameplay.auto_suction=true;gameplay.spacing=1.5;
    PhysicsWorld shared(gameplay);
    double max_cage_error=0,max_soft=0;

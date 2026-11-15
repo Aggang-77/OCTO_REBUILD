@@ -41,11 +41,12 @@ func _ready() -> void:
 	octopus.hunter = hunter
 	octopus.camera = camera
 	octopus.spawn = $Spawns/Octopus.global_position
-	octopus.spawn.y = arena.terrain_height(octopus.spawn.x, octopus.spawn.z) + 0.65
+	octopus.spawn.y = arena.terrain_height(octopus.spawn.x, octopus.spawn.z) + 0.65 * 1.5
 	octopus.bridge_failed.connect(_on_bridge_failed)
 	octopus.native_reset.connect(func(): ready_for_round = true)
 	add_child(octopus)
 	_reset_hunter()
+	hunter.process_mode = Node.PROCESS_MODE_DISABLED
 	camera_focus = hunter.global_position.lerp(octopus.spawn, 0.55) + Vector3.UP * 0.6
 	if "--capture-merged" in OS.get_cmdline_user_args():
 		_capture_preview()
@@ -298,8 +299,8 @@ func _build_ui() -> void:
 	row.add_child(level_picker)
 	box.add_child(HSeparator.new())
 	box.add_child(_label("촉수 조작  ·  뻗기 / 뒤로 젓기", 16, Color("dcf1e8")))
-	box.add_child(_label("왼쪽 앞    F / D       오른쪽 앞    J / K\n왼쪽 옆앞  S / A       오른쪽 옆앞  L / ;\n왼쪽 옆뒤  R / E       오른쪽 옆뒤  U / I\n왼쪽 뒤    W / Q       오른쪽 뒤    O / P", 15, Color("d2dddd")))
-	box.add_child(_label("키를 놓으면 촉수 회수 / 앞쪽으로 복귀\nSpace · 모든 잡기 해제 (누르는 동안 잡기 금지)\n문어 좌드래그 · 힘으로 당기기\n우드래그 / 휠 · 시점 회전 / 확대\nC · 문어 / 둘 다 추적    1·2·3 · 난이도", 14, Color("a5b9ba")))
+	box.add_child(_label("왼쪽 앞    R / E       오른쪽 앞    U / I\n왼쪽 옆앞  W / Q       오른쪽 옆앞  O / P\n왼쪽 옆뒤  F / D       오른쪽 옆뒤  J / K\n왼쪽 뒤    S / A       오른쪽 뒤    L / ;", 15, Color("d2dddd")))
+	box.add_child(_label("잡은 팔은 유지 · 빈 팔은 놓으면 회수 / 복귀\nSpace · 모든 잡기 해제 (누르는 동안 잡기 금지)\n문어 좌드래그 · 힘으로 당기기\n우드래그 / 휠 · 시점 회전 / 확대\nC · 문어 / 둘 다 추적    1·2·3 · 난이도", 14, Color("a5b9ba")))
 	var buttons := HBoxContainer.new()
 	box.add_child(buttons)
 	var restart := Button.new()

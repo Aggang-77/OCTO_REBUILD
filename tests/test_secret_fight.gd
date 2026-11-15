@@ -32,9 +32,9 @@ func key(code: Key, control: bool = false, shift: bool = false, echo: bool = fal
 	Input.parse_input_event(event)
 
 func native_ticks(target_tick: int) -> bool:
-	var deadline := Time.get_ticks_msec() + 5000
+	var deadline := Time.get_ticks_msec() + 7000
 	while Time.get_ticks_msec() < deadline:
-		if not game.octopus.current.is_empty() and int(game.octopus.current.tick) >= target_tick:
+		if game.octopus.geometry_ready and not game.octopus.resetting and not game.octopus.current.is_empty() and int(game.octopus.current.tick) >= target_tick:
 			return true
 		await process_frame
 	return false
@@ -86,9 +86,10 @@ func _run() -> void:
 	check(game.hunter.objective.capture_progress == frozen_progress and game.hunter.objective.health == 73.0, "Chase health and capture time are preserved")
 	fight._ai_toggle.button_pressed = false
 	var serial: int = fight.player.fighter.attack_serial
-	key(KEY_J)
+	key(KEY_U)
 	await ticks(4)
-	check(fight.player.fighter.attack_serial > serial, "Actual J key reaches the embedded fight attack controls")
+	check(fight.player.fighter.attack_serial > serial, "Actual U key reaches only the embedded fighter elbow controls")
+	check(int(octopus.current.tick) == frozen_tick, "The fighter elbow U key cannot extend an arm in the suspended chase")
 	key(KEY_ESCAPE)
 	await ticks()
 	check(paused and fight._paused, "Embedded fight can pause through its actual keyboard input")

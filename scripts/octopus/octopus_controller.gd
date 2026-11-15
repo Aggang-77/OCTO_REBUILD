@@ -21,12 +21,27 @@ var contact_shape := SphereShape3D.new()
 var fault: String = ""
 var snapshot_age: float = 0.0
 var terrain_reset: String = ""
+# Main-thread scene export is cached as immutable text for the pipe worker.
+var mesh_setup: Array[String] = []
+var mesh_setup_index: int = 0
+var mesh_setup_active: bool = true
+var static_triangle_count: int = 0
+var geometry_ready: bool = false
+var setup_started_usec: int = 0
+var mesh_upload_started_usec: int = 0
+var grip_candidates: Dictionary = {}
+var grab_rearm_required: Array[bool] = [false, false, false, false, false, false, false, false]
+var extend_was_pressed: Array[bool] = [false, false, false, false, false, false, false, false]
 
 func _ready() -> void:
+	setup_started_usec = Time.get_ticks_usec()
 	animals = 1
+	creature_scale = 1.5
+	resetting = true
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	process_physics_priority = -30
 	terrain_reset = _build_reset_command()
+	mesh_setup = _build_mesh_setup()
 	for arm in range(8):
 		var anchor := ANCHOR.new()
 		anchor.name = "ArmContact%d" % arm
@@ -37,8 +52,8 @@ func _ready() -> void:
 		var threat := HunterThreat.new()
 		threat.threat_id = StringName("octopus_arm_%d" % arm)
 		threat.health = 100.0
-		threat.radius = 0.12
-		threat.cut_radius = 0.10
+		threat.radius = 0.12 * creature_scale
+		threat.cut_radius = 0.10 * creature_scale
 		threat.physics_anchor = anchor
 		threat.restraint_strength = 3.2
 		anchor.add_child(threat)
@@ -69,22 +84,83 @@ func make_stage() -> void:
 	pass # The integration scene supplies arena, camera and UI.
 
 func _build_reset_command() -> String:
-	var command := "game_reset %.5f %.5f %.5f 65 -28 -28 0.875" % [spawn.x, spawn.y, spawn.z]
+	var command := "game_reset4 %.5f %.5f %.5f %.5f 65 -28 -28 0.875" % [spawn.x, spawn.y, spawn.z, creature_scale]
 	for z in range(65):
 		for x in range(65):
 			command += " %.4f" % arena.terrain_height(-28.0 + x * 0.875, -28.0 + z * 0.875)
 	return command
+
+func _build_mesh_setup() -> Array[String]:
+	var started := Time.get_ticks_usec()
+	var vertices := PackedVector3Array()
+	for body: StaticBody3D in arena.find_children("*", "StaticBody3D", true, false):
+		if body.collision_layer == 0:
+			continue
+		for collision: CollisionShape3D in body.find_children("*", "CollisionShape3D", true, false):
+			if collision.disabled or collision.shape == null:
+				continue
+			# A nested dynamic body is never part of this static map upload.
+			var owner_body: Node = collision.get_parent()
+			while owner_body != null and not owner_body is CollisionObject3D:
+				owner_body = owner_body.get_parent()
+			if owner_body != body:
+				continue
+			var faces := PackedVector3Array()
+			if collision.shape is ConcavePolygonShape3D:
+				faces = collision.shape.get_faces()
+			elif collision.shape is BoxShape3D:
+				faces = _box_faces(collision.shape.size)
+			for point: Vector3 in faces:
+				vertices.append(collision.global_transform * point)
+	static_triangle_count = vertices.size() / 3
+	var commands: Array[String] = ["mesh_begin %d" % vertices.size()]
+	# Multiples of three preserve triangle boundaries and stay below the
+	# Windows pipe buffer without any worker-side scene/resource access.
+	for offset in range(0, vertices.size(), 600):
+		var count := mini(600, vertices.size() - offset)
+		var values := PackedStringArray()
+		values.resize(1 + count * 3)
+		values[0] = "mesh_chunk %d %d" % [offset, count]
+		for index in range(count):
+			var point: Vector3 = vertices[offset + index]
+			var component := 1 + index * 3
+			values[component] = String.num(point.x, 6)
+			values[component + 1] = String.num(point.y, 6)
+			values[component + 2] = String.num(point.z, 6)
+		commands.append(" ".join(values))
+	commands.append("mesh_commit")
+	print("STATIC_MESH_EXPORT triangles=%d chunks=%d elapsed_ms=%.2f" % [static_triangle_count,
+		commands.size() - 2, float(Time.get_ticks_usec() - started) / 1000.0])
+	return commands
+
+func _box_faces(size: Vector3) -> PackedVector3Array:
+	var half := size * 0.5
+	var corners := PackedVector3Array()
+	for index in range(8):
+		corners.append(Vector3(half.x if index & 1 else -half.x,
+			half.y if index & 2 else -half.y, half.z if index & 4 else -half.z))
+	var faces := PackedVector3Array()
+	for index in [0, 2, 3, 0, 3, 1, 4, 5, 7, 4, 7, 6,
+		0, 4, 6, 0, 6, 2, 1, 3, 7, 1, 7, 5,
+		0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3]:
+		faces.append(corners[index])
+	return faces
 
 func reset_command() -> String:
 	# Called on the pipe worker too: no scene/resource access on that thread.
 	return terrain_reset
 
 func request_reset() -> void:
+	setup_started_usec = Time.get_ticks_usec()
 	release_grips()
 	forces.clear()
 	scene_suffix = " 0 0"
 	dragging = false
 	resetting = true
+	geometry_ready = false
+	grip_candidates.clear()
+	grab_rearm_required.fill(false)
+	extend_was_pressed.fill(false)
 	for threat in threats:
 		threat.reset_threat()
 	inbox_lock.lock()
@@ -96,15 +172,17 @@ func add_site_force(arm: int, site: int, force: Vector3) -> void:
 	forces[key] = (forces.get(key, Vector3.ZERO) + force).limit_length(700.0)
 
 func step_command() -> String:
-	var out := "step3 8"
+	var out := "step4 8"
 	for arm in range(8):
 		var enabled := threats[arm].active
 		var reach := enabled and Input.is_physical_key_pressed(EXTEND_KEYS[arm])
 		var paddle := enabled and Input.is_physical_key_pressed(STROKE_KEYS[arm])
-		out += " 0 %d %f %f %f 0 0.02 0 %f" % [arm, 1.0 if enabled else 0.0,
-			0.0 if reach else 3.6, 1.48 if reach else 0.58, (1.0 if paddle else -1.0) if enabled else 0.0]
-	out += " %d 0 %d %f %f %f 30 20 %d" % [drag_kind if dragging else 0,
-		drag_index, drag_target.x, drag_target.y, drag_target.z,
+		var carry: bool = enabled and grips.has(arm) and hunter.physics_rig.grips.has(grips[arm].id)
+		out += " 0 %d %f %f %f 0 0.02 0 %f %d %d %d" % [arm, 1.0 if reach or paddle else 0.0,
+			0.0 if reach else 3.6, 1.48 if reach else 0.58,
+			1.0 if paddle else (-1.0 if reach else 0.0), int(reach), int(paddle), int(carry)]
+	out += " %d 0 %d %f %f %f %f %f %d" % [drag_kind if dragging else 0,
+		drag_index, drag_target.x, drag_target.y, drag_target.z, drag_stiffness * creature_scale * creature_scale, drag_max_force * pow(creature_scale, 3.0),
 		1 if Input.is_physical_key_pressed(KEY_SPACE) else 0]
 	return out + scene_suffix
 
@@ -135,14 +213,29 @@ func read_pipe() -> void:
 				inbox_lock.unlock()
 				newline = pending_bytes.find(10)
 		inbox_lock.lock()
-		if auto_step and not pending and not stop_reader and Time.get_ticks_usec() >= next_due_usec:
-			var command := terrain_reset if reset_requested else latest_command
-			reset_requested = false
+		if not pending and not stop_reader and request_id > 0:
+			var command := ""
+			var setup := false
+			if reset_requested:
+				command = terrain_reset
+				reset_requested = false
+				mesh_setup_index = 0
+				mesh_setup_active = true
+				setup = true
+			elif mesh_setup_active:
+				if mesh_setup_index == 0:
+					mesh_upload_started_usec = Time.get_ticks_usec()
+				command = mesh_setup[mesh_setup_index]
+				mesh_setup_index += 1
+				mesh_setup_active = mesh_setup_index < mesh_setup.size()
+				setup = true
+			elif auto_step and Time.get_ticks_usec() >= next_due_usec:
+				command = latest_command
 			if not command.is_empty():
 				request_id += 1
 				pending = true
 				sent_at = Time.get_ticks_usec()
-				next_due_usec = maxi(next_due_usec + 16667, sent_at)
+				next_due_usec = sent_at + 16667 if setup else maxi(next_due_usec + 16667, sent_at)
 				pipe.store_string("1 %d %s\n" % [request_id, command])
 				pipe.flush()
 		inbox_lock.unlock()
@@ -168,13 +261,18 @@ func poll() -> void:
 		if not parsed.get("ok", false):
 			fail("문어 엔진: " + str(parsed.get("error", "unknown")))
 			return
+		if parsed.get("mesh_upload", false):
+			continue
 		var frame: Dictionary = parsed.snapshot.frame
 		current = frame.world
 		current["body_nodes"] = frame.body_nodes
 		current["reactions"] = frame.reactions
+		geometry_ready = bool(frame.get("geometry_ready", false))
+		current["geometry_ready"] = geometry_ready
 		snapshot_age = 0.0
 		update_scene()
-		if int(current.tick) == 0:
+		if int(current.tick) == 0 and geometry_ready and resetting:
+			print("STATIC_MESH_READY triangles=%d elapsed_ms=%.2f upload_ms=%.2f" % [int(current.static_triangles), float(Time.get_ticks_usec() - setup_started_usec) / 1000.0, float(Time.get_ticks_usec() - mesh_upload_started_usec) / 1000.0])
 			resetting = false
 			native_reset.emit()
 		# Reactions belong to this one response, never to a rendered-frame cache.
@@ -187,7 +285,7 @@ func poll() -> void:
 		fail("문어 물리 엔진이 종료되었습니다.")
 	elif auto_step and last_progress_usec > 0 and Time.get_ticks_usec() - last_progress_usec > 15000000:
 		fail("문어 물리 엔진이 응답하지 않습니다.")
-	elif current.is_empty() and pending and Time.get_ticks_usec() - sent_at > 15000000:
+	elif resetting and pending and Time.get_ticks_usec() - sent_at > 15000000:
 		fail("문어 물리 엔진 시작 시간이 초과되었습니다.")
 
 func update_scene() -> void:
@@ -204,13 +302,14 @@ func _process(delta: float) -> void:
 		return
 	snapshot_age += delta if not suspended and not get_tree().paused else 0.0
 	inbox_lock.lock()
-	auto_step = not suspended and not get_tree().paused
+	auto_step = geometry_ready and not resetting and not suspended and not get_tree().paused
 	latest_command = step_command() if auto_step else ""
 	inbox_lock.unlock()
 
 func _physics_process(delta: float) -> void:
 	if quitting or get_tree().paused or suspended or current.is_empty() or resetting:
 		return
+	_update_grab_rearm()
 	release_cooldown = maxf(0.0, release_cooldown - delta)
 	if Input.is_physical_key_pressed(KEY_SPACE):
 		release_grips()
@@ -221,12 +320,12 @@ func _physics_process(delta: float) -> void:
 	for arm in range(-1, 8):
 		var nodes: Array = current.body_nodes if arm < 0 else current.animals[0].arms[arm].nodes
 		for site in range(nodes.size()):
-			var radius := (0.065 if site < 7 else 0.033) if arm < 0 else 0.036 * (1.0 - 0.8 * float(site) / 16.0)
-			contact_shape.radius = radius + 0.025
+			var radius := _contact_radius(arm, site)
+			contact_shape.radius = radius + 0.025 * creature_scale
 			var query := PhysicsShapeQueryParameters3D.new()
 			query.shape = contact_shape
 			query.transform.origin = vec(nodes[site])
-			query.collision_mask = 1 | 4 | 16
+			query.collision_mask = 4 | 16 # Static terrain is solved by the uploaded native mesh.
 			query.margin = 0.001
 			var info := world.get_rest_info(query)
 			if info.is_empty():
@@ -245,13 +344,13 @@ func _physics_process(delta: float) -> void:
 				point.x, point.y, point.z, normal.x, normal.y, normal.z, collider_id])
 			# Query the hunter independently so a simultaneous floor contact does
 			# not hide a real foot/leg contact from suction detection.
-			if arm >= 0 and site >= 4 and not grips.has(arm):
+			if arm >= 0 and site >= 4 and not grips.has(arm) and Input.is_physical_key_pressed(EXTEND_KEYS[arm]):
 				query.collision_mask = 4
 				var hunter_info := world.get_rest_info(query)
 				if not hunter_info.is_empty():
 					var hitbox = instance_from_id(hunter_info.collider_id)
 					if hitbox is RigidBody3D and hitbox.get_meta("hunter_target", null) == hunter:
-						_try_grip(arm, site, hitbox, hunter_info.point)
+						_try_grip(arm, site, hitbox, hunter_info.point, hunter_info.normal)
 	var out := " %d" % forces.size()
 	for key: Vector2i in forces:
 		var force: Vector3 = forces[key]
@@ -262,13 +361,46 @@ func _physics_process(delta: float) -> void:
 		out += contact
 	scene_suffix = out
 
-func _try_grip(arm: int, site: int, body: RigidBody3D, point: Vector3) -> void:
-	if grips.has(arm) or not threats[arm].active or release_cooldown > 0.0 or Input.is_physical_key_pressed(KEY_SPACE) or hunter.objective.result != &"":
+func _update_grab_rearm() -> void:
+	var release := Input.is_physical_key_pressed(KEY_SPACE)
+	for arm in range(8):
+		var pressed := Input.is_physical_key_pressed(EXTEND_KEYS[arm])
+		if release:
+			grab_rearm_required[arm] = true
+		elif pressed and not extend_was_pressed[arm]:
+			grab_rearm_required[arm] = false
+		extend_was_pressed[arm] = pressed
+
+func _contact_radius(arm: int, site: int) -> float:
+	if arm < 0:
+		return (0.065 if site < 7 else 0.033) * creature_scale
+	var state: Dictionary = current.animals[0].arms[arm]
+	var contact_radii: Array = state.get("contact_radii", [])
+	if site < contact_radii.size():
+		return float(contact_radii[site])
+	return 0.036 * creature_scale * (1.0 - 0.8 * float(site) / 16.0)
+
+func _try_grip(arm: int, site: int, body: RigidBody3D, point: Vector3, normal: Vector3 = Vector3.ZERO) -> void:
+	if grab_rearm_required[arm] or not Input.is_physical_key_pressed(EXTEND_KEYS[arm]) or grips.has(arm) or not threats[arm].active or release_cooldown > 0.0 or Input.is_physical_key_pressed(KEY_SPACE) or hunter.objective.result != &"":
 		return
 	# Broadphase is enlarged; suction itself requires real hitbox surface contact.
 	var center := vec(current.animals[0].arms[arm].nodes[site])
-	var radius := 0.036 * (1.0 - 0.8 * float(site) / 16.0)
-	if center.distance_to(point) > radius + 0.008:
+	var radius := _contact_radius(arm, site)
+	if center.distance_to(point) > radius + 0.008 * creature_scale:
+		return
+	var directions: Array = current.animals[0].arms[arm].get("sucker_directions", [])
+	if normal.is_zero_approx() or site >= directions.size() or vec(directions[site]).dot(-normal.normalized()) < 0.3:
+		return
+	# Two consecutive physical contact samples distinguish a resting sucker
+	# from a fast fly-by. Releasing the extend key never drops an existing grip.
+	var frame := Engine.get_physics_frames()
+	var previous: Dictionary = grip_candidates.get(arm, {})
+	if not previous.is_empty() and int(previous.frame) == frame:
+		return
+	var stable: bool = not previous.is_empty() and previous.body == body.get_instance_id() and abs(int(previous.site) - site) <= 1
+	stable = stable and int(previous.frame) == frame - 1 and center.distance_to(previous.center) < 0.04 * creature_scale
+	grip_candidates[arm] = {"body": body.get_instance_id(), "site": site, "frame": frame, "center": center}
+	if not stable:
 		return
 	var anchor := anchors[arm]
 	anchor.site = site
@@ -276,10 +408,11 @@ func _try_grip(arm: int, site: int, body: RigidBody3D, point: Vector3) -> void:
 	var part: StringName = body.get_meta("hunter_part")
 	# The native site has much less mass than the character's lab test rigid.
 	# A bounded, softer spring avoids unstable 60 Hz feedback across solvers.
-	var id := hunter.physics_rig.attach_grip(part, anchor, point, 90.0, 2.0, 6.0, 0.8)
+	var id := hunter.physics_rig.attach_grip(part, anchor, point, 90.0 * creature_scale, 2.0 * creature_scale * creature_scale, 6.0 * pow(creature_scale, 3.0), 0.8 * creature_scale)
 	if id < 0:
 		return
 	grips[arm] = {"id": id, "part": part}
+	grip_candidates.erase(arm)
 	hunter.try_capture(capture_threat, capture_threat.restraint_strength)
 
 func _capture_supported() -> bool:
@@ -299,6 +432,8 @@ func _validate_grips() -> void:
 		release_grips()
 
 func _drop_grip(arm: int) -> void:
+	grab_rearm_required[arm] = true
+	grip_candidates.erase(arm)
 	if grips.has(arm):
 		hunter.physics_rig.release_grip(grips[arm].id)
 		grips.erase(arm)
@@ -308,6 +443,7 @@ func _drop_grip(arm: int) -> void:
 	release_cooldown = maxf(release_cooldown, 0.25)
 
 func release_grips() -> void:
+	grip_candidates.clear()
 	for arm in grips.keys():
 		_drop_grip(arm)
 	if is_instance_valid(hunter):
@@ -328,7 +464,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		dragging = false
 		if event.pressed:
 			var center := vec(current.animals[0].center)
-			var hit = AABB(center - Vector3.ONE * 0.45, Vector3.ONE * 0.9).intersects_ray(
+			var hit = AABB(center - Vector3.ONE * 0.45 * creature_scale, Vector3.ONE * 0.9 * creature_scale).intersects_ray(
 				camera.project_ray_origin(event.position), camera.project_ray_normal(event.position))
 			if hit != null:
 				dragging = true
