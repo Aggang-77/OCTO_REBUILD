@@ -407,7 +407,7 @@ double floor_surface_radius(const P& particle)const{
 }
 void project_floor(){if(cfg.floor)for(auto&a:p){
  const double surface_radius=floor_surface_radius(a);
- if(a.x.y<surface_radius){double depth=surface_radius-a.x.y;a.compression=std::max(a.compression,depth);diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=surface_radius;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,cfg.friction*depth)/l);}
+ if(a.x.y<surface_radius){double depth=surface_radius-a.x.y;a.compression=std::max(a.compression,depth);diag.max_penetration=std::max(diag.max_penetration,depth);++diag.contact_count;a.x.y=surface_radius;Vec3 tangent{a.x.x-a.old.x,0,a.x.z-a.old.z};double l=norm(tangent);if(l>0)a.x=a.x-tangent*(std::min(l,(cfg.grounded_rest&&a.animal>=0?(l/h>.12?.14:.34):cfg.friction)*depth)/l);}
 }}
 void arm_prop_surfaces(){
  if(!cfg.collisions||!cfg.grounded_rest)return;
@@ -732,24 +732,45 @@ void sweep_motors(double h){
   Vec3 forward=unit(p[animal.body[5]].x-p[animal.body[6]].x);
   Vec3 right=unit(cross({0,1,0},forward));
   for(auto&ar:animal.arms){
-   if(std::abs(ar.active.sweep)<1e-5)continue;
+   const bool idle=ar.target.activation<.08&&ar.active.activation<.15&&std::abs(ar.target.sweep)<.01;
+   if(!idle&&std::abs(ar.active.sweep)<1e-5)continue;
    const double angle=ar.arm_index*pi/4.0;
    const Vec3 home=right*std::sin(angle)+forward*std::cos(angle);
    const double sign=ar.arm_index<4?1.0:-1.0;
-   const double turn=sign*(pi/3.0)*ar.active.sweep;
+   const double turn=idle?0.0:sign*(pi/3.0)*ar.active.sweep;
    const Vec3 goal=home*std::cos(turn)+cross({0,1,0},home)*std::sin(turn);
    const Vec3 root=p[ar.p[0]].x;
    for(unsigned j=std::max(2u,cfg.segments/3);j<=cfg.segments;++j){
     const double u=double(j)/cfg.segments;
     auto&site=p[ar.p[j]];
-    Vec3 force=(root+goal*(.9*u*ar.active.extension)-site.x)*(1.3*cfg.arm_motor_strength);
+    const Vec3 desired=root+goal*(.9*u*(idle?1.04:ar.active.extension));
+    Vec3 force=(desired-site.x)*(idle?.20:1.0)*cfg.arm_motor_strength;
     const double mag=norm(force);
-    const double max_motor_force=.085*cfg.arm_motor_strength;
+    const double max_motor_force=(idle?.014:.060)*cfg.arm_motor_strength;
     if(mag>max_motor_force)force=force*(max_motor_force/mag);
     site.x=site.x+force*(site.inv*h*h);
     for(int b:animal.body)p[b].x=p[b].x-force*(p[b].inv*h*h/animal.body.size());
    }
   }
+ }
+}
+void torso_above_arms(double h){
+ // Internal equal-and-opposite load transfer, only when arms support the floor.
+ if(!cfg.grounded_rest||!cfg.floor)return;
+ for(auto& animal:animals){
+  auto& center=p[animal.body[0]];
+  std::vector<int> grounded;
+  double support_y=0;
+  for(auto& ar:animal.arms)for(unsigned j=0;j<=std::min(4u,cfg.segments);++j){
+   int id=ar.p[j];auto& node=p[id];
+   if(node.x.y<=floor_surface_radius(node)+.025){grounded.push_back(id);support_y+=node.x.y;}
+  }
+  if(grounded.size()<2)return;
+  support_y/=grounded.size();
+  const double force=std::clamp((support_y+.135-center.x.y)*2.2,0.,.38);
+  const double impulse=force*h*h;
+  center.x.y+=impulse*center.inv;
+  for(int id:grounded)p[id].x.y-=impulse*p[id].inv/grounded.size();
  }
 }
 void seek_floor_contact(double h){
@@ -950,6 +971,7 @@ for(auto& particle:p)particle.x=particle.x+particle.v*h;
 sweep_motors(h);
 rear_junction_folding(h);
 upright_motors(h);
+torso_above_arms(h);
 follow_surface(h);
 seek_floor_contact(h);
 rigid_center_sweeps();
