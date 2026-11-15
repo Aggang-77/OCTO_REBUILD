@@ -1,6 +1,6 @@
 extends SceneTree
 # Runs without the untracked GameReady asset or native C++ process.
-# Real Godot Input.parse_input_event -> game step2 wire serialization.
+# Real Godot Input.parse_input_event -> explicit-target step3 serialization.
 const DEMO = preload("res://scripts/demo.gd")
 
 func _key(code: Key, pressed: bool) -> void:
@@ -196,7 +196,7 @@ func _exercise() -> void:
         _key(key, true)
         await process_frame
         var parts := octo.step_command().split(" ")
-        if not _check(parts[0] == "step3" and parts[1] == "16", "step2 header"):
+        if not _check(parts[0] == "step3" and parts[1] == "16", "step3 header"):
             return
         for animal in 2:
             for j in 8:
@@ -207,7 +207,7 @@ func _exercise() -> void:
         await process_frame
         parts = octo.step_command().split(" ")
         var begin := 2 + (8 + arm) * 9
-        if not _check(parts[begin + 7] == "1", "Shift+arm requests proximity grab"):
+        if not _check(parts[begin + 7] == "0", "Shift without a clicked target cannot grab remotely"):
             return
         _key(KEY_CTRL, true)
         await process_frame
