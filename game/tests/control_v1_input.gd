@@ -232,6 +232,18 @@ func _exercise() -> void:
             return
         _key(key, false)
         await process_frame
+    # Ctrl without an arm key releases every existing grab on the
+    # selected animal, but never affects the other animal.
+    _key(KEY_CTRL, true)
+    await process_frame
+    var released := octo.step_command().split(" ")
+    for arm in 8:
+        if not _check(released[2 + (8 + arm) * 9 + 7] == "2" and
+                released[2 + arm * 9 + 7] == "0",
+                "Ctrl alone releases all selected-animal grabs"):
+            return
+    _key(KEY_CTRL, false)
+    await process_frame
     _key(KEY_U, true)
     _key(KEY_R, true)
     await process_frame
