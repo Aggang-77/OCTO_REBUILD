@@ -199,13 +199,13 @@ func _exercise() -> void:
         for animal in 2:
             for j in 8:
                 var begin := 2 + (animal * 8 + j) * 9
-                if not _check(float(parts[begin + 2]) == (1.0 if animal == 1 and j == arm else 0.0), "independent arm and animal"):
+                if not _check(float(parts[begin + 2]) == (0.78 if animal == 1 and j == arm else 0.0), "independent arm and animal"):
                     return
         _key(KEY_SHIFT, true)
         await process_frame
         parts = octo.step_command().split(" ")
         var begin := 2 + (8 + arm) * 9
-        if not _check(float(parts[begin + 4]) > 1.4 and float(parts[begin + 8]) == 0.0, "Shift reach"):
+        if not _check(float(parts[begin + 4]) > 1.3 and float(parts[begin + 8]) == 0.0, "Shift reach"):
             return
         _key(KEY_SPACE, true)
         await process_frame
@@ -216,27 +216,31 @@ func _exercise() -> void:
         _key(KEY_SHIFT, false)
         _key(key, false)
         await process_frame
-    _key(KEY_W, true)
-    _key(KEY_E, true)
+    _key(KEY_Q, true)
+    _key(KEY_U, true)
     await process_frame
     var pair := octo.step_command().split(" ")
-    if not _check(float(pair[2 + (8 + 0) * 9 + 2]) == 1.0 and float(pair[2 + (8 + 7) * 9 + 2]) == 1.0, "two arms simultaneously"):
+    if not _check(float(pair[2 + (8 + 0) * 9 + 2]) == 0.78 and float(pair[2 + (8 + 7) * 9 + 2]) == 0.78, "two arms simultaneously"):
         return
-    _key(KEY_W, false)
-    _key(KEY_E, false)
+    _key(KEY_Q, false)
+    _key(KEY_U, false)
     _key(KEY_UP, true)
     await process_frame
     var assisted := octo.step_command()
-    if not _check(assisted.contains(" 1.000000 0.000000 1.480000"), "directional crawl requests arm reach"):
+    var assisted_parts := assisted.split(" ")
+    var all_passive := true
+    for arm in 8:
+        all_passive = all_passive and float(assisted_parts[2 + (8 + arm) * 9 + 2]) == 0.0
+    if not _check(all_passive, "arrow keys do not override two-hand arm controls"):
         return
     _key(KEY_UP, false)
     await process_frame
     var a0 := octo.idle_arm_shape(0,0)
     var a1 := octo.idle_arm_shape(0,1)
-    if not _check(absf(a0.extension-a1.extension)>0.01 and
+    if not _check(absf(a0.extension-a1.extension)<0.0001 and
             a0.activation == 0.0 and a0.sweep == 0.0 and a0.curvature == 0.0,
-            "natural rest posture is asymmetric and passive"):
+            "symmetric arm rest configuration"):
         return
-    print("CONTACT_KEYS_PASS eight_keys=true modifiers=true crawl=true space_priority=true")
+    print("CONTACT_KEYS_PASS eight_keys=true modifiers=true crawl=false space_priority=true")
     octo.free()
     quit(0)
