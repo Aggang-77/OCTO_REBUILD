@@ -24,7 +24,8 @@ func enter(arm: int, phase: String, time: float) -> void:
     starts[arm] = time
 
 func sample(arm: int, time: float, held: bool, stretch: bool,
-        brace: bool, release: bool, attached: bool, sweep_sign: float = 1.0) -> Dictionary:
+        brace: bool, release: bool, attached: bool, sweep_sign: float = 1.0,
+        suction_enabled: bool = true) -> Dictionary:
     if phases.is_empty() or time < last_time:
         reset()
     last_time = time
@@ -47,12 +48,14 @@ func sample(arm: int, time: float, held: bool, stretch: bool,
             if elapsed >= SHORTEN_TIME:
                 enter(arm, "anchor", time)
         "anchor":
-            if attached and elapsed >= ANCHOR_CONFIRM:
+            # With suction ON use only real attached suckers. With suction
+            # OFF, floor static friction can supply a limited push footing.
+            if (attached and elapsed >= ANCHOR_CONFIRM) or (not suction_enabled and elapsed >= 0.10):
                 enter(arm, "elongate", time)
             elif elapsed >= ANCHOR_TIMEOUT:
                 enter(arm, "release", time)
         "elongate":
-            if not attached or elapsed >= ELONGATE_TIME:
+            if (suction_enabled and not attached) or elapsed >= ELONGATE_TIME:
                 enter(arm, "release", time)
         "release":
             if elapsed >= RELEASE_TIME:
