@@ -296,3 +296,30 @@ target selection, the new object-grab contact index and Alt-drag.
 **No local Godot/C++ binary run was possible in this environment;**
 screen correctness, actual per-strike displacement, adhesion against
 moving objects, and wrapping fidelity remain unverified.
+
+
+## Grab lock state and grayscale arm controls (2026-11-15)
+
+After a physical object grab succeeds (as opposed to an uncompleted
+Shift reach), each per-arm native snapshot exports `grabbed=true`.
+That exact state drives the arm's floating 3D key text:
+
+- **GRABBED:** key text turns gray (#777777) and the HUD reports
+  `<key>:GRAB LOCKED`. This uses the real native joint state, not
+  the locally held Shift key or a predicted target hit.
+- **LOCKED controls:** normal muscle stroke, active sweep, twist,
+  sucker and repeated attack commands for that arm are ignored while
+  the object grab joint is intact. C++ rejects changes to its motor
+  targets even if a client sends them directly. The engine relaxes the
+  attack motor to neutral at the moment of contact; passive soft-body
+  motion and the physical object hold/wrapping contact continue.
+- **RELEASE:** Ctrl + that arm key (or Ctrl alone for all arms of the
+  selected octopus) clears the grab joint; controls and normal
+  yellow/resting text resume on the following native snapshot.
+- If a physically overloaded grab breaks by itself, controls become
+  available again when the native `grabbed=false` snapshot arrives.
+
+Render snapshots, the step3 bridge, player input, synthetic Godot
+key checks, and bridge regression expectations were updated. These
+are source changes without a verified Godot/C++ execution in the
+current environment.
