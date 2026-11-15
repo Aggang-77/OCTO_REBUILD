@@ -991,7 +991,10 @@ void suction_constraints(double h){
   const double w=node.inv+(s.attached>=0?p[s.attached].inv:0);
   const bool pulling=suction_explicit_control&&ar.active.activation>.75&&ar.active.extension<.90;
    const double lambda=error/(w+(pulling?8e-8:4e-7)/(h*h));
-  const double area_scale=std::max(.002,node.r/.035);
+  // Rendered sucker pads remain contact-capable even on a tapered distal
+   // rod: scaling strength with the tiny centerline radius squared
+   // previously caused real grips to break as soon as contraction began.
+   const double area_scale=std::max(suction_explicit_control?.50:.002,node.r/.035);
   if(std::abs(lambda)/(h*h)>(pulling?32.0:12.0)*cfg.sucker_strength*area_scale*area_scale){
    s.attached=-1;s.dwell=0;s.cooldown=.18;++diag.broken_attachments;continue;
   }
