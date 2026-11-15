@@ -461,6 +461,83 @@ void arm_prop_surfaces(){
    }
  }
 }
+
+ // Capsule contacts prevent interpenetration between sparse arm centerline
+ // samples. Keep connected proximal tissue free to fold instead of pushing
+ // attachment points apart.
+ void intra_animal_surface_contacts(){
+  if(!cfg.collisions)return;
+  const double eps=1e-12;
+  for(auto& animal:animals){
+   for(int ai=0;ai<8;++ai){
+    auto& arm_a=animal.arms[ai];
+    for(unsigned j=0;j<cfg.segments;++j){
+     P& a=p[arm_a.p[j]],&b=p[arm_a.p[j+1]];
+     const double ra=.5*(a.r+b.r);
+     for(int bi=ai;bi<8;++bi){
+      auto& arm_b=animal.arms[bi];
+      for(unsigned k=(bi==ai?j+3:0);k<cfg.segments;++k){
+       // Adjacent arm bases share the same compliant mantle/web junction.
+       if(bi!=ai&&j<2&&k<2)continue;
+       P& c=p[arm_b.p[k]],&d=p[arm_b.p[k+1]];
+       const double limit=ra+.5*(c.r+d.r);
+       Vec3 u=b.x-a.x,v=d.x-c.x,w=a.x-c.x;
+       const double aa=dot(u,u),bb=dot(u,v),cc=dot(v,v);
+       const double dd=dot(u,w),ee=dot(v,w);
+       double s=0,t=0;
+       const double denom=aa*cc-bb*bb;
+       if(aa<eps&&cc<eps)continue;
+       if(aa<eps){t=std::clamp(ee/cc,0.,1.);}
+       else if(cc<eps){s=std::clamp(-dd/aa,0.,1.);}
+       else{
+        s=denom>eps?std::clamp((bb*ee-cc*dd)/denom,0.,1.):0.;
+        t=(bb*s+ee)/cc;
+        if(t<0){t=0;s=std::clamp(-dd/aa,0.,1.);}
+        else if(t>1){t=1;s=std::clamp((bb-dd)/aa,0.,1.);}
+       }
+       const Vec3 delta=(c.x+v*t)-(a.x+u*s);
+       const double dist=norm(delta);
+       if(dist>=limit)continue;
+       const Vec3 normal=dist>1e-9?delta/dist:unit(c.x-a.x);
+       const double wa=a.inv*(1-s)*(1-s),wb=b.inv*s*s;
+       const double wc=c.inv*(1-t)*(1-t),wd=d.inv*t*t;
+       const double sum=wa+wb+wc+wd;
+       if(sum<eps)continue;
+       const Vec3 correction=normal*((limit-dist)/sum);
+       a.x=a.x-correction*(a.inv*(1-s));
+       b.x=b.x-correction*(b.inv*s);
+       c.x=c.x+correction*(c.inv*(1-t));
+       d.x=d.x+correction*(d.inv*t);
+       ++diag.contact_count;
+       diag.max_penetration=std::max(diag.max_penetration,limit-dist);
+      }
+     }
+     // Exclude the arm root and adjoining tissue: they are intentionally
+     // connected to the mantle by compliant links.
+     if(j<3)continue;
+     for(int id:animal.shell){
+      P& shell=p[id];
+      const Vec3 edge=b.x-a.x;
+      const double len2=dot(edge,edge);
+      const double t=len2>eps?std::clamp(dot(shell.x-a.x,edge)/len2,0.,1.):0.;
+      const Vec3 delta=shell.x-(a.x+edge*t);
+      const double dist=norm(delta),limit=ra+shell.r;
+      if(dist>=limit)continue;
+      const Vec3 normal=dist>1e-9?delta/dist:unit(shell.x-p[animal.body[0]].x);
+      const double sum=a.inv*(1-t)*(1-t)+b.inv*t*t+shell.inv;
+      if(sum<eps)continue;
+      const Vec3 correction=normal*((limit-dist)/sum);
+      a.x=a.x-correction*(a.inv*(1-t));
+      b.x=b.x-correction*(b.inv*t);
+      shell.x=shell.x+correction*shell.inv;
+      ++diag.contact_count;
+      diag.max_penetration=std::max(diag.max_penetration,limit-dist);
+     }
+    }
+   }
+  }
+ }
+
 void contacts(){root_angle_limits();project_floor();
 if(!cfg.collisions)return;
 // Swept AABB broadphase includes both endpoints so fast crossing paths remain candidates.
@@ -483,7 +560,7 @@ if((a.animal>=0&&b.rigid>=0)||(b.animal>=0&&a.rigid>=0))++diag.animal_prop_conta
 double w=a.inv+b.inv;a.x=a.x-n*(depth*a.inv/w);b.x=b.x+n*(depth*b.inv/w);
 Vec3 relative=(b.x-b.old)-(a.x-a.old);Vec3 tangent=relative-n*dot(relative,n);double tl=norm(tangent);
 if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}
-}}arm_prop_surfaces();project_floor();}
+}}intra_animal_surface_contacts();arm_prop_surfaces();project_floor();}
 
 
 
