@@ -57,6 +57,7 @@ struct WorldConfig {
     // Staged volumetric arm prototype, enabled for physical arm 0 only.
     bool volumetric_arm_prototype=false;
     double volumetric_compliance=2e-10; // per-tetra XPBD volume compliance
+    double mantle_volume_compliance=2e-8; // compliant low-resolution mantle chamber tetrahedra
     bool grounded_rest=false;           // opt-in gravity-settled octopus posture (gameplay)
     double visual_arm_floor_radius=0.065; // world m: conservative GameReady skin/sucker envelope
     double visual_mantle_floor_radius=0.065; // world m: cage surface clearance
@@ -95,6 +96,8 @@ struct Diagnostics {
     std::uint64_t contact_count=0, candidate_pairs=0, attachments=0, broken_attachments=0, nonfinite_count=0;
     std::uint64_t cross_animal_contacts=0, animal_prop_contacts=0;
     std::uint64_t swept_contacts=0;
+    std::uint64_t arm_prop_surface_contacts=0;
+    double max_mantle_volume_error=0;
 };
 struct RenderSnapshot {
     std::uint64_t tick=0;

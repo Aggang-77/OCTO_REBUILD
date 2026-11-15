@@ -152,7 +152,8 @@ func _ready() -> void:
         views.append({"skin_config": skin_config, "volume_preview": volume_preview,
             "scene": scene, "skel": skel, "bone_ids": bone_ids,
             "bone_rests": bone_rests, "mantles": mantles,
-            "torso_root": torso_root, "torso_rest": torso_rest})
+            "torso_root": torso_root, "torso_rest": torso_rest,
+            "mantle_rest_shell": []})
         print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d torso_root=%d" % [i,mantles.size(),torso_root])
     print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
     var server := OS.get_environment("OCTO_SERVER")
@@ -396,6 +397,18 @@ func update_scene() -> void:
         # GPU keeps its original vertices; no per-frame mesh allocations.
         var tissue_nodes: Array = a.get("body_nodes", [])
         if tissue_nodes.size() >= 19:
+            var shell_rest: Array = view.mantle_rest_shell
+            if shell_rest.is_empty() or int(current.tick) == 0:
+                shell_rest = []
+                for n in range(7, 19):
+                    shell_rest.append(inverse * (vec(tissue_nodes[n]) - center) / MODEL_SCALE)
+                views[i]["mantle_rest_shell"] = shell_rest
+            var offsets := PackedVector3Array()
+            for n in range(7, 19):
+                var local_shell := inverse * (vec(tissue_nodes[n]) - center) / MODEL_SCALE
+                offsets.append((local_shell - shell_rest[n - 7]).limit_length(0.12))
+            if not view.skin_config.is_empty():
+                skin_deformer.update_mantle(view.skin_config, offsets)
             var shape_scale := mantle_respiration(
                 mantle_scale_from_shell(tissue_nodes, center, inverse),
                 float(current.get("time", 0.0)))
@@ -566,7 +579,7 @@ func _process(delta: float) -> void:
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
-        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_J) and next_command.contains(" 1 0 1.000000 0.000000 1.280000"))
+        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_J) and next_command.contains(" 1 0 1.000000 0.000000 1.480000"))
         input_drag_seen = input_drag_seen or (dragging and drag_kind == 1 and drag_index == 1 and drag_target.distance_to(vec(current.animals[1].center)) > .05)
     command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
     inbox_lock.lock()

@@ -33,7 +33,7 @@ static void render_snapshot(const RenderSnapshot& s){
   std::cout<<"]}";}
  std::cout<<"],\"rigids\":[";
  for(size_t i=0;i<s.rigids.size();++i){if(i)std::cout<<',';const auto& r=s.rigids[i];std::cout<<"{\"center\":";v(r.center);std::cout<<",\"orientation\":";q(r.orientation);std::cout<<",\"half_extents\":";v(r.half_extents);std::cout<<'}';}
- std::cout<<"],\"diagnostics\":{\"step_ms\":"<<s.diagnostics.step_ms<<",\"contact_count\":"<<s.diagnostics.contact_count<<"}}";
+ std::cout<<"],\"diagnostics\":{\"step_ms\":"<<s.diagnostics.step_ms<<",\"contact_count\":"<<s.diagnostics.contact_count<<",\"arm_prop_surface_contacts\":"<<s.diagnostics.arm_prop_surface_contacts<<",\"max_mantle_volume_error\":"<<s.diagnostics.max_mantle_volume_error<<"}}";
 }
 int main(){std::cout<<std::setprecision(6);WorldConfig cfg;PhysicsWorld world(cfg);std::string line;unsigned long long last=0;
  while(std::getline(std::cin,line)){if(line.size()>65536){std::cout<<"{\"version\":1,\"id\":0,\"ok\":false,\"error\":\"request_too_large\"}"<<std::endl;continue;}std::istringstream in(line);int version=0;unsigned long long id=0;std::string op;in>>version>>id>>op;std::string error;

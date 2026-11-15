@@ -289,3 +289,15 @@ movement and not an acceptable calibration for final real-animal
 fidelity. Existing idle case: torso y=0.224709, 94.79% distal nodes
 near ground; visual proxy floor clipping 0, lower belly contact 1.
 Actual private GLB skin continuity still requires local visual review.
+
+2026-11-15 contact/mantle checkpoint: grounded gameplay gained a compliant
+12-cell outer mantle chamber and arm-segment midpoint versus dynamic-prop
+face contacts with bilateral reaction. Floor projection covers the mantle
+shell and runs after the final solver pass. GameReady shader receives twelve
+local native shell offsets, but moving visual skin-to-collider error is not yet
+measured. Release build and CTest 8/8 PASS; 180-tick loaded contact fixture
+max local mantle volume error 1.81%, 724 face corrections and bilateral prop
+motion. Two-animal GPU screenshot/240 ticks PASS at 60.10 simulated ticks/s.
+Ten-animal grounded active native 600-tick p95 14.65 ms, zero nonfinite; full
+Godot ten-animal gate still open. Two-animal grounded active 10,000-tick soak
+also had zero nonfinite. See docs/validation/CONTACT_MANTLE_BALLOON.md.

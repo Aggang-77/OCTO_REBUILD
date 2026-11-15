@@ -28,6 +28,9 @@ uniform float papilla_strength : hint_range(0.0, 0.02) = 0.0025;
 // indices, not a guessed contiguous arm order. Updated from C++ tissue.
 uniform float bone_compression[256];
 uniform float bone_activity[256];
+// Twelve native mantle-shell positions relative to their reset pose, in
+// imported model coordinates. Only torso-root-weighted vertices use them.
+uniform vec3 mantle_offsets[12];
 varying float local_load;
 varying float local_activity;
 varying vec3 original_position;
@@ -54,6 +57,28 @@ void vertex() {
     vec2 fields = skinned_fields(BONE_INDICES, BONE_WEIGHTS);
     local_load = clamp(fields.x, 0.0, 1.0);
     local_activity = clamp(fields.y, 0.0, 1.0);
+    float root_weight = 0.0;
+    for (int i = 0; i < 4; i++) {
+        if (BONE_INDICES[i] == uint(0)) root_weight += BONE_WEIGHTS[i];
+    }
+    vec2 radial = VERTEX.xz - vec2(0.0, 0.1);
+    float radial_length = length(radial);
+    float region = smoothstep(0.12, 0.28, VERTEX.y) *
+                   (1.0 - smoothstep(0.68, 0.76, VERTEX.y)) *
+                   (1.0 - smoothstep(0.37, 0.48, radial_length));
+    if (root_weight > 0.01 && region > 0.001) {
+        vec2 direction = radial / max(radial_length, 0.001);
+        float height = smoothstep(0.20, 0.53, VERTEX.y);
+        vec3 motion = vec3(0.0);
+        float total = 0.0;
+        for (int k = 0; k < 6; k++) {
+            float angle = float(k) * 1.0471975512;
+            float weight = pow(max(dot(direction, vec2(cos(angle), sin(angle))), 0.0), 8.0);
+            motion += mix(mantle_offsets[k], mantle_offsets[6 + k], height) * weight;
+            total += weight;
+        }
+        VERTEX += motion / max(total, 0.001) * root_weight * region;
+    }
     // A fixed, non-random geometric pattern. No fast temporal sine waves:
     // avoiding the previous rubbery, constantly vibrating skin.
     float micro = sin(VERTEX.x * 71.0 + VERTEX.z * 31.0)

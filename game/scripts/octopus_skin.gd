@@ -71,6 +71,9 @@ func _convert_material(original: Material) -> ShaderMaterial:
         material.set_shader_parameter("metallic_tex", standard.metallic_texture)
     material.set_shader_parameter("bone_compression", _zeros())
     material.set_shader_parameter("bone_activity", _zeros())
+    var offsets := PackedVector3Array()
+    offsets.resize(12)
+    material.set_shader_parameter("mantle_offsets", offsets)
     return material
 
 func _zeros() -> PackedFloat32Array:
@@ -119,3 +122,9 @@ func update_skin(config: Dictionary, arms: Array) -> void:
         var shader_material := material as ShaderMaterial
         shader_material.set_shader_parameter("bone_compression", data.bone_compression)
         shader_material.set_shader_parameter("bone_activity", data.bone_activity)
+
+func update_mantle(config: Dictionary, offsets: PackedVector3Array) -> void:
+    if offsets.size() != 12:
+        return
+    for material in config.get("materials", []):
+        (material as ShaderMaterial).set_shader_parameter("mantle_offsets", offsets)
