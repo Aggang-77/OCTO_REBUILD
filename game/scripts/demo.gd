@@ -573,6 +573,13 @@ func step_command() -> String:
             var sign := 1.0
             var cmd: Dictionary = arm_controllers[i].sample(arm, time, held,
                 false, false, false, attached and suction_on, sign, suction_on)
+            if grab_nearest:
+                # Reach stays active while Shift is held; no automatic
+                # contraction phase can peel away an acquired object.
+                cmd.activation = 0.90
+                cmd.extension = 1.42
+                cmd.curvature = 0.0
+                cmd.sweep = 0.0
             if arm_controllers[i].phases[arm] == "rest":
                 # Symmetric resting configuration, with an active low-force
                 # restoring motor in the C++ world rather than a teleport.
