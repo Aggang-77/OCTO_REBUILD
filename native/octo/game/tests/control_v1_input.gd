@@ -1,6 +1,6 @@
 extends SceneTree
 # Runs without the untracked GameReady asset or native C++ process.
-# Real Godot Input.parse_input_event -> game step2 wire serialization.
+# Real Godot Input.parse_input_event -> explicit-target step3 serialization.
 const DEMO = preload("res://scripts/demo.gd")
 
 func _key(code: Key, pressed: bool) -> void:
@@ -196,7 +196,7 @@ func _exercise() -> void:
         _key(key, true)
         await process_frame
         var parts := octo.step_command().split(" ")
-        if not _check(parts[0] == "step2" and parts[1] == "16", "step2 header"):
+        if not _check(parts[0] == "step3" and parts[1] == "16", "step3 header"):
             return
         for animal in 2:
             for j in 8:
@@ -207,21 +207,87 @@ func _exercise() -> void:
         await process_frame
         parts = octo.step_command().split(" ")
         var begin := 2 + (8 + arm) * 9
-        if not _check(float(parts[begin + 4]) > 1.3 and float(parts[begin + 8]) == 0.0, "Shift reach"):
+        if not _check(parts[begin + 7] == "0", "Shift without a clicked target cannot grab remotely"):
             return
+        _key(KEY_CTRL, true)
+        await process_frame
+        parts = octo.step_command().split(" ")
+        if not _check(parts[begin + 7] == "2", "Ctrl+arm releases grab, taking priority over Shift"):
+            return
+        _key(KEY_SHIFT, false)
+        await process_frame
+        parts = octo.step_command().split(" ")
+        if not _check(parts[begin + 7] == "2", "Ctrl+arm release without Shift"):
+            return
+        _key(KEY_CTRL, false)
         _key(KEY_SPACE, true)
         await process_frame
         parts = octo.step_command().split(" ")
-        if not _check(parts[-1] == "1" and float(parts[begin + 2]) == 0.78, "Space enables suction without disabling Shift reach"):
+        if not _check(parts[-6] == "1" and parts[begin + 7] == "0", "Space enables suction independently of grab"):
             return
         _key(KEY_SPACE, false)
         await process_frame
         parts = octo.step_command().split(" ")
-        if not _check(parts[-1] == "0" and float(parts[begin + 2]) == 0.78, "Space release disables suction but not arm motion"):
+        if not _check(parts[-6] == "0", "Space-up disables suction"):
             return
-        _key(KEY_SHIFT, false)
         _key(key, false)
         await process_frame
+    # Native-reported object grab locks that specific arm's normal
+    # controls, independently of the local key-press state.
+    octo.current.animals[1].arms[0]["grabbed"] = true
+    _key(KEY_R, true)
+    _key(KEY_SHIFT, true)
+    await process_frame
+    var locked_parts := octo.step_command().split(" ")
+    var locked_base := 2 + 8 * 9
+    if not _check(locked_parts[locked_base + 7] == "0" and
+            float(locked_parts[locked_base + 2]) == 0.0 and
+            float(locked_parts[locked_base + 5]) == 0.0,
+            "grabbed arm ignores attack, muscle, and twist commands"):
+        return
+    _key(KEY_CTRL, true)
+    await process_frame
+    locked_parts = octo.step_command().split(" ")
+    if not _check(locked_parts[locked_base + 7] == "2",
+            "grabbed arm still accepts Ctrl release"):
+        return
+    _key(KEY_CTRL, false)
+    _key(KEY_SHIFT, false)
+    _key(KEY_R, false)
+    octo.current.animals[1].arms[0]["grabbed"] = false
+    await process_frame
+    # A mouse-selected prop is transmitted as an explicit native target,
+    # never inferred from whichever object happens to be nearest the arm.
+    octo.target_kind = 2
+    octo.target_index = 1
+    octo.target_hit = Vector3(0.75, 0.35, -0.25)
+    _key(KEY_SHIFT, true)
+    _key(KEY_U, true)
+    await process_frame
+    var targeted := octo.step_command().split(" ")
+    var grab_index := 2 + (8 + 7) * 9
+    if not _check(targeted[grab_index + 7] == "1" and
+            targeted[-5] == "2" and targeted[-4] == "1" and
+            absf(float(targeted[-3]) - 0.75) < 0.00001,
+            "Shift + U sends explicitly selected mouse target"):
+        return
+    _key(KEY_SHIFT, false)
+    _key(KEY_U, false)
+    octo.target_kind = 0
+    octo.target_index = -1
+    await process_frame
+    # Ctrl without an arm key releases every existing grab on the
+    # selected animal, but never affects the other animal.
+    _key(KEY_CTRL, true)
+    await process_frame
+    var released := octo.step_command().split(" ")
+    for arm in 8:
+        if not _check(released[2 + (8 + arm) * 9 + 7] == "2" and
+                released[2 + arm * 9 + 7] == "0",
+                "Ctrl alone releases all selected-animal grabs"):
+            return
+    _key(KEY_CTRL, false)
+    await process_frame
     _key(KEY_U, true)
     _key(KEY_R, true)
     await process_frame

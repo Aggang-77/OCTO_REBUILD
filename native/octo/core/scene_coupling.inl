@@ -103,7 +103,7 @@ void mapped_torso_above_arms(double h){
 void scene_constraints(double h){
  for(std::size_t i=0;i<scene_contacts.size();++i){
   const auto& contact=scene_contacts[i];auto& site=p[scene_particle(contact.arm,contact.node)];
-  const double depth=floor_surface_radius(site)-dot(site.x-contact.point,contact.normal);
+  const double depth=site.r-dot(site.x-contact.point,contact.normal);
   if(depth<=0)continue;
   const Vec3 correction=contact.normal*std::min(depth,.025);
   site.x=site.x+correction;

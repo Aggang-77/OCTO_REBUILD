@@ -146,9 +146,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		camera_pitch = clampf(camera_pitch + event.relative.y * 0.005, 0.18, 1.25)
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			camera_distance = maxf(3.5, camera_distance - 0.75)
+			camera_distance = clampf(camera_distance * 0.88, 1.7, 30.0)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			camera_distance = minf(24.0, camera_distance + 0.75)
+			camera_distance = clampf(camera_distance / 0.88, 1.7, 30.0)
 
 func _input(event: InputEvent) -> void:
 	# Deliberately omitted from the normal HUD and menus. Handle before GUI
@@ -298,9 +298,9 @@ func _build_ui() -> void:
 	level_picker.item_selected.connect(_select_level)
 	row.add_child(level_picker)
 	box.add_child(HSeparator.new())
-	box.add_child(_label("촉수 조작 · 누르면 뻗기 → 흡착 → 당기기 → 풀기", 16, Color("dcf1e8")))
-	box.add_child(_label("왼손 · Q W E R       오른손 · U I O P\n각 키는 촉수 하나를 독립적으로 조작합니다\nShift + 촉수 · 계속 뻗기   Ctrl + 촉수 · 버티기\n, / . + 촉수 · 비틀기", 15, Color("d2dddd")))
-	box.add_child(_label("Space 누르기 · 조작 중인 촉수만 흡착 허용\nSpace 놓기 · 모든 흡착과 미소녀 잡기 해제\nSpace 유지 중 잡은 촉수는 키를 놓아도 유지\n문어 좌드래그 · 힘으로 당기기\n우드래그 / 휠 · 시점 회전 / 확대\nC · 문어 / 둘 다 추적    1·2·3 · 난이도", 14, Color("a5b9ba")))
+	box.add_child(_label("촉수 조작 · Q W E R / U I O P", 16, Color("dcf1e8")))
+	box.add_child(_label("좌클릭 · 미소녀 부위 선택 (금색 표시)\nShift + 촉수 · 선택한 대상 공격 / 감싸 잡기\nCtrl + 촉수 · 해당 잡기 해제   Ctrl만 · 모두 해제\n잡은 촉수는 회색 · 해제 전까지 다른 조작 잠김", 15, Color("d2dddd")))
+	box.add_child(_label("Space + 촉수 · 바닥 흡착 (대상 잡기와 별개)\n, / . + 촉수 · 비틀기\nAlt + 좌드래그 · 힘으로 당기기\n우드래그 / 휠 · 시점 회전 / 확대\nC · 문어 / 둘 다 추적    1·2·3 · 난이도", 14, Color("a5b9ba")))
 	var buttons := HBoxContainer.new()
 	box.add_child(buttons)
 	var restart := Button.new()

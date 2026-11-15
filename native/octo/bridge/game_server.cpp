@@ -2,7 +2,7 @@
 #include "server.cpp"
 #include <array>
 namespace {
-constexpr const char* source_sha="8bb743438efd13a0642327b39443f53b20cf3d15";
+constexpr const char* source_sha="9a2a7df438bb5098b9f8492bbb55897c96fb52c4";
 struct MapTransform {
  Vec3 origin{};double scale=1.5;
  Vec3 world(Vec3 p)const{return {origin.x+scale*p.x,origin.y+scale*p.y,origin.z+scale*p.z};}
@@ -19,6 +19,7 @@ RenderSnapshot mapped(RenderSnapshot state,const MapTransform& map){
    for(auto& p:arm.nodes)p=map.world(p);
    for(auto& r:arm.radii){r[0]*=map.scale;r[1]*=map.scale;}
    for(auto& r:arm.contact_radii)r*=map.scale;
+   for(auto& r:arm.grab_radii)r*=map.scale;
    for(auto& ring:arm.volume_rings)for(auto& p:ring)p=map.world(p);
   }
  }
@@ -49,8 +50,8 @@ bool read_step(std::istream& in,const MapTransform& map,std::vector<MuscleComman
     >>command.twist>>command.stiffness>>attach>>command.sweep;
   if(!in||command.animal!=0||command.arm!=i||!std::isfinite(command.activation)||!std::isfinite(command.curvature)
     ||!std::isfinite(command.extension)||!std::isfinite(command.twist)||!std::isfinite(command.stiffness)
-    ||!std::isfinite(command.sweep)||(attach!=0&&attach!=1)){error="bad_command";return false;}
-  command.attach=attach!=0;commands.push_back(command);
+    ||!std::isfinite(command.sweep)||attach<0||attach>2){error="bad_command";return false;}
+  command.attach=false;command.grab_mode=static_cast<unsigned>(attach);commands.push_back(command);
  }
  int kind=0,space=0;in>>kind>>drag.index>>drag.arm>>drag.target.x>>drag.target.y>>drag.target.z>>drag.stiffness>>drag.max_force>>space;
  if(!in||kind<0||kind>2||drag.index!=0||drag.arm>7||!finite_vector(drag.target)||!std::isfinite(drag.stiffness)
@@ -59,6 +60,14 @@ bool read_step(std::istream& in,const MapTransform& map,std::vector<MuscleComman
  drag.kind=static_cast<DragCommand::Kind>(kind);drag.target=map.local(drag.target);drag.max_force/=map.scale;
  if(drag.max_force>1e4){error="bad_drag";return false;}
  suction=space!=0;
+ int target_kind=0,target_index=0;Vec3 target_point{};
+ in>>target_kind>>target_index>>target_point.x>>target_point.y>>target_point.z;
+ if(!in||target_kind<0||target_kind>3||target_index<0||!finite_vector(target_point)){error="bad_target";return false;}
+ if(target_kind>0&&target_kind<3)for(auto& command:commands)if(command.grab_mode==1){
+  command.grab_target_kind=static_cast<unsigned>(target_kind);
+  command.grab_target_index=static_cast<unsigned>(target_index);
+  command.grab_target_point=map.local(target_point);
+ }
  for(bool& value:carry){int bit=0;in>>bit;if(!in||(bit!=0&&bit!=1)){error="bad_carry";return false;}value=bit!=0;}
  in>>count;if(!in||count>64){error="bad_force_count";return false;}
  for(unsigned i=0;i<count;++i){SceneForce force;in>>force.arm>>force.node>>force.force.x>>force.force.y>>force.force.z;
@@ -106,7 +115,7 @@ int main(){
    }else if(op=="mesh_commit"){
     std::string extra;if(!uploading||vertices.size()!=expected||(in>>extra))error="incomplete_mesh";
     else if(!world.static_geometry(vertices))error="bad_mesh";else{ready=true;uploading=false;vertices.clear();}
-   }else if(op=="step5"){
+   }else if(op=="step6"){
     if(!ready)error="geometry_not_ready";
     std::vector<MuscleCommand> commands;DragCommand drag;bool suction=false;std::array<bool,8> carry{};
     std::vector<SceneForce> forces;std::vector<SceneContact> contacts;
@@ -115,7 +124,8 @@ int main(){
     if(error.empty()&&!world.drag(drag))error="drag_rejected";
     if(error.empty()){
      world.release_all_suckers(false);world.set_suction_enabled(suction);world.external_grips(carry);
-     for(const auto& command:commands)world.command(command);if(!world.step())error="step_failed";
+     for(const auto& command:commands)if(!world.command(command)){error="command_rejected";break;}
+     if(error.empty()&&!world.step())error="step_failed";
     }
    }else if(op!="snapshot")error="bad_operation";
   }

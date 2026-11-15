@@ -30,12 +30,12 @@ def main():
             held = active and arm == 0
             commands.append(f"0 {arm} {.78 if held else 0} 0 {1.10 if held else 1.04} 0 .02 0 0")
         mask = [int(carry)] + [0] * 7
-        return request("step5 8 " + " ".join(commands) + f" 0 0 0 0 0 0 30 30 {int(space)} " + " ".join(map(str, mask)) + " 0 0")
+        return request("step6 8 " + " ".join(commands) + f" 0 0 0 0 0 0 30 30 {int(space)} " + "0 0 0 0 0 " + " ".join(map(str, mask)) + " 0 0")
 
     try:
         reset = request("game_reset5 2 .4 -3 1.5 2 -20 -20 40 .4 .4 .4 .4")
         assert not frame(reset)["geometry_ready"]
-        request("step5", False, "geometry_not_ready")
+        request("step6", False, "geometry_not_ready")
         request("mesh_begin 7", False, "bad_mesh_count")
         request("mesh_begin 6")
         request("mesh_chunk 0 3 0 0 0 1 0 0 nan 0 1", False, "bad_mesh_vertex")
@@ -49,7 +49,7 @@ def main():
         world = ready["world"]
         assert ready["geometry_ready"] and world["static_triangles"] == 2
         assert world["size_scale"] == 1.5
-        assert world["source_commit"] == "8bb743438efd13a0642327b39443f53b20cf3d15"
+        assert world["source_commit"] == "9a2a7df438bb5098b9f8492bbb55897c96fb52c4"
         center = world["animals"][0]["center"]
         assert max(abs(a-b) for a, b in zip(center, (2, .805, -3))) < 1e-7, center
         for arm in world["animals"][0]["arms"]:

@@ -17,6 +17,10 @@ struct MuscleCommand {
     double twist=0;              // rad/m
     double stiffness=0;          // [0,1]
     bool attach=false;           // legacy explicit tip attachment
+    std::uint32_t grab_mode=0;    // 0 keep, 1 seek chosen entity, 2 release
+    std::uint32_t grab_target_kind=0; // 1 = other animal, 2 = rigid prop
+    std::uint32_t grab_target_index=0;
+    Vec3 grab_target_point{}; // clicked world-space location on that entity
     double sweep=0;              // [-1,1] body-relative anterior/posterior muscle drive
 };
 struct DragCommand {
@@ -83,6 +87,7 @@ struct ArmSnapshot {
     double uncoil_progress=0;      // base-to-tip unwound fraction [0,1]
     std::vector<Vec3> nodes;     // segments+1, root -> tip, world metres
     std::vector<double> contact_radii; // source conservative contact envelope, one per node
+    std::vector<double> grab_radii; // physical particle radii used by source proximity grabs
     std::vector<Vec3> sucker_directions; // same underside direction used by native acquisition
     std::vector<Quat> frames;    // segments, local +Z is tangent
     std::vector<Vec3> angular_velocities; // 3D director angular velocity, world rad/s
@@ -93,6 +98,7 @@ struct ArmSnapshot {
     std::vector<std::array<Vec3,4>> volume_rings; // 4 real 3D surface masses per ring; not a rendered GLB mesh
     std::vector<std::array<double,2>> radii; // segments, ellipse semiaxes metres
     std::vector<bool> attached;  // segments; physical attachment, not decoration
+    bool grabbed=false; // external object grab, independent of floor suction
 };
 struct AnimalSnapshot {
     Vec3 center{};

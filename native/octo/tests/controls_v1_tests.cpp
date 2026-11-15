@@ -55,6 +55,32 @@ int main(){try{
   require(strong_snapshot.diagnostics.nonfinite_count==0,
           "strong motor state remains finite");
 
+  // Explicit grab is independent of floor suction and persists until
+  // its own release command. An unknown grab opcode is rejected.
+  {WorldConfig scene=isolated;
+   scene.animals=2;scene.spacing=.7;scene.collisions=true;
+   scene.rigid_count=1;scene.gravity={0,0,0};
+   PhysicsWorld gripping(scene);
+   MuscleCommand grab;grab.animal=0;grab.arm=0;
+   grab.grab_mode=1;grab.activation=.9;grab.extension=1.4;
+   grab.grab_target_kind=2;grab.grab_target_index=0;
+   grab.grab_target_point={-.65,.32,1.35};
+   require(gripping.command(grab),"selected prop grab accepted");
+   grab.grab_target_kind=3;
+   require(!gripping.command(grab),"invalid selected target kind rejected");
+   grab.grab_target_kind=2;
+   grab.grab_mode=3;
+   require(!gripping.command(grab),"invalid grab opcode rejected");
+   for(int i=0;i<30;++i)
+    require(gripping.step(),"nearby-object grasp pursuit stays stable");
+   grab.grab_mode=2;
+   grab.activation=0;grab.extension=1.04;
+   require(gripping.command(grab),"Ctrl release opcode accepted");
+   for(int i=0;i<10;++i)
+    require(gripping.step(),"grab release stays stable");
+   require(gripping.snapshot().diagnostics.nonfinite_count==0,
+           "grab interactions remain finite");
+  }
   // Invalid / unbounded forces cannot silently enter the solver.
   {auto invalid=isolated; invalid.arm_motor_strength=15.;
    bool rejected=false;try{PhysicsWorld bad(invalid);}catch(const std::invalid_argument&){rejected=true;}

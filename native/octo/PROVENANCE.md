@@ -1,7 +1,7 @@
 # Mantle-balloon integration
 
 The integrated game uses `songhh06/OCTO_REBUILD` branch
-`fix/contact-mantle-balloon` at `8bb743438efd13a0642327b39443f53b20cf3d15`.
+`fix/contact-mantle-balloon` at `9a2a7df438bb5098b9f8492bbb55897c96fb52c4`.
 The remote ref was verified with Git before importing it. Its history is a
 parent of the local merge, alongside the existing integrated game history.
 The previous selective-arm prototype is preserved in checkpoint `c8ba4b7`
@@ -18,13 +18,21 @@ The source grounded profile is used: `grounded_rest=true`,
 `auto_suction=true`, one animal and no native demo props. The original
 reach/seal/pull/release controller, passive flesh, friction, suction, mantle
 chambers and mantle/web/root constraints are retained without movement tuning.
-Space enables suction only on actively commanded arms; Space-up clears it.
+Space enables floor suction only on actively commanded arms; Space-up clears
+floor suction independently of object grabs. The latest source adds clicked
+targets, Shift+arm approach/grab, Ctrl+arm release, Ctrl-alone release-all,
+Alt+left-drag and wheel zoom. Grabbed arms lock other muscle commands until
+released. Native proximity-grab logic is retained unchanged.
 
 The map, hunters, character physics, difficulty selection, ten-second continuous
 capture objective, reset/pause and secret fight transition remain from the
 integrated game. A carried hunter uses its existing finite spring bindings.
-While Space remains held, releasing an arm key retains an already established
-hunter hold; Space-up releases it. Occupied arms cannot also grip native ground.
+An established hunter hold persists after releasing the arm key and Space;
+Ctrl releases it. Occupied arms cannot also grip native ground. Hunter target
+approach and distal wrapping use bounded forces with opposite body reactions;
+acquisition uses the source physical radius and 0.035 m proximity gap, separately
+from the larger grounded contact envelope. Ctrl+Shift without an arm remains
+reserved for the existing secret-mode chord.
 
 ## Integration boundaries
 
@@ -34,7 +42,7 @@ floor-grip exclusion mask. Without registered terrain or scene inputs the
 source flat-floor paths are unchanged. These hooks do not replace the source
 muscle/controller or mantle/web algorithms.
 
-The `game_server.cpp` adapter exposes `game_reset5` and `step5`. It applies the
+The `game_server.cpp` adapter exposes `game_reset5` and `step6`. It applies the
 uniform compatibility transform `world = origin + 1.5 * native` to snapshots,
 geometry and contacts. Forces enter divided by scale and reaction impulses
 leave multiplied by scale. Drag stiffness is unchanged, and its force cap is
@@ -47,7 +55,28 @@ native BVH. Hunters and dynamic props retain Godot/Jolt physics; bounded spring
 loads and contact reactions cross the adapter. This is explicit coupling between
 two solvers, not a migration of all character dynamics into C++.
 
-## Verification
+## Current verification
+
+For the 9a2a7df update, checks were limited to the changed octopus integration:
+
+- Production native executable rebuilt successfully with Zig 0.13.0. A direct
+  startup/snapshot request reported the expected source commit and exited cleanly.
+- Source input parity: 15 focused checks passed, including target selection,
+  Shift attack, Ctrl release, grabbed-arm locks and the step6 target trailer.
+- A five-step native fixture passed external-grip lock/release, physical versus
+  grounded radii, and dynamic contact clearance checks.
+- A transport-only Godot fixture passed ordered reset/mesh-begin/mesh-commit
+  replies with geometry_ready=true. The initial reset is now queued before the
+  pipe worker starts, and that worker owns every live pipe write.
+- One actual-map startup check passed five assertions: 99,825 collision
+  triangles uploaded, native time advanced, source identity/scale/radii matched,
+  and a real hunter target was selected and accepted by step6. Initial setup
+  took about 16 seconds; no long capture fixture was run.
+- Unchanged map, character, secret fight and broad physics suites were not rerun.
+  A complete gameplay session and ten-second physical capture with this source
+  have not been verified.
+
+## Historical verification (8bb7434 integration)
 
 On Windows with Zig 0.13.0 and Godot 4.7.2:
 
@@ -74,8 +103,9 @@ On Windows with Zig 0.13.0 and Godot 4.7.2:
   reports -0.0907439 m). These failures are retained and are not hidden by
   changing the authoritative movement or lowering assertions.
 
-Run `tools/build_octopus.ps1` to rebuild. `-Tests` also runs the source tests and
-will report those known upstream failures. Game integration fixtures are in
+Run `tools/build_octopus.ps1` to rebuild. `-Tests` also runs the source tests;
+the two failures above were observed against the prior 8bb7434 source, not
+rechecked for this update. Game integration fixtures are in
 `tests/test_octopus_merge.gd`, `test_octopus_contact.gd` and `test_secret_fight.gd`.
 This record does not establish biological fidelity, a maximum climb angle or a
 real-time 60 Hz performance guarantee.

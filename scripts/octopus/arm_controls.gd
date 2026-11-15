@@ -23,8 +23,8 @@ func enter(arm: int, phase: String, time: float) -> void:
     phases[arm] = phase
     starts[arm] = time
 
-func sample(arm: int, time: float, held: bool, stretch: bool,
-        brace: bool, release: bool, attached: bool, sweep_sign: float = 1.0,
+func sample(arm: int, time: float, held: bool, _unused_stretch: bool,
+        _unused_brace: bool, release: bool, attached: bool, sweep_sign: float = 1.0,
         suction_enabled: bool = true) -> Dictionary:
     if phases.is_empty() or time < last_time:
         reset()
@@ -33,12 +33,6 @@ func sample(arm: int, time: float, held: bool, stretch: bool,
         if phases[arm] != "rest":
             enter(arm, "rest", time)
         return {"activation": 0.0, "extension": 0.78 if release else 1.04,
-            "curvature": 0.0, "sweep": 0.0}
-    # Manual overrides: Shift extends without a power stroke; Ctrl braces.
-    if stretch or brace:
-        if phases[arm] not in ["brace", "reach"]:
-            enter(arm, "brace" if brace else "reach", time)
-        return {"activation": 0.78, "extension": 1.10 if brace else 1.35,
             "curvature": 0.0, "sweep": 0.0}
     if phases[arm] not in PHASES:
         enter(arm, "reach", time)
