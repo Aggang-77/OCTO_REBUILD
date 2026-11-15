@@ -558,25 +558,30 @@ void arm_prop_surfaces(){
   }
  }
 
-void limit_local_arm_kinks(){
- // Activate only for a turn sharper than 120 degrees.
+void limit_proximal_arm_kinks(){
+ // Only the proximal junction requires a gradual bend. Distal rods
+ // retain full coiling freedom.
  if(!cfg.grounded_rest)return;
- constexpr double kink_cos=.50;
+ const double pi=std::acos(-1.0);
  for(auto& animal:animals)for(auto& arm:animal.arms)
-  for(unsigned j=2;j<cfg.segments;++j){
+  for(unsigned j=1;j<=std::min(3u,cfg.segments-1);++j){
    P& l=p[arm.p[j-1]],&m=p[arm.p[j]],&r=p[arm.p[j+1]];
    const Vec3 left=l.x-m.x,right=r.x-m.x;
    const double ll=norm(left),rr=norm(right);
    if(ll<1e-7||rr<1e-7)continue;
+   const double max_turn=(j==1?80.:(j==2?100.:120.))*pi/180.;
+   const double threshold=-std::cos(max_turn);
    const double cosine=dot(left,right)/(ll*rr);
-   if(cosine<=kink_cos)continue;
+   if(cosine<=threshold)continue;
+   // Correct a sharp kink progressively while allowing the whole
+   // junction to flex and exchange reactions with the mantle.
    const Vec3 midpoint=(l.x+r.x)*.5;
-   const Vec3 move=(midpoint-m.x)*std::min(.24,.48*(cosine-kink_cos));
-   const double weights=m.inv+.25*(l.inv+r.inv);
-   if(weights<1e-12)continue;
-   m.x=m.x+move*(m.inv/weights);
-   l.x=l.x-move*(.5*l.inv/weights);
-   r.x=r.x-move*(.5*r.inv/weights);
+   const Vec3 move=(midpoint-m.x)*std::min(.32,.55*(cosine-threshold));
+   const double weight=m.inv+.25*(l.inv+r.inv);
+   if(weight<1e-12)continue;
+   m.x=m.x+move*(m.inv/weight);
+   l.x=l.x-move*(.5*l.inv/weight);
+   r.x=r.x-move*(.5*r.inv/weight);
   }
 }
 void contacts(){root_angle_limits();project_floor();
@@ -601,13 +606,13 @@ if((a.animal>=0&&b.rigid>=0)||(b.animal>=0&&a.rigid>=0))++diag.animal_prop_conta
 double w=a.inv+b.inv;a.x=a.x-n*(depth*a.inv/w);b.x=b.x+n*(depth*b.inv/w);
 Vec3 relative=(b.x-b.old)-(a.x-a.old);Vec3 tangent=relative-n*dot(relative,n);double tl=norm(tangent);
 if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}
-}}intra_animal_surface_contacts();arm_prop_surfaces();limit_local_arm_kinks();project_floor();}
+}}intra_animal_surface_contacts();arm_prop_surfaces();limit_proximal_arm_kinks();project_floor();}
 
 
 
 void root_angle_limits(){
  if(!cfg.grounded_rest)return;
- const double cosine_limit=std::cos((cfg.tissue_stiffness_ratio<.5?165.:65.)*std::acos(-1.)/180.);
+ const double cosine_limit=std::cos((cfg.tissue_stiffness_ratio<.5?105.:65.)*std::acos(-1.)/180.);
  for(auto& animal:animals){
   Vec3 forward=unit(p[animal.body[5]].x-p[animal.body[6]].x);
   Vec3 up=unit(p[animal.body[3]].x-p[animal.body[4]].x);
