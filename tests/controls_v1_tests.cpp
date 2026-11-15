@@ -83,6 +83,32 @@ int main(){try{
     require(sticky.step(),"cooldown stable");
     require(sticky.snapshot().diagnostics.attachments==0,"no instantaneous regrip");
   }
+  // Gameplay Space gate is independent of the legacy forced-release API.
+  // Default explicit gameplay state is OFF, including all idle suckers.
+  {
+   PhysicsWorld gated(floor);
+   gated.set_suction_enabled(false);
+   for(int i=0;i<180;++i){
+    require(gated.step(),"suction-off physics remains stable");
+    require(gated.snapshot().diagnostics.attachments==0,
+            "Space-up must prevent all idle sucker attachments");
+   }
+   gated.set_suction_enabled(true);
+   std::uint64_t on_grips=0;
+   for(int i=0;i<240;++i){
+    require(gated.step(),"Space-held suction physics remains stable");
+    on_grips=std::max(on_grips,gated.snapshot().diagnostics.attachments);
+   }
+   require(on_grips>0,"Space-held enables real-contact idle arm suction");
+   gated.set_suction_enabled(false);
+   require(gated.snapshot().diagnostics.attachments==0,
+           "Space-up must immediately clear existing grips");
+   for(int i=0;i<20;++i){
+    require(gated.step(),"post-release physics remains stable");
+    require(gated.snapshot().diagnostics.attachments==0,
+            "Space-up cannot regain suction");
+   }
+  }
   // Extension must seek an actual floor contact, then acquire an
   // ordinary suction constraint; no distant/teleported attachment.
   {auto reach_cfg=floor;reach_cfg.spawn_height=.75;reach_cfg.softness=5.;
