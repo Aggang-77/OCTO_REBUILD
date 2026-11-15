@@ -585,7 +585,7 @@ void arm_prop_surfaces(){
      }
      // Exclude the arm root and adjoining tissue: they are intentionally
      // connected to the mantle by compliant links.
-     if(j<3)continue;
+     if(j<2)continue;
       // Inner torso collider closes holes between the sparse mantle shell particles.
       P& core=p[animal.body[0]];
       const Vec3 span=b.x-a.x;
@@ -593,7 +593,7 @@ void arm_prop_surfaces(){
       const double q=span2>eps?std::clamp(dot(core.x-a.x,span)/span2,0.,1.):0.;
       const Vec3 delta_core=core.x-(a.x+span*q);
       const double dist_core=norm(delta_core),limit_core=ra+.175;
-      if(dist_core<limit_core){
+      if(j>=3&&dist_core<limit_core){
        const Vec3 normal=dist_core>1e-9?delta_core/dist_core:Vec3{0,1,0};
        const double invsum=a.inv*(1-q)*(1-q)+b.inv*q*q+core.inv;
        if(invsum>eps){
@@ -606,6 +606,7 @@ void arm_prop_surfaces(){
        }
       }
      for(int id:animal.shell){
+      if(j==2&&id<animal.shell[6])continue;
       P& shell=p[id];
       const Vec3 edge=b.x-a.x;
       const double len2=dot(edge,edge);
@@ -628,6 +629,49 @@ void arm_prop_surfaces(){
   }
  }
 
+void web_mantle_contacts(){
+ // Triangles on adjacent proximal rods turn the soft distance-strand web
+ // into an actual collision surface for the dorsal mantle. No rigid mesh.
+ if(!cfg.grounded_rest||!cfg.collisions)return;
+ for(auto& animal:animals)for(int k=0;k<8;++k){
+  const auto& a=animal.arms[k];
+  const auto& b=animal.arms[(k+1)%8];
+  for(unsigned j=1;j<=std::min(4u,cfg.segments-1);++j){
+   const std::array<std::array<int,3>,2> faces{{
+    {{a.p[j],b.p[j],a.p[j+1]}},
+    {{b.p[j],b.p[j+1],a.p[j+1]}}
+   }};
+   for(const auto& tri:faces){
+    P& v0=p[tri[0]];P& v1=p[tri[1]];P& v2=p[tri[2]];
+    const Vec3 x=v0.x,y=v1.x,z=v2.x;
+    const double ux=y.x-x.x,uz=y.z-x.z,vx=z.x-x.x,vz=z.z-x.z;
+    const double det=ux*vz-uz*vx;
+    if(std::abs(det)<1e-8)continue;
+    for(int id:animal.shell){
+     if(id<animal.shell[6])continue;
+     P& shell=p[id];
+     const double px=shell.x.x-x.x,pz=shell.x.z-x.z;
+     const double t=(px*vz-pz*vx)/det;
+     const double u=(ux*pz-uz*px)/det;
+     const double w=1.-t-u;
+     if(t<0||u<0||w<0)continue;
+     const double surface=x.y*w+y.y*t+z.y*u;
+     const double depth=surface+.035+shell.r-shell.x.y;
+     if(depth<=0||depth>.22)continue;
+     const double sum=shell.inv+v0.inv*w*w+v1.inv*t*t+v2.inv*u*u;
+     if(sum<=1e-10)continue;
+     const double impulse=std::min(depth,.065)/sum;
+     shell.x.y+=impulse*shell.inv;
+     v0.x.y-=impulse*v0.inv*w;
+     v1.x.y-=impulse*v1.inv*t;
+     v2.x.y-=impulse*v2.inv*u;
+     ++diag.contact_count;
+     diag.max_penetration=std::max(diag.max_penetration,depth);
+    }
+   }
+  }
+ }
+}
 void limit_proximal_arm_kinks(){
  // Only the proximal junction requires a gradual bend. Distal rods
  // retain full coiling freedom.
@@ -676,7 +720,7 @@ if((a.animal>=0&&b.rigid>=0)||(b.animal>=0&&a.rigid>=0))++diag.animal_prop_conta
 double w=a.inv+b.inv;a.x=a.x-n*(depth*a.inv/w);b.x=b.x+n*(depth*b.inv/w);
 Vec3 relative=(b.x-b.old)-(a.x-a.old);Vec3 tangent=relative-n*dot(relative,n);double tl=norm(tangent);
 if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}
-}}intra_animal_surface_contacts();arm_prop_surfaces();limit_proximal_arm_kinks();project_floor();}
+}}intra_animal_surface_contacts();web_mantle_contacts();arm_prop_surfaces();limit_proximal_arm_kinks();project_floor();}
 
 
 
