@@ -41,6 +41,7 @@ def main() -> None:
         moving = request(6, step2(0))
         assert moving["ok"] and moving["snapshot"]["tick"] == 1
         assert len(moving["snapshot"]["animals"][0]["arms"][0]["attached"]) == 16
+        assert moving["snapshot"]["animals"][0]["arms"][0]["grabbed"] is False, "new object grab state is explicitly reported"
         assert len(moving["snapshot"]["animals"][0]["arms"][0]["creep"]) == 16
         assert len(moving["snapshot"]["animals"][0]["arms"][0]["elastic_strain"]) == 16
         assert len(moving["snapshot"]["animals"][0]["body_nodes"]) == 19, "physical mantle shell absent from bridge"
