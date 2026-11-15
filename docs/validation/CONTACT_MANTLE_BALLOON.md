@@ -45,3 +45,46 @@ Remaining: continuous arm-surface CCD, direct moving GLB skin clearance
 measurement, higher-resolution mantle pressure/volume model, all-arm material
 volume, realistic resting silhouette and a player visual review. The current
 screen still shows a coarse head and spokes rather than fully organic tissue.
+
+
+## Grounded torso / locomotion follow-up (2026-11-15, unverified)
+
+Two gameplay complaints were targeted in the shared C++ world:
+
+- **Belly / seabed**: the grounded central torso particle now has at least
+  0.170 m floor clearance, and all twelve mantle shell particles at least
+  0.125 m clearance, rather than relying on 0.065 m particle-only radii.
+  The floor projection still runs after the solver. This is a conservative
+  physics proxy, **not a verified clearance measurement of the deformed
+  GameReady GPU mesh**.
+- **Support**: the reaction-pair support motor between the center and
+  actually grounded proximal arm particles has a 2.8 N force limit and a
+  0.170 m center-height target relative to support particles. Previously
+  its 0.38 N cap could barely oppose mantle weight. The adjustment does not
+  teleport the torso and preserves equal/opposite internal forces.
+- **Stroke**: during strongly active axial extension only, the XPBD axial
+  compliance multiplier is 0.27. Inactive rods remain soft. Motor target
+  tracking stays at 22/s; the key controller now uses shorten 0.13 s,
+  anchor timeout 0.30 s, elongate 0.28 s and release 0.15 s, with
+  target extension reaching 1.47. This aims to improve speed using
+  suction-mediated reactions rather than artificial world-space pushes.
+- **Regression**: `tests/contact_mantle_tests.cpp` now asserts the new
+  center and shell floor envelopes. Existing Godot keymap tests are
+  updated for the 0.62 shorten activation.
+
+**Validation is not complete:** This session had no network path for
+cloning a repository into the Linux build container and no installed
+Godot executable. Code commits were uploaded through the GitHub
+connector. No local CTest/Godot run, speed comparison, pixel-level
+skin-floor clearance, or FPS regression pass is claimed.
+
+Suggested Windows gates:
+1. `./tools/build.ps1` then `ctest --test-dir build --output-on-failure`
+   (adapt the build directory to that actually created by the script).
+2. Run the grounded GameReady demo. Verify that no visible mantle vertex
+   passes below the seabed while crawling and dragging the body.
+3. Compare horizontal center displacement over equal 300-tick active
+   sequences before vs after the change; report m/s, attachment count,
+   peak penetration, and physics p95. Do not interpret a higher
+   motor setting alone as a measured speed gain.
+
