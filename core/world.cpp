@@ -871,6 +871,7 @@ void record_sucker_frame(Arm& ar,Sucker& s){
 void follow_surface(double h){
  if(!cfg.auto_suction||release_held||!suction_enabled)return;
  for(auto& animal:animals)for(auto& ar:animal.arms){
+  if(!sucker_allowed_for_arm(ar))continue;
   if(ar.target.activation<.5||ar.target.extension<1.0)continue;
   const Sucker* latest=nullptr;
   for(const auto& s:ar.suckers)
@@ -963,6 +964,7 @@ void torso_above_arms(double h){
 void seek_floor_contact(double h){
  if(!cfg.auto_suction||!cfg.floor||!cfg.reach_ground_on_extend||release_held||!suction_enabled)return;
  for(auto&animal:animals)for(auto&ar:animal.arms){
+  if(!sucker_allowed_for_arm(ar))continue;
   if(ar.target.activation<.5||ar.target.extension<1.0)continue;
   bool has_grip=false;
   for(const auto& s:ar.suckers)if(s.attached!=-1){has_grip=true;break;}
@@ -978,10 +980,19 @@ void seek_floor_contact(double h){
   }
  }
 }
+bool sucker_allowed_for_arm(const Arm& arm)const{
+ // Legacy native callers keep their old auto-suction behavior.
+ // Gameplay Space is only an enable modifier for a commanded arm.
+ return suction_enabled&&(!suction_explicit_control||arm.target.activation>.50);
+}
+void clear_arm_grips(Arm& arm){
+ arm.attached=-1;
+ for(auto& s:arm.suckers){s.attached=-1;s.dwell=0;s.cooldown=0;}
+}
 void suction_constraints(double h){
  if(!cfg.auto_suction||release_held||!suction_enabled)return;
  for(auto&animal:animals)for(auto&ar:animal.arms)for(auto&s:ar.suckers){
-  if(s.attached==-1)continue;
+  if(!sucker_allowed_for_arm(ar)||s.attached==-1)continue;
   auto&node=p[ar.p[s.node]];
   const Vec3 target=s.attached==-2?s.anchor:p[s.attached].x;
   const Vec3 delta=target-node.x;
@@ -1081,7 +1092,7 @@ void update_suckers(double h){
   else ar.peel_clock=0;
   for(auto&s:ar.suckers){
    s.cooldown=std::max(0.0,s.cooldown-h);
-   if(release_held||!suction_enabled||
+   if(release_held||!sucker_allowed_for_arm(ar)||
        (!suction_explicit_control&&ar.target.activation<.1&&ar.target.extension<.82)||
        (suction_explicit_control&&ar.target.activation<.1&&ar.active.activation>.30&&ar.active.extension<.95)){
     // Clear timed push-stroke grips before the next shortening phase.
@@ -1099,7 +1110,7 @@ void update_suckers(double h){
    // An octopus resting under its own weight can make contact without
    // automatically welding every inactive sucker to the seabed. Gripping
    // remains a separate, active behavior and Space still releases.
-   if(ar.target.extension<.87||(cfg.grounded_rest&&!suction_explicit_control&&ar.target.activation<.1&&ar.active.activation<.15)){
+   if(!sucker_allowed_for_arm(ar)||ar.target.extension<.87||(cfg.grounded_rest&&!suction_explicit_control&&ar.target.activation<.1&&ar.active.activation<.15)){
     s.dwell=0;
     continue;
    }
@@ -1243,7 +1254,11 @@ PhysicsWorld::PhysicsWorld(const WorldConfig& c):impl_(std::make_unique<Impl>(c)
 PhysicsWorld::~PhysicsWorld()=default;PhysicsWorld::PhysicsWorld(PhysicsWorld&&) noexcept=default;PhysicsWorld&PhysicsWorld::operator=(PhysicsWorld&&) noexcept=default;
 void PhysicsWorld::reset(const WorldConfig&c){auto fresh=std::make_unique<Impl>(c);impl_=std::move(fresh);}
 const WorldConfig&PhysicsWorld::config()const{return impl_->requested_cfg;}
-bool PhysicsWorld::command(const MuscleCommand&c){if(c.animal>=impl_->animals.size()||c.arm>=8||!std::isfinite(c.activation)||!std::isfinite(c.curvature)||!std::isfinite(c.extension)||!std::isfinite(c.twist)||!std::isfinite(c.stiffness)||!std::isfinite(c.sweep))return false;auto v=c;v.activation=std::clamp(v.activation,0.,1.);v.curvature=std::clamp(v.curvature,-15.,15.);v.extension=std::clamp(v.extension,.55,1.50);v.twist=std::clamp(v.twist,-20.,20.);v.stiffness=std::clamp(v.stiffness,0.,1.);v.sweep=std::clamp(v.sweep,-1.,1.);impl_->animals[c.animal].arms[c.arm].target=v;return true;}
+bool PhysicsWorld::command(const MuscleCommand&c){if(c.animal>=impl_->animals.size()||c.arm>=8||!std::isfinite(c.activation)||!std::isfinite(c.curvature)||!std::isfinite(c.extension)||!std::isfinite(c.twist)||!std::isfinite(c.stiffness)||!std::isfinite(c.sweep))return false;auto v=c;v.activation=std::clamp(v.activation,0.,1.);v.curvature=std::clamp(v.curvature,-15.,15.);v.extension=std::clamp(v.extension,.55,1.50);v.twist=std::clamp(v.twist,-20.,20.);v.stiffness=std::clamp(v.stiffness,0.,1.);v.sweep=std::clamp(v.sweep,-1.,1.);auto& arm=impl_->animals[c.animal].arms[c.arm];
+ arm.target=v;
+ if(impl_->suction_explicit_control&&v.activation<=.50)
+  impl_->clear_arm_grips(arm);
+ return true;}
 void PhysicsWorld::set_suction_enabled(bool enabled){
  impl_->suction_explicit_control=true;
  impl_->suction_enabled=enabled;
