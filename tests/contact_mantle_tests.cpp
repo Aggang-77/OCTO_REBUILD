@@ -49,10 +49,15 @@ int main(){try{
   }
   surface_hits+=a.diagnostics.arm_prop_surface_contacts;
   volume_error=std::max(volume_error,a.diagnostics.max_mantle_volume_error);
+  // Physical mantle center and every shell mass must clear the new
+  // skin envelope; particle-only collision would have allowed rendered
+  // belly penetration even when the center was above the old radius.
+  require(animal.body_nodes[0].y>=.17-1e-6,
+          "inner mantle belly floor support");
   for(size_t j=7;j<19;++j){
    shell_difference=std::max(shell_difference,dist(a.animals[0].body_nodes[j],b.animals[0].body_nodes[j]));
-   require(a.animals[0].body_nodes[j].y>=cfg.visual_mantle_floor_radius-1e-6,
-           "mantle shell does not sink through floor");
+   require(a.animals[0].body_nodes[j].y>=.125-1e-6,
+           "outer mantle shell clears conservative floor skin envelope");
   }
   for(const auto& arm:a.animals[0].arms)for(size_t j=0;j<arm.nodes.size();++j){
    double u=double(j)/cfg.segments;
