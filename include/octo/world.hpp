@@ -120,7 +120,8 @@ public:
     void reset(const WorldConfig& config);
     bool command(const MuscleCommand& command);
     bool drag(const DragCommand& command);
-    void release_all_suckers(bool held); // Space overrides all grips while held
+    void release_all_suckers(bool held); // Legacy native API: force release while held
+    void set_suction_enabled(bool enabled); // Gameplay: Space held = ON, otherwise OFF
     bool impulse_rigid(std::uint32_t index, Vec3 impulse); // N·s at the prop center, for controlled physical fixtures
     bool step();                 // exactly config.fixed_dt; false on invalid state
     RenderSnapshot snapshot() const;
