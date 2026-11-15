@@ -196,7 +196,7 @@ func _exercise() -> void:
         _key(key, true)
         await process_frame
         var parts := octo.step_command().split(" ")
-        if not _check(parts[0] == "step2" and parts[1] == "16", "step2 header"):
+        if not _check(parts[0] == "step3" and parts[1] == "16", "step2 header"):
             return
         for animal in 2:
             for j in 8:
@@ -223,15 +223,35 @@ func _exercise() -> void:
         _key(KEY_SPACE, true)
         await process_frame
         parts = octo.step_command().split(" ")
-        if not _check(parts[-1] == "1" and parts[begin + 7] == "0", "Space enables suction independently of grab"):
+        if not _check(parts[-6] == "1" and parts[begin + 7] == "0", "Space enables suction independently of grab"):
             return
         _key(KEY_SPACE, false)
         await process_frame
         parts = octo.step_command().split(" ")
-        if not _check(parts[-1] == "0", "Space-up disables suction"):
+        if not _check(parts[-6] == "0", "Space-up disables suction"):
             return
         _key(key, false)
         await process_frame
+    # A mouse-selected prop is transmitted as an explicit native target,
+    # never inferred from whichever object happens to be nearest the arm.
+    octo.target_kind = 2
+    octo.target_index = 1
+    octo.target_hit = Vector3(0.75, 0.35, -0.25)
+    _key(KEY_SHIFT, true)
+    _key(KEY_U, true)
+    await process_frame
+    var targeted := octo.step_command().split(" ")
+    var grab_index := 2 + (8 + 7) * 9
+    if not _check(targeted[grab_index + 7] == "1" and
+            targeted[-5] == "2" and targeted[-4] == "1" and
+            absf(float(targeted[-3]) - 0.75) < 0.00001,
+            "Shift + U sends explicitly selected mouse target"):
+        return
+    _key(KEY_SHIFT, false)
+    _key(KEY_U, false)
+    octo.target_kind = 0
+    octo.target_index = -1
+    await process_frame
     # Ctrl without an arm key releases every existing grab on the
     # selected animal, but never affects the other animal.
     _key(KEY_CTRL, true)
