@@ -67,6 +67,7 @@ var distance := 8.0
 var target_kind := 0 # 0 none, 1 another octopus, 2 physics prop
 var target_index := -1
 var target_hit := Vector3.ZERO
+var target_previous_center := Vector3.ZERO
 var target_marker: Node3D
 var dragging := false
 var drag_kind := 0
@@ -340,6 +341,8 @@ func update_target_marker() -> void:
     if not target_marker.visible:
         return
     var base := target_center()
+    target_hit += base - target_previous_center
+    target_previous_center = base
     target_marker.position = base + Vector3.UP * (0.52 if target_kind == 1 else 0.40)
 
 func select_mouse_target(screen_point: Vector2) -> void:
@@ -374,6 +377,7 @@ func select_mouse_target(screen_point: Vector2) -> void:
     target_kind = kind
     target_index = index
     target_hit = point
+    target_previous_center = target_center()
     update_target_marker()
 
 func send(command: String) -> void:
@@ -405,7 +409,7 @@ func poll() -> void:
         if not parsed.get("ok", false):
             var bridge_error := str(parsed.get("error", "unknown"))
             if bridge_error == "bad_operation":
-                fail("C++ server cannot handle controls-v1 'step2'. Close the game, run tools/build.ps1 and relaunch PLAY_DEMO.cmd. Server: " + OS.get_environment("OCTO_SERVER"))
+                fail("C++ server does not support targeted step3 commands. Rebuild the native server with tools/build.ps1 and relaunch PLAY_DEMO.cmd. Server: " + OS.get_environment("OCTO_SERVER"))
             else:
                 fail("Bridge: " + bridge_error)
             return
