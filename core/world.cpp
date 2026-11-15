@@ -1209,8 +1209,7 @@ void proximity_grabs(double h){
    for(size_t k=0;k<p.size();++k){
     const P& other=p[k];
     const bool eligible=(arm.grab_target_kind==1&&
-                         other.animal==int(arm.grab_target_index)&&
-                         other.arm<0)||
+                         other.animal==int(arm.grab_target_index))||
                         (arm.grab_target_kind==2&&
                          other.rigid==int(arm.grab_target_index));
     if(!eligible||other.animal==int(ai))continue;
