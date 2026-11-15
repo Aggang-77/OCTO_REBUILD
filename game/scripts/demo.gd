@@ -612,10 +612,10 @@ func exercise_input() -> void:
         input_arm_baseline = active_tip.distance_to(passive_tip)
         inject_key(KEY_TAB,true)
         inject_key(KEY_TAB,false)
-        inject_key(KEY_U,true)
+        inject_key(KEY_R,true)
         input_phase = 1
     if current.tick >= 55 and input_phase == 1:
-        inject_key(KEY_U,false)
+        inject_key(KEY_R,false)
         input_center_baseline = vec(current.animals[1].center)
         var event := InputEventMouseButton.new()
         event.button_index = MOUSE_BUTTON_LEFT
@@ -684,7 +684,7 @@ func _process(delta: float) -> void:
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
-        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_U) and next_command.contains(" 1 0 0.780000 0.000000 1.350000"))
+        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_R) and next_command.contains(" 1 0 0.520000 0.800000 0.900000"))
         input_drag_seen = input_drag_seen or (dragging and drag_kind == 1 and drag_index == 1 and drag_target.distance_to(vec(current.animals[1].center)) > .05)
     command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
     inbox_lock.lock()
