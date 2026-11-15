@@ -571,7 +571,7 @@ func step_command() -> String:
             var sign := 1.0
             var cmd: Dictionary = arm_controllers[i].sample(arm, time, held,
                 manual and Input.is_physical_key_pressed(KEY_SHIFT),
-                manual and Input.is_physical_key_pressed(KEY_CTRL), false, attached and suction_on, sign)
+                manual and Input.is_physical_key_pressed(KEY_CTRL), false, attached and suction_on, sign, suction_on)
             if arm_controllers[i].phases[arm] == "rest":
                 # Symmetric resting configuration, with an active low-force
                 # restoring motor in the C++ world rather than a teleport.
