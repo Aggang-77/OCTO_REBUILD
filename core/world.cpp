@@ -39,7 +39,7 @@ struct Sucker{
  double wrap_radius=0; // local object curvature estimate (metres)
 };
 struct TissueSection{double transverse=1,rate=0,pressure=0;};
-struct Arm{std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda,bend_creep;std::vector<int> axial_edges;std::vector<std::array<int,4>> volume_rings;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
+struct Arm{std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda,bend_creep;std::vector<int> axial_edges;std::vector<std::array<int,4>> volume_rings;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;int grabbed=-1;double grab_rest=0;bool grab_requested=false;};
 struct Animal{std::vector<int> body;std::vector<int> shell;std::array<Arm,8> arms;};
 WorldConfig cfg,requested_cfg;bool release_held=false,suction_enabled=true,suction_explicit_control=false;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;std::vector<Bounds> contact_bounds;std::vector<int> contact_order;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
 int particle(Vec3 x,double mass,double radius,int animal=-1,int arm=-1,int node=-1,int rigid=-1){p.push_back({x,x,{},1/mass,radius,animal,arm,node,rigid});return int(p.size()-1);}
@@ -1193,6 +1193,42 @@ void update_suckers(double h){
  }
 }
 
+void proximity_grabs(double h){
+ // One attachment per selected arm, dynamically connected to an
+ // external animal tissue mass or prop mass. Nothing can be grabbed
+ // remotely; only centers within tip collision reach are candidates.
+ if(!cfg.collisions)return;
+ for(size_t ai=0;ai<animals.size();++ai)for(auto& arm:animals[ai].arms){
+  P& tip=p[arm.p.back()];
+  if(arm.grab_requested&&arm.grabbed<0){
+   int nearest=-1;double best=.28; // 28 cm contact opportunity
+   for(size_t k=0;k<p.size();++k){
+    const P& other=p[k];
+    if(other.rigid<0&&(other.animal<0||other.animal==int(ai)))continue;
+    if(other.animal==int(ai))continue;
+    const double d=norm(other.x-tip.x)-tip.r-other.r;
+    if(d<best){best=d;nearest=int(k);}
+   }
+   if(nearest>=0){arm.grabbed=nearest;arm.grab_rest=norm(p[nearest].x-tip.x);}
+  }
+  arm.grab_requested=false;
+  if(arm.grabbed<0)continue;
+  P& other=p[arm.grabbed];
+  const Vec3 gap=other.x-tip.x;
+  const double len=norm(gap);
+  if(len<1e-9)continue;
+  // Keep a soft, force-limited joint between the two physical masses.
+  const double error=len-arm.grab_rest;
+  const double alpha=8e-8/(h*h);
+  const double dl=error/(tip.inv+other.inv+alpha);
+  if(std::abs(dl)/(h*h)>110.){
+   arm.grabbed=-1;continue;
+  }
+  const Vec3 correction=gap*(dl/len);
+  tip.x=tip.x+correction*tip.inv;
+  other.x=other.x-correction*other.inv;
+ }
+}
 void attachments(double h){for(auto&a:animals)for(auto&ar:a.arms){auto&tip=p[ar.p.back()];if(release_held||!ar.target.attach){ar.attached=-1;continue;}if(ar.attached==-1){if(cfg.floor&&tip.x.y-tip.r<.025){ar.attached=-2;ar.anchor={tip.x.x,tip.r,tip.x.z};}else for(size_t i=0;i<p.size();++i)if(p[i].rigid>=0&&norm(p[i].x-tip.x)<p[i].r+tip.r+.025){ar.attached=int(i);ar.attach_rest=norm(p[i].x-tip.x);break;}}
 if(ar.attached==-1)continue;Vec3 target=ar.attached==-2?ar.anchor:p[ar.attached].x;Vec3 delta=target-tip.x;double l=norm(delta);double rest=ar.attached==-2?0:ar.attach_rest;double w=tip.inv+(ar.attached>=0?p[ar.attached].inv:0);double impulse=(l-rest)/(w+1e-7/(h*h));if(std::abs(impulse)/(h*h)>8*cfg.sucker_strength){ar.attached=-1;++diag.broken_attachments;continue;}if(l>1e-10){Vec3 correction=delta*(impulse/l);tip.x=tip.x+correction*tip.inv;if(ar.attached>=0)p[ar.attached].x=p[ar.attached].x-correction*p[ar.attached].inv;}}}
 bool step(){auto start=std::chrono::steady_clock::now();diag={};double h=cfg.fixed_dt/cfg.substeps;
@@ -1248,7 +1284,7 @@ follow_surface(h);
 seek_floor_contact(h);
 rigid_center_sweeps();
 project_floor();
-for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);section_area_constraints(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();keep_mantle_dorsal_up();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
+for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);section_area_constraints(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);proximity_grabs(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();keep_mantle_dorsal_up();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
 rigid_center_sweeps();
 keep_mantle_dorsal_up();
 limit_mantle_web_angle();
@@ -1298,8 +1334,10 @@ PhysicsWorld::PhysicsWorld(const WorldConfig& c):impl_(std::make_unique<Impl>(c)
 PhysicsWorld::~PhysicsWorld()=default;PhysicsWorld::PhysicsWorld(PhysicsWorld&&) noexcept=default;PhysicsWorld&PhysicsWorld::operator=(PhysicsWorld&&) noexcept=default;
 void PhysicsWorld::reset(const WorldConfig&c){auto fresh=std::make_unique<Impl>(c);impl_=std::move(fresh);}
 const WorldConfig&PhysicsWorld::config()const{return impl_->requested_cfg;}
-bool PhysicsWorld::command(const MuscleCommand&c){if(c.animal>=impl_->animals.size()||c.arm>=8||!std::isfinite(c.activation)||!std::isfinite(c.curvature)||!std::isfinite(c.extension)||!std::isfinite(c.twist)||!std::isfinite(c.stiffness)||!std::isfinite(c.sweep))return false;auto v=c;v.activation=std::clamp(v.activation,0.,1.);v.curvature=std::clamp(v.curvature,-15.,15.);v.extension=std::clamp(v.extension,.55,1.50);v.twist=std::clamp(v.twist,-20.,20.);v.stiffness=std::clamp(v.stiffness,0.,1.);v.sweep=std::clamp(v.sweep,-1.,1.);auto& arm=impl_->animals[c.animal].arms[c.arm];
+bool PhysicsWorld::command(const MuscleCommand&c){if(c.animal>=impl_->animals.size()||c.arm>=8||c.grab_mode>2||!std::isfinite(c.activation)||!std::isfinite(c.curvature)||!std::isfinite(c.extension)||!std::isfinite(c.twist)||!std::isfinite(c.stiffness)||!std::isfinite(c.sweep))return false;auto v=c;v.activation=std::clamp(v.activation,0.,1.);v.curvature=std::clamp(v.curvature,-15.,15.);v.extension=std::clamp(v.extension,.55,1.50);v.twist=std::clamp(v.twist,-20.,20.);v.stiffness=std::clamp(v.stiffness,0.,1.);v.sweep=std::clamp(v.sweep,-1.,1.);auto& arm=impl_->animals[c.animal].arms[c.arm];
  arm.target=v;
+ if(c.grab_mode==2){arm.grabbed=-1;arm.grab_requested=false;}
+ if(c.grab_mode==1)arm.grab_requested=true;
  if(impl_->suction_explicit_control&&v.activation<=.50)
   impl_->clear_arm_grips(arm);
  return true;}
