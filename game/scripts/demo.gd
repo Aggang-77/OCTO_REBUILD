@@ -365,6 +365,17 @@ func select_mouse_target(screen_point: Vector2) -> void:
             kind = 1
             index = i
             point = hit
+        # A player can also click the other octopus's tentacles.
+        for arm_state in current.animals[i].arms:
+            for node in arm_state.nodes:
+                var site := vec(node)
+                var along := (site - origin).dot(direction)
+                if along > 0.0 and along < closest and \
+                        (origin + direction * along).distance_to(site) < 0.14:
+                    closest = along
+                    kind = 1
+                    index = i
+                    point = site
     for i in current.rigids.size():
         var center := vec(current.rigids[i].center)
         var dimensions := Vector3.ONE * .36
