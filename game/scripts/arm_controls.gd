@@ -5,11 +5,11 @@ extends RefCounted
 ## Left hand: Q W E R. Right hand: U I O P.
 const KEYS = [KEY_R, KEY_E, KEY_W, KEY_Q, KEY_P, KEY_O, KEY_I, KEY_U]
 const PHASES = ["shorten", "anchor", "elongate", "release"]
-const SHORTEN_TIME := 0.18
-const ANCHOR_TIMEOUT := 0.42
+const SHORTEN_TIME := 0.13
+const ANCHOR_TIMEOUT := 0.30
 const ANCHOR_CONFIRM := 0.04
-const ELONGATE_TIME := 0.34
-const RELEASE_TIME := 0.19
+const ELONGATE_TIME := 0.28
+const RELEASE_TIME := 0.15
 var phases: Array[String] = []
 var starts: Array[float] = []
 var last_time := -1.0
@@ -59,13 +59,13 @@ func sample(arm: int, time: float, held: bool, stretch: bool,
                 enter(arm, "shorten", time)
     match phases[arm]:
         "shorten":
-            return {"activation": 0.52, "extension": 0.90, "curvature": 0.8, "sweep": 0.0}
+            return {"activation": 0.62, "extension": 0.88, "curvature": 0.65, "sweep": 0.0}
         "anchor":
-            return {"activation": 0.78, "extension": 1.05, "curvature": 0.25, "sweep": 0.0}
+            return {"activation": 0.82, "extension": 1.07, "curvature": 0.20, "sweep": 0.0}
         "elongate":
             # The sucker anchor resists displacement while proximal tissue
             # lengthens: motion arises through XPBD reaction, not a body push.
-            return {"activation": 0.90, "extension": 1.38, "curvature": 0.0, "sweep": 0.0}
+            return {"activation": 0.96, "extension": 1.47, "curvature": 0.0, "sweep": 0.0}
         "release":
             return {"activation": 0.0, "extension": 0.76, "curvature": 0.0, "sweep": 0.0}
     return {"activation": 0.0, "extension": 1.04, "curvature": 0.0, "sweep": 0.0}
