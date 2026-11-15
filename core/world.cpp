@@ -213,7 +213,23 @@ animals.push_back(a);}
   }
  }
  for(unsigned k=0;k<c.rigid_count;++k){std::vector<int> ids;Vec3 center{double(k)*.65-.65,.32,1.35};for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})ids.push_back(particle(center+Vec3{x*.16,y*.16,z*.16},.125,.08,-1,-1,-1,int(k)));for(int i=0;i<8;++i)for(int j=i+1;j<8;++j)edge(ids[i],ids[j],1e-9);rigids.push_back(ids);}}
-void distance(D& e,double h){auto&a=p[e.a];auto&b=p[e.b];Vec3 delta=b.x-a.x;double l=norm(delta);if(l<1e-12)return;double alpha=e.compliance/(h*h),dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);e.lambda+=dl;Vec3 impulse=delta*(dl/l);a.x=a.x-impulse*a.inv;b.x=b.x+impulse*b.inv;}
+void distance(D& e,double h){
+ auto&a=p[e.a];auto&b=p[e.b];
+ Vec3 delta=b.x-a.x;double l=norm(delta);if(l<1e-12)return;
+ double compliance=e.compliance;
+ // A hydrostatic arm is passively soft, but becomes axially powerful
+ // only during a commanded extension. The attached suckers transmit
+ // that strain to the mantle via real XPBD reactions.
+ if(e.arm_axial&&a.animal>=0&&a.arm>=0&&a.arm==b.arm){
+  const auto& command=animals[a.animal].arms[a.arm].active;
+  if(command.activation>.6&&command.extension>1.12)
+   compliance*=.27;
+ }
+ double alpha=compliance/(h*h);
+ double dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);
+ e.lambda+=dl;Vec3 impulse=delta*(dl/l);
+ a.x=a.x-impulse*a.inv;b.x=b.x+impulse*b.inv;
+}
 void volumes(double h){for(auto&t:tetra){auto a=p[t.p[0]].x,b=p[t.p[1]].x,c=p[t.p[2]].x,e=p[t.p[3]].x;std::array<Vec3,4> g;g[1]=cross(c-a,e-a)/6;g[2]=cross(e-a,b-a)/6;g[3]=cross(b-a,c-a)/6;g[0]=(g[1]+g[2]+g[3])*(-1);double alpha=(t.mantle_volume?cfg.mantle_volume_compliance:(t.soft_volume?cfg.volumetric_compliance:1e-10*std::sqrt(cfg.softness)))/(h*h),den=alpha;for(int i=0;i<4;++i)den+=p[t.p[i]].inv*dot(g[i],g[i]);double dl=(-(volume(t)-t.rest)-alpha*t.lambda)/den;t.lambda+=dl;for(int i=0;i<4;++i){auto&v=p[t.p[i]];v.x=v.x+g[i]*(v.inv*dl);}}}
 void section_area_constraints(double h){
  // Four independently moving perimeter masses enclose each local
@@ -402,7 +418,10 @@ double floor_surface_radius(const P& particle)const{
   // Preserve genuine mantle/cage contact instead of passing a tiny
   // centerline sphere through the seabed.
   radius=std::max(radius,cfg.visual_mantle_floor_radius);
-  if(particle.node==0)radius=std::max(radius,.16);
+  // Collision clearance must account for the finite deforming mantle skin,
+  // not only its sparse shell centers (the graphics skin is not a collider).
+  if(particle.node==0)radius=std::max(radius,.17);
+  else if(particle.node>=7)radius=std::max(radius,.125);
  }
  return radius;
 }
@@ -813,7 +832,9 @@ void torso_above_arms(double h){
   }
   if(grounded.size()<2)continue;
   support_y/=grounded.size();
-  const double force=std::clamp((support_y+.135-center.x.y)*2.2,0.,.38);
+  // The former 0.38 N cap was below the force needed to support the
+  // mantle mass: even a resting animal could settle through its own arms.
+  const double force=std::clamp((support_y+.17-center.x.y)*26.,0.,2.8);
   const double impulse=force*h*h;
   center.x.y+=impulse*center.inv;
   for(int id:grounded)p[id].x.y-=impulse*p[id].inv/grounded.size();
