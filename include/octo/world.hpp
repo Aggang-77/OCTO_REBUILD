@@ -27,6 +27,7 @@ struct DragCommand {
     double max_force=20;         // N
 };
 struct WorldConfig {
+    double tissue_stiffness_ratio=1.0; // .2 = fivefold compliance, one-fifth motor force
     std::uint32_t animals=2, segments=16, substeps=4, iterations=8;
     Vec3 gravity{0,-9.81,0};
     double fixed_dt=1.0/60.0, damping=0.4, friction=0.65;

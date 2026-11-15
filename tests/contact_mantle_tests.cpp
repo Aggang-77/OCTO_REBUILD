@@ -61,5 +61,41 @@ int main(){try{
  for(int j=0;j<6;++j){lower_z+=passive.animals[0].body_nodes[7+j].z/6.;upper_z+=passive.animals[0].body_nodes[13+j].z/6.;}
  std::cout<<"MANTLE_REAR_OFFSET="<<upper_z-lower_z<<'\n';
  require(upper_z<lower_z-.015,"upper mantle rests behind the lower arm junction");
+ {
+  WorldConfig soft;soft.animals=1;soft.rigid_count=0;
+  soft.grounded_rest=true;soft.spawn_height=.27;soft.upright_strength=.08;
+  soft.tissue_stiffness_ratio=.2;
+  PhysicsWorld folding(soft);
+  folding.reset(folding.config());
+  require(folding.config().softness==soft.softness,"reset does not compound softness ratio");
+  DragCommand pull;pull.kind=DragCommand::Kind::ArmTip;pull.arm=4;
+  pull.target={0,.10,.85};pull.max_force=4;pull.stiffness=15;
+  require(folding.drag(pull),"soft rear arm force accepted");
+  double forward_motion=0;
+  for(int i=0;i<600;++i){
+   require(folding.step(),"twenty percent flesh remains finite");
+   auto s=folding.snapshot();const auto& arm=s.animals[0].arms[4];
+   forward_motion=std::max(forward_motion,arm.nodes.back().z-arm.nodes[0].z);
+   for(const auto& limb:s.animals[0].arms)for(size_t j=0;j<limb.nodes.size();++j)
+    require(limb.nodes[j].y>=soft.visual_arm_floor_radius*(1.-.38*double(j)/soft.segments)-1e-6,"soft arm native floor envelope stays above ground");
+  }
+  std::cout<<"SOFT_REAR_ARM_FORWARD_REACH_M="<<forward_motion<<'\n';
+  require(forward_motion>.10,"soft rear arm can fold around to front under force");
+  PhysicsWorld reclining(soft);
+  for(int i=0;i<600;++i)require(reclining.step(),"passive rear fold remains finite");
+  const auto relaxed=reclining.snapshot();
+  const auto& cage=relaxed.animals[0].body_nodes;
+  Vec3 heading=rod_math::sub(cage[5],cage[6]);
+  heading=rod_math::mul(heading,1./rod_math::length(heading));
+  Vec3 lo{},hi{};
+  for(int i=0;i<6;++i){lo=rod_math::add(lo,rod_math::mul(cage[7+i],1./6));hi=rod_math::add(hi,rod_math::mul(cage[13+i],1./6));}
+  std::cout<<"PASSIVE_MANTLE_LEAN="<<-rod_math::dot(rod_math::sub(hi,lo),heading)<<'\n';
+  for(int k:{3,4}){
+   const auto& ar=relaxed.animals[0].arms[k];
+   const double z=rod_math::dot(rod_math::sub(ar.nodes[3],ar.nodes[0]),heading);
+   std::cout<<"PASSIVE_REAR_FOLD arm="<<k<<" proximal_forward_z="<<z<<'\n';
+   require(z>-.02,"reclining mantle lets rear proximal arm fold forward");
+  }
+ }
  return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

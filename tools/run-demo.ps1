@@ -2,6 +2,12 @@ param([ValidateSet(1,2,5,10)][int]$Animals=2,[switch]$Benchmark,[string]$Screens
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $server=Join-Path $root 'build/release-final/octo_server.exe'
+# A separate verified build allows a new demo while Windows still holds
+# the previous executable open. Select only these two known local outputs.
+$serverCandidates = @('build/release-final/octo_server.exe', 'build/release-soft-web/octo_server.exe') |
+    ForEach-Object { Get-Item -LiteralPath (Join-Path $root $_) -ErrorAction SilentlyContinue } |
+    Sort-Object LastWriteTimeUtc -Descending
+if ($serverCandidates) { $server = @($serverCandidates)[0].FullName }
 $asset=Join-Path $root 'game/assets/Octopus_GameReady_v5.glb'
 $godot='C:\Tools\Godot\godot.exe'
 # A pre-v1 binary can exist at this path and still reject Godot's
@@ -29,6 +35,7 @@ if (-not $needsBuild) {
 function Invoke-OCTOBuild {
     Write-Host '[OCTO] Rebuilding native C++ server (controls v1.0)...'
     & $buildScript -NoTests
+    $script:server = Join-Path $root 'build/release-final/octo_server.exe'
     if (-not (Test-Path -LiteralPath $server -PathType Leaf)) {
         throw "Build succeeded without creating $server"
     }

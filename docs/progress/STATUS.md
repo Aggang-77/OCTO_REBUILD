@@ -311,3 +311,14 @@ has a 65-degree body-relative cone limit. Loaded regression maximum angle
 height and hood lean are explicit visual calibration. Rounded junction shape
 and exact moving skin volume remain incomplete. See
 docs/validation/MANTLE_POSTURE_REVISION.md.
+
+2026-11-15 soft/web follow-up: gameplay flesh profile uses .2 stiffness ratio
+(fivefold tissue compliance, one-fifth motor force). Inactive proximal
+bending targets/second-node tether released, rear root sliding allowed,
+lean-dependent bounded rest-tissue forces permit rear arms to fold forward.
+Added shared-world compliant interarm strands and visible scalloped web.
+GPU baked skin measurement exposed -0.129 m floor clipping missed by native
+centerline checks. A conservative folding-skin support clears the measured
+600-tick two-animal pose (+0.102 m), but excess ground clearance remains;
+exact skin contact is OPEN. Final scene: 59.73 sim ticks/s, frame p95 8.33 ms.
+See docs/validation/SOFT_WEB_PROFILE.md for limits and passive fold evidence.

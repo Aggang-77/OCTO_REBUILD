@@ -139,6 +139,15 @@ func _ready() -> void:
         var torso_root: int = skel.get_bone_parent(bone_ids[0][0])
         var torso_rest := skel.get_bone_global_rest(torso_root) if torso_root >= 0 else Transform3D.IDENTITY
         var volume_preview: MeshInstance3D = null
+        var web := MeshInstance3D.new()
+        web.mesh = ImmediateMesh.new()
+        var web_material := StandardMaterial3D.new()
+        web_material.albedo_color = Color(0.43, 0.21, 0.16)
+        web_material.roughness = 0.32
+        web_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+        web.material_override = web_material
+        web.name = "InterarmWeb"
+        add_child(web)
         if OS.get_environment("OCTO_VOLUME_ARM") == "1":
             volume_preview = MeshInstance3D.new()
             volume_preview.name = "PhysicalArmShellPreview"
@@ -153,7 +162,7 @@ func _ready() -> void:
             "scene": scene, "skel": skel, "bone_ids": bone_ids,
             "bone_rests": bone_rests, "mantles": mantles,
             "torso_root": torso_root, "torso_rest": torso_rest,
-            "mantle_rest_shell": []})
+            "mantle_rest_shell": [], "web": web})
         print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d torso_root=%d" % [i,mantles.size(),torso_root])
     print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
     var server := OS.get_environment("OCTO_SERVER")
@@ -388,6 +397,7 @@ func update_scene() -> void:
         var a: Dictionary = current.animals[i]; var view: Dictionary = views[i]
         var scene: Node3D = view.scene; var skel: Skeleton3D = view.skel
         var center := vec(a.center); var orientation := quat(a.orientation)
+        update_web(view.web, a.arms)
         scene.position = center - orientation * Quaternion(Vector3.UP,MODEL_YAW) * (Vector3(0,.15,.1)*MODEL_SCALE)
         scene.quaternion = orientation * Quaternion(Vector3.UP,MODEL_YAW)
         var inverse := Quaternion(Vector3.UP,-MODEL_YAW) * orientation.inverse()
@@ -466,6 +476,29 @@ func update_scene() -> void:
         var r: Dictionary = current.rigids[i]; props[i].position = vec(r.center); props[i].quaternion = quat(r.orientation); props[i].scale = vec(r.half_extents)*2.0
     if current.tick == 0 or current.tick == 1: print("SNAPSHOT tick=%d animals=%d arms=%d first_node=%s" % [current.tick,current.animals.size(),current.animals[0].arms.size(),str(current.animals[0].arms[0].nodes[0])])
 
+func update_web(web: MeshInstance3D, arms: Array) -> void:
+    var mesh := web.mesh as ImmediateMesh
+    mesh.clear_surfaces()
+    var hub := Vector3.ZERO
+    for arm in arms:
+        hub += vec(arm.nodes[0]) / 8.0
+    var outline: Array[Vector3] = []
+    for k in 8:
+        var a := point(arms[k].nodes, 0.25)
+        var b := point(arms[(k + 1) % 8].nodes, 0.25)
+        outline.append(a)
+        # Scalloped edge leaves the outer three quarters of every arm free.
+        outline.append(hub.lerp((a + b) * 0.5, 0.78))
+    mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+    for k in range(outline.size()):
+        var a := outline[k]
+        var b := outline[(k + 1) % outline.size()]
+        var normal := (a - hub).cross(b - hub).normalized()
+        for vertex in [hub, a, b]:
+            mesh.surface_set_normal(normal)
+            mesh.surface_add_vertex(vertex)
+    mesh.surface_end()
+
 func idle_arm_shape(animal: int, arm: int) -> Dictionary:
     # A real octopus does not continuously contract all eight arms into
     # identical tight scrolls. Deterministic offsets produce asymmetric
@@ -476,6 +509,29 @@ func idle_arm_shape(animal: int, arm: int) -> Dictionary:
             "curvature": 0.0,
             "activation": 0.0,
             "sweep": 0.0}
+
+func measure_skin_floor() -> void:
+    if DisplayServer.get_name() == "headless":
+        return
+    var minimum := INF
+    for view in views:
+        view.skel.force_update_all_bone_transforms()
+        for child_node in view.scene.find_children("*", "MeshInstance3D", true, false):
+            var mesh_node := child_node as MeshInstance3D
+            if mesh_node.mesh == null or mesh_node.skin == null:
+                continue
+            var baked := mesh_node.bake_mesh_from_current_skeleton_pose()
+            if baked == null:
+                continue
+            var part_min := INF
+            for surface in range(baked.get_surface_count()):
+                var vertices: PackedVector3Array = baked.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
+                for vertex in vertices:
+                    minimum = minf(minimum, (mesh_node.global_transform * vertex).y)
+                    part_min = minf(part_min, (mesh_node.global_transform * vertex).y)
+            if part_min < -0.01:
+                print("SKIN_FLOOR_PART name=%s min_y=%.5f" % [mesh_node.name,part_min])
+    print("SKIN_FLOOR min_baked_vertex_y_m=%.6f (shader displacement excluded)" % minimum)
 
 func step_command() -> String:
     # The C++ step2 protocol carries independent extension/sweep and global
@@ -598,6 +654,7 @@ func _process(delta: float) -> void:
             var measured_roll := float(current.animals[0].arms[0].roll[8])
             print("ACTUATION_CHECK roll_mid_rad=%.5f tip_y_m=%.5f" % [measured_roll,float(current.animals[0].arms[0].nodes[-1][1])])
             if measured_roll < 0.25: fail("Nonzero twist did not reach the original-model renderer"); return
+        measure_skin_floor()
         var elapsed_ms := float(Time.get_ticks_usec()-first_tick_usec)/1000.0
         var ordered := frame_wall_ms.duplicate()
         ordered.sort()
