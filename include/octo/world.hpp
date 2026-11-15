@@ -88,6 +88,7 @@ struct ArmSnapshot {
     std::vector<std::array<Vec3,4>> volume_rings; // 4 real 3D surface masses per ring; not a rendered GLB mesh
     std::vector<std::array<double,2>> radii; // segments, ellipse semiaxes metres
     std::vector<bool> attached;  // segments; physical attachment, not decoration
+    bool grabbed=false; // external object grab, independent of floor suction
 };
 struct AnimalSnapshot {
     Vec3 center{};
