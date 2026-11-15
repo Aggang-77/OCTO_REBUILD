@@ -739,11 +739,10 @@ void limit_mantle_web_angle(){
   const Vec3 delta=(desired-span);
   const double sum=top.inv+bottom.inv;
   if(sum<1e-12)continue;
-  // Project the relative mantle orientation, not the visual transform.
-  // Limit a single iteration to avoid a violent impulse during recovery.
-  const double step=std::min(1.0,.10/std::max(norm(delta),1e-8));
-  top.x=top.x+delta*(step*top.inv/sum);
-  bottom.x=bottom.x-delta*(step*bottom.inv/sum);
+  // Enforce the actual angular limit, not a weak restorative
+  // force; constrained top and bottom particles share the reaction.
+  top.x=top.x+delta*(top.inv/sum);
+  bottom.x=bottom.x-delta*(bottom.inv/sum);
  }
 }
 void contacts(){root_angle_limits();project_floor();
@@ -768,7 +767,7 @@ if((a.animal>=0&&b.rigid>=0)||(b.animal>=0&&a.rigid>=0))++diag.animal_prop_conta
 double w=a.inv+b.inv;a.x=a.x-n*(depth*a.inv/w);b.x=b.x+n*(depth*b.inv/w);
 Vec3 relative=(b.x-b.old)-(a.x-a.old);Vec3 tangent=relative-n*dot(relative,n);double tl=norm(tangent);
 if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}
-}}intra_animal_surface_contacts();web_mantle_contacts();arm_prop_surfaces();limit_proximal_arm_kinks();limit_mantle_web_angle();project_floor();}
+}}intra_animal_surface_contacts();web_mantle_contacts();arm_prop_surfaces();limit_proximal_arm_kinks();limit_mantle_web_angle();root_angle_limits();project_floor();}
 
 
 
