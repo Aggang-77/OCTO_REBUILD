@@ -765,7 +765,7 @@ void torso_above_arms(double h){
    int id=ar.p[j];auto& node=p[id];
    if(node.x.y<=floor_surface_radius(node)+.025){grounded.push_back(id);support_y+=node.x.y;}
   }
-  if(grounded.size()<2)return;
+  if(grounded.size()<2)continue;
   support_y/=grounded.size();
   const double force=std::clamp((support_y+.135-center.x.y)*2.2,0.,.38);
   const double impulse=force*h*h;
