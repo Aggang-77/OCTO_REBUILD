@@ -85,3 +85,18 @@ The actual cycle duration depends on contact and cannot be reduced to a fixed
 rhythmic gait. Unpressed arms remain weakly driven to symmetric neutral rest.
 Space forces all suckers to detach, Shift overrides to continuous reach and
 Ctrl overrides to bracing. No unconditional body propulsion is introduced.
+
+
+## Proximal-only bend safeguard (2026-11-15)
+
+The previous whole-arm 120-degree kink correction was inappropriate:
+real octopus distal arms must be able to coil extremely tightly. The
+corrected C++ contact pass instead guards *only* interior joints 1, 2,
+and 3 next to each mantle-arm root with progressive turn targets of
+80, 100 and 120 degrees respectively. Joints 4 onward have no added
+hard angle barrier. The root-cone allowance in the very soft tissue
+profile is reduced from 165 to 105 degrees; the baseline profile
+retains its existing 65-degree bound. These are provisional gameplay
+limits, not measured octopus anatomy or guarantees of exact angles.
+The projection is compliant/incremental and may require tuning under
+large contact loads; the change is not yet build- or play-verified.
