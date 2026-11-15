@@ -1,9 +1,15 @@
 extends RefCounted
-## Contact-gated muscle targets. Time is native simulation time, never FPS.
-## Top-down radial layout: right hand U/I/O/P = arms 0/1/2/3;
-## left hand Q/W/E/R = arms 4/5/6/7, as viewed from above.
-const KEYS = [KEY_U, KEY_I, KEY_O, KEY_P, KEY_Q, KEY_W, KEY_E, KEY_R]
-const PHASES = ["reach", "pull", "release"]
+## Contact-gated octopus push stroke; time is native simulation time.
+## Mirror corrected against the observed GameReady skin orientation:
+## physical arm indices 0..7 display as R,E,W,Q,P,O,I,U.
+## Left hand: Q W E R. Right hand: U I O P.
+const KEYS = [KEY_R, KEY_E, KEY_W, KEY_Q, KEY_P, KEY_O, KEY_I, KEY_U]
+const PHASES = ["shorten", "anchor", "elongate", "release"]
+const SHORTEN_TIME := 0.18
+const ANCHOR_TIMEOUT := 0.42
+const ANCHOR_CONFIRM := 0.04
+const ELONGATE_TIME := 0.34
+const RELEASE_TIME := 0.19
 var phases: Array[String] = []
 var starts: Array[float] = []
 var last_time := -1.0
@@ -13,45 +19,53 @@ func reset() -> void:
     starts.assign([-1000.0, -1000.0, -1000.0, -1000.0, -1000.0, -1000.0, -1000.0, -1000.0])
     last_time = -1.0
 
+func enter(arm: int, phase: String, time: float) -> void:
+    phases[arm] = phase
+    starts[arm] = time
+
 func sample(arm: int, time: float, held: bool, stretch: bool,
         brace: bool, release: bool, attached: bool, sweep_sign: float = 1.0) -> Dictionary:
     if phases.is_empty() or time < last_time:
         reset()
     last_time = time
     if release or not held:
-        if phases[arm] != "rest" or release:
-            phases[arm] = "rest"
-            starts[arm] = time
-        return {"activation": 0.0, "extension": 0.86 if release or time - starts[arm] < 0.18 else 1.04,
+        if phases[arm] != "rest":
+            enter(arm, "rest", time)
+        return {"activation": 0.0, "extension": 0.78 if release else 1.04,
             "curvature": 0.0, "sweep": 0.0}
+    # Manual overrides: Shift extends without a power stroke; Ctrl braces.
     if stretch or brace:
-        phases[arm] = "brace" if brace else "reach"
-        starts[arm] = time
+        if phases[arm] not in ["brace", "reach"]:
+            enter(arm, "brace" if brace else "reach", time)
         return {"activation": 0.78, "extension": 1.10 if brace else 1.35,
             "curvature": 0.0, "sweep": 0.0}
-    if phases[arm] == "rest" or phases[arm] == "brace":
-        phases[arm] = "reach"
-        starts[arm] = time
+    if phases[arm] not in PHASES:
+        enter(arm, "shorten", time)
     var elapsed := time - starts[arm]
-    var next := phases[arm]
     match phases[arm]:
-        "reach":
-            if attached and elapsed >= 0.07:
-                next = "pull"
-            elif elapsed >= 0.75:
-                next = "release" # Retry, never invent a remote grip.
-        "pull":
-            if not attached or elapsed >= 0.16:
-                next = "release"
+        "shorten":
+            if elapsed >= SHORTEN_TIME:
+                enter(arm, "anchor", time)
+        "anchor":
+            if attached and elapsed >= ANCHOR_CONFIRM:
+                enter(arm, "elongate", time)
+            elif elapsed >= ANCHOR_TIMEOUT:
+                enter(arm, "release", time)
+        "elongate":
+            if not attached or elapsed >= ELONGATE_TIME:
+                enter(arm, "release", time)
         "release":
-            if elapsed >= 0.32:
-                next = "reach"
-    if next != phases[arm]:
-        phases[arm] = next
-        starts[arm] = time
+            if elapsed >= RELEASE_TIME:
+                enter(arm, "shorten", time)
     match phases[arm]:
-        "pull":
-            return {"activation": 0.78, "extension": 0.95, "curvature": 0.9, "sweep": sweep_sign}
+        "shorten":
+            return {"activation": 0.52, "extension": 0.90, "curvature": 0.8, "sweep": 0.0}
+        "anchor":
+            return {"activation": 0.78, "extension": 1.05, "curvature": 0.25, "sweep": 0.0}
+        "elongate":
+            # The sucker anchor resists displacement while proximal tissue
+            # lengthens: motion arises through XPBD reaction, not a body push.
+            return {"activation": 0.90, "extension": 1.38, "curvature": 0.0, "sweep": 0.0}
         "release":
-            return {"activation": 0.0, "extension": 0.86, "curvature": 0.0, "sweep": 0.0}
-    return {"activation": 0.78, "extension": 1.35, "curvature": 0.0, "sweep": 0.0}
+            return {"activation": 0.0, "extension": 0.76, "curvature": 0.0, "sweep": 0.0}
+    return {"activation": 0.0, "extension": 1.04, "curvature": 0.0, "sweep": 0.0}
