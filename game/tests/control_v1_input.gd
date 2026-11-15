@@ -182,6 +182,8 @@ func _exercise() -> void:
             "grip count uses only explicitly present contacts"):
         return
     print("GRIP_HUD_COMPAT_PASS legacy_missing=true counted=3")
+    if not _check(DEMO.ARM_KEYS == [KEY_U, KEY_I, KEY_O, KEY_P, KEY_Q, KEY_W, KEY_E, KEY_R], "top-down radial two-hand arm mapping"):
+        return
     if not _check(DEMO.ARM_KEYS.size() == 8, "eight arm keys"):
         return
     var unique := {}
@@ -216,13 +218,13 @@ func _exercise() -> void:
         _key(KEY_SHIFT, false)
         _key(key, false)
         await process_frame
-    _key(KEY_Q, true)
+    _key(KEY_R, true)
     _key(KEY_U, true)
     await process_frame
     var pair := octo.step_command().split(" ")
     if not _check(float(pair[2 + (8 + 0) * 9 + 2]) == 0.78 and float(pair[2 + (8 + 7) * 9 + 2]) == 0.78, "two arms simultaneously"):
         return
-    _key(KEY_Q, false)
+    _key(KEY_R, false)
     _key(KEY_U, false)
     _key(KEY_UP, true)
     await process_frame
