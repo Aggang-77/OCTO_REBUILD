@@ -554,7 +554,9 @@ func update_scene() -> void:
             if i < arm_controllers.size() and not arm_controllers[i].phases.is_empty():
                 phase = arm_controllers[i].phases[arm]
             key_label.text = OS.get_keycode_string(ARM_KEYS[arm])
-            key_label.modulate = Color("e7d29a") if phase != "rest" else Color("adbfc8")
+            var grabbed := bool(a.arms[arm].get("grabbed", false))
+            key_label.modulate = Color("777777") if grabbed else (
+                Color("e7d29a") if phase != "rest" else Color("adbfc8"))
             var material_roll: Array = a.arms[arm].roll
             var radii: Array = a.arms[arm].radii
             if nodes.size() < 2: continue
@@ -662,10 +664,11 @@ func step_command() -> String:
     var out := "step3 %d" % (animals * 8)
     for i in animals:
         for arm in 8:
+            var locked := bool(current.animals[i].arms[arm].get("grabbed", false)) if not current.is_empty() else false
             var manual := i == selected and Input.is_physical_key_pressed(ARM_KEYS[arm])
             var release_grab := i == selected and ctrl_on and (manual or not any_arm_pressed)
-            var grab_nearest := manual and Input.is_physical_key_pressed(KEY_SHIFT) and not release_grab and target_kind != 0
-            var held := (manual and not release_grab) or test_all_active or (test_actuation and i == 0 and arm == 0)
+            var grab_nearest := manual and not locked and Input.is_physical_key_pressed(KEY_SHIFT) and not release_grab and target_kind != 0
+            var held := not locked and ((manual and not release_grab) or test_all_active or (test_actuation and i == 0 and arm == 0))
             var attached := false
             if not current.is_empty():
                 for grip in current.animals[i].arms[arm].get("attached", []):
@@ -687,9 +690,9 @@ func step_command() -> String:
                 cmd.curvature = 0.0
                 cmd.sweep = 0.0
             var twist := 0.0
-            if manual:
+            if manual and not locked and not release_grab:
                 twist = (float(Input.is_physical_key_pressed(KEY_PERIOD)) - float(Input.is_physical_key_pressed(KEY_COMMA))) * 3.0
-            if test_actuation and i == 0 and arm == 0: twist = 3.0
+            if not locked and test_actuation and i == 0 and arm == 0: twist = 3.0
             out += " %d %d %f %f %f %f %f %d %f" % [
                 i, arm, cmd.activation, cmd.curvature, cmd.extension, twist, 0.02,
                 2 if release_grab else (1 if grab_nearest else 0), cmd.sweep]
@@ -792,7 +795,9 @@ func _process(delta: float) -> void:
     if selected < arm_controllers.size():
         for arm in arm_controllers[selected].phases.size():
             var phase: String = arm_controllers[selected].phases[arm]
-            if phase != "rest":
+            if bool(current.animals[selected].arms[arm].get("grabbed", false)):
+                active_labels.append("%s:GRAB LOCKED" % OS.get_keycode_string(ARM_KEYS[arm]))
+            elif phase != "rest":
                 active_labels.append("%s:%s" % [OS.get_keycode_string(ARM_KEYS[arm]),phase])
     label.text += "\nArms: " + (", ".join(active_labels) if not active_labels.is_empty() else "relaxed")
     var command_start := Time.get_ticks_usec()
