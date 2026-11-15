@@ -16,6 +16,7 @@ struct MuscleCommand {
     double twist=0;              // rad/m
     double stiffness=0;          // [0,1]
     bool attach=false;           // legacy explicit tip attachment
+    std::uint32_t grab_mode=0;    // 0 keep, 1 grab nearest external body, 2 release
     double sweep=0;              // [-1,1] body-relative anterior/posterior muscle drive
 };
 struct DragCommand {
