@@ -224,8 +224,10 @@ void distance(D& e,double h){
  // that strain to the mantle via real XPBD reactions.
  if(e.arm_axial&&a.animal>=0&&a.arm>=0&&a.arm==b.arm){
   const auto& command=animals[a.animal].arms[a.arm].active;
-  if(command.activation>.6&&command.extension>1.12)
-   compliance*=.12;
+  // Powerful axial shortening only during active pull. Muscle-off
+  // tissue retains full compliance for passive jelly-like draping.
+  if(cfg.grounded_rest&&command.activation>.75&&command.extension<.90)
+   compliance*=.075;
  }
  double alpha=compliance/(h*h);
  double dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);
@@ -939,9 +941,10 @@ void suction_constraints(double h){
   if(len<1e-10)continue;
   const double error=len-(s.attached==-2?0:s.rest);
   const double w=node.inv+(s.attached>=0?p[s.attached].inv:0);
-  const double lambda=error/(w+4e-7/(h*h));
+  const bool pulling=suction_explicit_control&&ar.active.activation>.75&&ar.active.extension<.90;
+   const double lambda=error/(w+(pulling?8e-8:4e-7)/(h*h));
   const double area_scale=std::max(.002,node.r/.035);
-  if(std::abs(lambda)/(h*h)>12.0*cfg.sucker_strength*area_scale*area_scale){
+  if(std::abs(lambda)/(h*h)>(pulling?32.0:12.0)*cfg.sucker_strength*area_scale*area_scale){
    s.attached=-1;s.dwell=0;s.cooldown=.18;++diag.broken_attachments;continue;
   }
   const Vec3 move=delta*(lambda/len);
@@ -1023,15 +1026,17 @@ void tissue_dynamics(double h){
 void update_suckers(double h){
  if(!cfg.auto_suction)return;
  for(auto&animal:animals)for(auto&ar:animal.arms){
-  if(ar.active.extension<.87)ar.peel_clock+=h;
+  if(ar.active.extension<.87&&!suction_explicit_control)ar.peel_clock+=h;
   else ar.peel_clock=0;
   for(auto&s:ar.suckers){
    s.cooldown=std::max(0.0,s.cooldown-h);
-   if(release_held||!suction_enabled||(ar.target.activation<.1&&ar.target.extension<.82)){
+   if(release_held||!suction_enabled||
+       (!suction_explicit_control&&ar.target.activation<.1&&ar.target.extension<.82)||
+       (suction_explicit_control&&ar.target.activation<.1&&ar.active.activation>.30&&ar.active.extension<.95)){
     // Clear timed push-stroke grips before the next shortening phase.
     s.attached=-1;s.dwell=0;s.cooldown=.12;continue;
    }
-   if(s.attached==-2&&ar.active.extension<.87){
+   if(s.attached==-2&&!suction_explicit_control&&ar.active.extension<.87){
     const double delay=double(cfg.segments-s.node)/cfg.segments*.22;
     if(ar.peel_clock>=delay){s.attached=-1;s.cooldown=.18;s.dwell=0;}
    }
@@ -1100,19 +1105,22 @@ for(auto&e:d){
    const auto& pa=p[e.a];
    const auto& arm=animals[pa.animal].arms[pa.arm];
    extension=arm.active.extension;
-   if(extension>1.12&&arm.active.activation>.6){
-    // Spend the extension on tissue between body and foothold rather
-    // than extending the entire distal arm beyond the planted site.
+   if(cfg.grounded_rest&&arm.active.activation>.75&&extension<.90){
+    // Contract the proximal segment to an ACTUAL planted sucker;
+    // when suction is off use the floor-contact envelope as a weaker
+    // friction foothold. Distal section stays relaxed instead of
+    // retracting the anchored sucker into the body.
     unsigned foothold=cfg.segments;
-    bool has_grip=false;
     for(const auto& sucker:arm.suckers)
-     if(sucker.attached!=-1){
-      foothold=std::min(foothold,sucker.node);
-      has_grip=true;
+     if(sucker.attached!=-1)foothold=std::min(foothold,sucker.node);
+    if(foothold==cfg.segments){
+     for(unsigned j=std::max(2u,cfg.segments/3);j<=cfg.segments;++j){
+      const auto& site=p[arm.p[j]];
+      if(site.x.y<=floor_surface_radius(site)+.008){
+       foothold=j;break;
+      }
      }
-    // With suction off, model a planted middle-arm section
-    // supported by static floor friction, not an invented sucker.
-    if(!has_grip)foothold=std::max(2u,cfg.segments/2);
+    }
     if(pa.node>=int(foothold))extension=1.;
    }
   }
