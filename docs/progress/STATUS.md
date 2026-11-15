@@ -322,3 +322,14 @@ centerline checks. A conservative folding-skin support clears the measured
 600-tick two-animal pose (+0.102 m), but excess ground clearance remains;
 exact skin contact is OPEN. Final scene: 59.73 sim ticks/s, frame p95 8.33 ms.
 See docs/validation/SOFT_WEB_PROFILE.md for limits and passive fold evidence.
+
+2026-11-15 contact-driven keymap: eight labelled arm keys replace sixteen
+independent reach/stroke keys. Hold cycles reach, native grip, pull, release;
+Shift reaches, Ctrl braces, comma/period twist, arrows stagger crawl groups,
+Space releases all. No body-coordinate/velocity writes. Suction now uses
+the actual native floor support and cannot reacquire while peeling.
+Release CTest 11/11 PASS. GPU two-animal 360-tick Up-arrow event fixture:
+18 grips peak, +0.443 m forward/+0.261 m lateral displacement, 59.43 sim
+ticks/s. Drift and previous bridge/floor-proxy limitations remain open.
+See docs/design/CONTACT_CONTROLS.md and
+docs/validation/CONTACT_CONTROL_RESULTS.md.

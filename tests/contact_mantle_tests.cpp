@@ -10,6 +10,21 @@ static double dist(Vec3 a,Vec3 b){return std::hypot(a.x-b.x,a.y-b.y,a.z-b.z);}
 int main(){try{
  WorldConfig cfg;cfg.animals=1;cfg.rigid_count=3;cfg.grounded_rest=true;
  cfg.spawn_height=.27;cfg.upright_strength=.08;cfg.auto_suction=false;
+ {
+  auto grip_cfg=cfg;grip_cfg.rigid_count=0;grip_cfg.auto_suction=true;
+  grip_cfg.tissue_stiffness_ratio=.2;
+  PhysicsWorld gripping(grip_cfg);MuscleCommand reach;
+  reach.activation=1;reach.extension=1.48;
+  require(gripping.command(reach),"reach command accepted for floor suction");
+  std::uint64_t grips=0;
+  for(int t=0;t<120;++t){require(gripping.step(),"floor grip stable");grips=std::max(grips,gripping.snapshot().diagnostics.attachments);}
+  require(grips>0,"suckers grip the same conservative envelope used for floor collision");
+  reach.activation=0;reach.extension=.76;
+  require(gripping.command(reach),"peel command accepted");
+  for(int t=0;t<60;++t)require(gripping.step(),"peeling stable");
+  require(gripping.snapshot().diagnostics.attachments==0,"released arm cannot reacquire during peeling");
+  std::cout<<"CONTACT_CYCLE native_grips="<<grips<<" after_release=0\n";
+ }
  PhysicsWorld driven(cfg),control(cfg);
  const auto start=driven.snapshot();
  require(start.animals[0].body_nodes.size()==19,"mantle has twelve separate shell masses");

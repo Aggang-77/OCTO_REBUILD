@@ -805,7 +805,7 @@ void update_suckers(double h){
    // An octopus resting under its own weight can make contact without
    // automatically welding every inactive sucker to the seabed. Gripping
    // remains a separate, active behavior and Space still releases.
-   if(cfg.grounded_rest&&ar.target.activation<.1&&ar.active.activation<.15){
+   if(ar.target.extension<.87||(cfg.grounded_rest&&ar.target.activation<.1&&ar.active.activation<.15)){
     s.dwell=0;
     continue;
    }
@@ -832,8 +832,9 @@ void update_suckers(double h){
     }
    }
    // Only make a floor anchor after the sucker has really reached it.
-   if(target==-1&&cfg.floor&&node.x.y-node.r<.020&&dot(face,down)>.30){
-    target=-2;anchor={node.x.x,node.r,node.x.z};
+   const double support=floor_surface_radius(node);
+   if(target==-1&&cfg.floor&&node.x.y-support<.020&&dot(face,down)>.30){
+    target=-2;anchor={node.x.x,support,node.x.z};
    }
    if(target==-1||std::acos(-1.0)*node.r*node.r<.000035){s.dwell=0;continue;}
    s.dwell+=h;

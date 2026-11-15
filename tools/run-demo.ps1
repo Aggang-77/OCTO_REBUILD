@@ -4,7 +4,7 @@ $root=Split-Path $PSScriptRoot -Parent
 $server=Join-Path $root 'build/release-final/octo_server.exe'
 # A separate verified build allows a new demo while Windows still holds
 # the previous executable open. Select only these two known local outputs.
-$serverCandidates = @('build/release-final/octo_server.exe', 'build/release-soft-web/octo_server.exe') |
+$serverCandidates = @('build/release-final/octo_server.exe', 'build/release-soft-web/octo_server.exe', 'build/release-controls/octo_server.exe') |
     ForEach-Object { Get-Item -LiteralPath (Join-Path $root $_) -ErrorAction SilentlyContinue } |
     Sort-Object LastWriteTimeUtc -Descending
 if ($serverCandidates) { $server = @($serverCandidates)[0].FullName }

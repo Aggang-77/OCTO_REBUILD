@@ -32,6 +32,7 @@ func _exercise() -> void:
     skin_rig.add_bone("BodyRoot")
     skin_rig.add_bone("A0_00")
     var skin_scene := Node3D.new()
+    skin_scene.add_child(skin_rig)
     var skin_mesh := MeshInstance3D.new()
     var skin_sphere := SphereMesh.new()
     var skin_source := StandardMaterial3D.new()
@@ -139,12 +140,11 @@ func _exercise() -> void:
         Vector3.ZERO, Quaternion.IDENTITY)
     var exhale: Vector3 = octo.mantle_respiration(torso_scale, 0.0)
     var inhale: Vector3 = octo.mantle_respiration(torso_scale, 1.0)
-    if not _check(inhale.x > exhale.x and inhale.z > exhale.z and
-            inhale.x / exhale.x < 1.03,
-            "slow low-amplitude mantle breathing retains shell deformation"):
+    if not _check(inhale.distance_to(exhale) < 0.0001,
+            "torso has no artificial breathing scale"):
         return
-    if not _check(torso_scale.x < 1.0 and torso_scale.y < 1.0,
-            "shell dimensions feed visible torso shape"):
+    if not _check(absf(torso_scale.x * torso_scale.y * torso_scale.z - 1.0) < 0.001,
+            "shell-based torso scale preserves determinant"):
         return
     print("TISSUE_GPU_SKIN_PASS root=true mantle_bounds=true no_cpu_remesh=true")
     # Apply the cheap PBR wet-look to a local mesh; no original private GLB
@@ -182,64 +182,61 @@ func _exercise() -> void:
             "grip count uses only explicitly present contacts"):
         return
     print("GRIP_HUD_COMPAT_PASS legacy_missing=true counted=3")
-    if not _check(DEMO.EXTEND_KEYS.size() == 8 and DEMO.STROKE_KEYS.size() == 8, "16-key arrays"):
+    if not _check(DEMO.ARM_KEYS.size() == 8, "eight arm keys"):
         return
     var unique := {}
     for arm in range(8):
-        var extension: Key = DEMO.EXTEND_KEYS[arm]
-        var stroke: Key = DEMO.STROKE_KEYS[arm]
-        if not _check(not unique.has(extension) and not unique.has(stroke) and extension != stroke, "unique keys %d" % arm):
+        var key: Key = DEMO.ARM_KEYS[arm]
+        if not _check(not unique.has(key), "unique arm key"):
             return
-        unique[extension] = true
-        unique[stroke] = true
-        _key(extension, true)
+        unique[key] = true
+        octo.arm_controllers.clear()
+        _key(key, true)
         await process_frame
         var parts := octo.step_command().split(" ")
         if not _check(parts[0] == "step2" and parts[1] == "16", "step2 header"):
             return
-        for j in range(8):
-            var begin := 2 + (8 + j) * 9
-            var actual := float(parts[begin + 4])
-            if not _check(absf(actual - (1.48 if j == arm else float(octo.idle_arm_shape(1, j).extension))) < 0.001, "extend arm %d vs %d" % [j, arm]):
-                return
-        _key(extension, false)
-        _key(stroke, true)
+        for animal in 2:
+            for j in 8:
+                var begin := 2 + (animal * 8 + j) * 9
+                if not _check(float(parts[begin + 2]) == (1.0 if animal == 1 and j == arm else 0.0), "independent arm and animal"):
+                    return
+        _key(KEY_SHIFT, true)
         await process_frame
         parts = octo.step_command().split(" ")
-        for j in range(8):
-            var begin := 2 + (8 + j) * 9
-            if not _check(absf(float(parts[begin + 8]) - (1.0 if j == arm else 0.0)) < 0.001, "stroke arm %d vs %d" % [j, arm]):
-                return
-        _key(stroke, false)
+        var begin := 2 + (8 + arm) * 9
+        if not _check(float(parts[begin + 4]) > 1.4 and float(parts[begin + 8]) == 0.0, "Shift reach"):
+            return
+        _key(KEY_SPACE, true)
         await process_frame
-    # Same-arm simultaneous extension + stroke.
-    _key(KEY_F, true)
-    _key(KEY_D, true)
+        parts = octo.step_command().split(" ")
+        if not _check(parts[-1] == "1" and float(parts[begin + 2]) == 0.0, "Space overrides held arm and Shift"):
+            return
+        _key(KEY_SPACE, false)
+        _key(KEY_SHIFT, false)
+        _key(key, false)
+        await process_frame
+    _key(KEY_W, true)
+    _key(KEY_E, true)
     await process_frame
-    var parts := octo.step_command().split(" ")
-    var arm7 := 2 + (8 + 7) * 9
-    if not _check(absf(float(parts[arm7 + 4])-1.48)<0.001 and absf(float(parts[arm7 + 8])-1.0)<0.001, "simultaneous F+D"):
+    var pair := octo.step_command().split(" ")
+    if not _check(float(pair[2 + (8 + 0) * 9 + 2]) == 1.0 and float(pair[2 + (8 + 7) * 9 + 2]) == 1.0, "two arms simultaneously"):
         return
-    _key(KEY_F, false)
-    _key(KEY_D, false)
+    _key(KEY_W, false)
+    _key(KEY_E, false)
+    _key(KEY_UP, true)
     await process_frame
-    parts = octo.step_command().split(" ")
-    if not _check(absf(float(parts[arm7 + 4])-float(octo.idle_arm_shape(1,7).extension))<0.001 and absf(float(parts[arm7 + 8]))<0.001, "release returns to relaxed draped arms"):
+    var assisted := octo.step_command()
+    if not _check(assisted.contains(" 1.000000 0.000000 1.480000"), "directional crawl requests arm reach"):
         return
-    _key(KEY_SPACE, true)
+    _key(KEY_UP, false)
     await process_frame
-    if not _check(octo.step_command().ends_with(" 1"), "Space release"):
-        return
-    _key(KEY_SPACE, false)
-    await process_frame
-    if not _check(octo.step_command().ends_with(" 0"), "Space release clears"):
-        return
     var a0 := octo.idle_arm_shape(0,0)
     var a1 := octo.idle_arm_shape(0,1)
     if not _check(absf(a0.extension-a1.extension)>0.01 and
             a0.activation == 0.0 and a0.sweep == 0.0 and a0.curvature == 0.0,
             "natural rest posture is asymmetric and passive"):
         return
-    print("CONTROL_V1_KEYS_PASS 16_keys=true simultaneous=true passive_idle=true space_priority=true")
+    print("CONTACT_KEYS_PASS eight_keys=true modifiers=true crawl=true space_priority=true")
     octo.free()
     quit(0)

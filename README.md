@@ -17,36 +17,25 @@ Click the Godot window to focus it. Tab switches between octopuses;
 left mouse drag applies bounded force, right mouse drag orbits the
 camera, and F5 resets.
 
-## Game controls v1.0
+## Contact-driven controls
 
-| Torso-relative arm | Extend (hold) | Stroke backward (hold) |
-|---|---|---|
-| Left front | F | D |
-| Right front | J | K |
-| Left side-front | S | A |
-| Right side-front | L | ; |
-| Left side-rear | R | E |
-| Right side-rear | U | I |
-| Left rear | W | Q |
-| Right rear | O | P |
+| Arms (left / right) | Keys |
+|---|---|
+| Front | W / E |
+| Side-front | Q / D |
+| Side-rear | A / C |
+| Rear | Z / X |
 
-Let go of extend to retract/curl, let go of stroke to return
-toward the front. Both inputs are independent, so F+D together
-extends and paddles the same arm.
+Hold an arm key: reach, grip on real contact, pull, release, repeat.
+Release it to peel and relax. Shift + arm keeps reaching; Ctrl + arm
+braces; comma/period + arm twists. Multiple arms work together.
+Arrow keys assist crawling through staggered muscle/suction targets
+relative to the body. Space releases every grip and overrides controls.
+Tab selects an octopus. F5 resets. Labels over the selected arms show keys.
 
-**Space** immediately releases every suction contact. While held,
-automatic gripping stays disabled. Upon release a short re-grip
-cooldown applies. Retracting a floor-attached arm peels contacts;
-a gripped movable object remains held during retraction unless
-Space is used or the attachment breaks. Release does not reset
-the object's velocity.
-
-See [the controls specification and simulation caveats](docs/design/CONTROL_V1.md).
-
-The main branch does **not** include the abandoned expensive jelly
-shader/membrane experiment. Original skeleton skin is retained.
-The automatic suction/contact implementation uses coarse discrete rod
-sites, not full anatomical sucker surface mechanics.
+See [the contact controls guide](docs/design/CONTACT_CONTROLS.md). The gait
+is a gameplay controller; directional accuracy and anatomical fidelity
+remain incomplete. The conservative ground skin envelope can leave gaps.
 
 ## Tests
 

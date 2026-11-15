@@ -4,8 +4,9 @@ const OCTOPUS_SKIN = preload("res://scripts/octopus_skin.gd")
 # Solver arms 0..7 go around the body: right-front, right-side-front,
 # right-side-rear, right-rear, left-rear, left-side-rear,
 # left-side-front, left-front. Heading is torso-local +Z.
-const EXTEND_KEYS = [KEY_J, KEY_L, KEY_U, KEY_O, KEY_W, KEY_R, KEY_S, KEY_F]
-const STROKE_KEYS = [KEY_K, KEY_SEMICOLON, KEY_I, KEY_P, KEY_Q, KEY_E, KEY_A, KEY_D]
+const ARM_CONTROLS = preload("res://scripts/arm_controls.gd")
+const ARM_KEYS = ARM_CONTROLS.KEYS
+var arm_controllers: Array = []
 const MODEL_SCALE = 1.35 / 2.3
 const MODEL_YAW = -PI / 8.0
 var child := {}
@@ -40,6 +41,12 @@ var test_all_active := false
 var test_reset := false
 var test_kill_native := false
 var test_input := false
+var test_crawl := false
+var crawl_started := false
+var crawl_released := false
+var crawl_origin := Vector3.ZERO
+var crawl_phases := {}
+var crawl_grips := 0
 var input_phase := 0
 var input_arm_seen := false
 var input_drag_seen := false
@@ -86,6 +93,7 @@ func _ready() -> void:
         if arg == "--test-reset": test_reset = true
         if arg == "--test-kill-native": test_kill_native = true; smoke = true
         if arg == "--test-input": test_input = true; smoke = true
+        if arg == "--test-crawl": test_crawl = true; smoke = true
         if arg == "--dense": dense_scene = true
         if arg.begins_with("--screenshot="): screenshot = arg.substr(13); smoke = true
     if animals not in [1, 2, 5, 10]: fail("Choose --animals=1, 2, 5 or 10"); return
@@ -148,6 +156,14 @@ func _ready() -> void:
         web.material_override = web_material
         web.name = "InterarmWeb"
         add_child(web)
+        var key_labels: Array = []
+        for k in 8:
+            var key_label := Label3D.new()
+            key_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+            key_label.font_size = 28
+            key_label.pixel_size = 0.006
+            add_child(key_label)
+            key_labels.append(key_label)
         if OS.get_environment("OCTO_VOLUME_ARM") == "1":
             volume_preview = MeshInstance3D.new()
             volume_preview.name = "PhysicalArmShellPreview"
@@ -162,7 +178,7 @@ func _ready() -> void:
             "scene": scene, "skel": skel, "bone_ids": bone_ids,
             "bone_rests": bone_rests, "mantles": mantles,
             "torso_root": torso_root, "torso_rest": torso_rest,
-            "mantle_rest_shell": [], "web": web})
+            "mantle_rest_shell": [], "web": web, "key_labels": key_labels})
         print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d torso_root=%d" % [i,mantles.size(),torso_root])
     print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
     var server := OS.get_environment("OCTO_SERVER")
@@ -269,7 +285,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "F/D: left front    J/K: right front\nS/A: left side-front    L/;: right side-front\nR/E: left side-rear    U/I: right side-rear\nW/Q: left rear    O/P: right rear\nHold extend / release retract; hold stroke / release return\nSPACE: release every sucker; hold to prevent gripping\nTab: select octopus   F5: reset\nLeft drag: force   Right drag: orbit"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "W / E: front arms   Q / D: side-front\nA / C: side-rear    Z / X: rear arms\nHold arm: reach > contact > pull > release\nShift + arm: keep reaching   Ctrl + arm: brace\nComma / Period + arm: twist\nArrows: staggered crawl assist (body-relative)\nSPACE: release all grips; overrides every input\nTab: select octopus   F5: reset\nLeft drag: force   Right drag: orbit"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -435,6 +451,14 @@ func update_scene() -> void:
             skin_deformer.update_skin(view.skin_config, a.arms)
         for arm in 8:
             var nodes: Array = a.arms[arm].nodes
+            var key_label: Label3D = view.key_labels[arm]
+            key_label.visible = i == selected
+            key_label.position = point(nodes, 0.70) + Vector3.UP * 0.10
+            var phase := "rest"
+            if i < arm_controllers.size() and not arm_controllers[i].phases.is_empty():
+                phase = arm_controllers[i].phases[arm]
+            key_label.text = OS.get_keycode_string(ARM_KEYS[arm])
+            key_label.modulate = Color("e7d29a") if phase != "rest" else Color("adbfc8")
             var material_roll: Array = a.arms[arm].roll
             var radii: Array = a.arms[arm].radii
             if nodes.size() < 2: continue
@@ -534,28 +558,40 @@ func measure_skin_floor() -> void:
     print("SKIN_FLOOR min_baked_vertex_y_m=%.6f (shader displacement excluded)" % minimum)
 
 func step_command() -> String:
-    # The C++ step2 protocol carries independent extension/sweep and global
-    # Space release. Neither channel writes positions directly.
+    while arm_controllers.size() < animals:
+        arm_controllers.append(ARM_CONTROLS.new())
+    var time := float(current.get("time", 0.0))
+    var release := Input.is_physical_key_pressed(KEY_SPACE)
+    var direction := Vector2(
+        float(Input.is_physical_key_pressed(KEY_RIGHT)) - float(Input.is_physical_key_pressed(KEY_LEFT)),
+        float(Input.is_physical_key_pressed(KEY_UP)) - float(Input.is_physical_key_pressed(KEY_DOWN))).normalized()
     var out := "step2 %d" % (animals * 8)
     for i in animals:
         for arm in 8:
-            var controlled := i == selected
-            var reach := test_all_active or (test_actuation and i == 0 and arm == 0) or (
-                controlled and Input.is_physical_key_pressed(EXTEND_KEYS[arm]))
-            var paddle := test_all_active or (
-                controlled and Input.is_physical_key_pressed(STROKE_KEYS[arm]))
-            var idle := idle_arm_shape(i, arm)
-            var extension: float = 1.48 if reach else (1.05 if paddle else idle.extension)
-            var curvature: float = 0.0 if reach else (1.1 if paddle else idle.curvature)
-            var sweep: float = 1.0 if paddle else 0.0
-            var activation: float = 1.0 if reach or paddle else idle.activation
-            var twist := 3.0 if test_actuation and i == 0 and arm == 0 else 0.0
+            var manual := i == selected and Input.is_physical_key_pressed(ARM_KEYS[arm])
+            var radial := Vector2(sin(float(arm) * PI / 4.0), cos(float(arm) * PI / 4.0))
+            var auto_reach := i == selected and direction.length_squared() > 0.1 and radial.dot(direction) > -0.25 and fmod(time + float(arm % 2) * 0.85, 1.7) < 1.25
+            var held := manual or auto_reach or test_all_active or (test_actuation and i == 0 and arm == 0)
+            var attached := false
+            if not current.is_empty():
+                for grip in current.animals[i].arms[arm].get("attached", []):
+                    attached = attached or bool(grip)
+            var sign := -1.0 if not manual and direction.y < -0.1 else 1.0
+            var cmd: Dictionary = arm_controllers[i].sample(arm, time, held,
+                manual and Input.is_physical_key_pressed(KEY_SHIFT),
+                manual and Input.is_physical_key_pressed(KEY_CTRL), release, attached, sign)
+            if not release and arm_controllers[i].phases[arm] == "rest" and time - arm_controllers[i].starts[arm] >= 0.32:
+                cmd.extension = idle_arm_shape(i, arm).extension
+            var twist := 0.0
+            if manual:
+                twist = (float(Input.is_physical_key_pressed(KEY_PERIOD)) - float(Input.is_physical_key_pressed(KEY_COMMA))) * 3.0
+            if test_actuation and i == 0 and arm == 0: twist = 3.0
             out += " %d %d %f %f %f %f %f %d %f" % [
-                i, arm, activation, curvature, extension, twist, 0.02, 0, sweep]
+                i, arm, cmd.activation, cmd.curvature, cmd.extension, twist, 0.02, 0, cmd.sweep]
     out += " %d %d 0 %f %f %f 30 20 %d" % [
         drag_kind if dragging else 0, drag_index,
         drag_target.x, drag_target.y, drag_target.z,
-        1 if Input.is_physical_key_pressed(KEY_SPACE) else 0]
+        1 if release else 0]
     return out
 
 func inject_key(code: Key, pressed: bool) -> void:
@@ -580,10 +616,10 @@ func exercise_input() -> void:
         input_arm_baseline = active_tip.distance_to(passive_tip)
         inject_key(KEY_TAB,true)
         inject_key(KEY_TAB,false)
-        inject_key(KEY_J,true)
+        inject_key(KEY_E,true)
         input_phase = 1
     if current.tick >= 55 and input_phase == 1:
-        inject_key(KEY_J,false)
+        inject_key(KEY_E,false)
         input_center_baseline = vec(current.animals[1].center)
         var event := InputEventMouseButton.new()
         event.button_index = MOUSE_BUTTON_LEFT
@@ -619,6 +655,17 @@ func _process(delta: float) -> void:
     var start := Time.get_ticks_usec(); poll()
     if current.is_empty() or quitting: return
     exercise_input()
+    if test_crawl:
+        if current.tick >= 10 and not crawl_started:
+            crawl_started = true
+            crawl_origin = vec(current.animals[selected].center)
+            inject_key(KEY_UP, true)
+        if current.tick >= benchmark_ticks - 45 and not crawl_released:
+            crawl_released = true
+            inject_key(KEY_UP, false)
+        crawl_grips = maxi(crawl_grips, count_grips_from_snapshot(current))
+        if selected < arm_controllers.size():
+            for phase in arm_controllers[selected].phases: crawl_phases[phase] = true
     if test_kill_native and current.tick >= 20 and not killed_native:
         killed_native = true
         OS.kill(child.pid)
@@ -631,10 +678,17 @@ func _process(delta: float) -> void:
     update_camera()
     var grip_count := count_grips_from_snapshot(current)
     label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d   Grips %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,grip_count,parse_ms,skin_ms,command_ms]
+    var active_labels := PackedStringArray()
+    if selected < arm_controllers.size():
+        for arm in arm_controllers[selected].phases.size():
+            var phase: String = arm_controllers[selected].phases[arm]
+            if phase != "rest":
+                active_labels.append("%s:%s" % [OS.get_keycode_string(ARM_KEYS[arm]),phase])
+    label.text += "\nArms: " + (", ".join(active_labels) if not active_labels.is_empty() else "relaxed")
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
-        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_J) and next_command.contains(" 1 0 1.000000 0.000000 1.480000"))
+        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_E) and next_command.contains(" 1 0 1.000000 0.000000 1.480000"))
         input_drag_seen = input_drag_seen or (dragging and drag_kind == 1 and drag_index == 1 and drag_target.distance_to(vec(current.animals[1].center)) > .05)
     command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
     inbox_lock.lock()
@@ -645,6 +699,11 @@ func _process(delta: float) -> void:
         send(next_command)
     frame_sum += float(Time.get_ticks_usec()-start)/1000.0; frame_count += 1
     if smoke and current.tick >= benchmark_ticks and (not test_reset or reset_observed):
+        if test_crawl:
+            var travel := vec(current.animals[selected].center) - crawl_origin
+            print("CRAWL_CHECK phases=%s grips_peak=%d travel_m=%s released=%s" % [str(crawl_phases.keys()),crawl_grips,str(travel),str(crawl_released)])
+            if not crawl_phases.has("pull") or crawl_grips == 0 or not crawl_released:
+                fail("Crawl assist did not complete a physical grip/pull/release cycle"); return
         if test_input:
             print("INPUT_CHECK selected=%d arm=%s drag=%s phase=%d arm_delta_m=%.5f center_delta_m=%.5f" % [selected,str(input_arm_seen),str(input_drag_seen),input_phase,input_arm_delta,input_center_delta])
             if not input_arm_seen or not input_drag_seen or input_arm_delta < .005 or input_center_delta < .002: fail("Key or mouse input did not produce physical response"); return
@@ -706,4 +765,3 @@ func _exit_tree() -> void:
     if pipe != null and child.has("pid") and OS.is_process_running(child.pid):
         if not pending: pipe.store_string("1 %d quit\n" % (request_id+1)); pipe.flush()
         pipe.close(); OS.kill(child.pid)
-
