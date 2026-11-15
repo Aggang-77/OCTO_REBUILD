@@ -4,12 +4,12 @@ extends RefCounted
 ## physical arm indices 0..7 display as R,E,W,Q,P,O,I,U.
 ## Left hand: Q W E R. Right hand: U I O P.
 const KEYS = [KEY_R, KEY_E, KEY_W, KEY_Q, KEY_P, KEY_O, KEY_I, KEY_U]
-const PHASES = ["shorten", "anchor", "elongate", "release"]
-const SHORTEN_TIME := 0.13
-const ANCHOR_TIMEOUT := 0.30
+const PHASES = ["reach", "anchor", "pull", "release"]
+const REACH_TIME := 0.18
+const ANCHOR_TIMEOUT := 0.40
 const ANCHOR_CONFIRM := 0.04
-const ELONGATE_TIME := 0.40
-const RELEASE_TIME := 0.15
+const PULL_TIME := 0.42
+const RELEASE_TIME := 0.16
 var phases: Array[String] = []
 var starts: Array[float] = []
 var last_time := -1.0
@@ -41,34 +41,39 @@ func sample(arm: int, time: float, held: bool, stretch: bool,
         return {"activation": 0.78, "extension": 1.10 if brace else 1.35,
             "curvature": 0.0, "sweep": 0.0}
     if phases[arm] not in PHASES:
-        enter(arm, "shorten", time)
+        enter(arm, "reach", time)
     var elapsed := time - starts[arm]
     match phases[arm]:
-        "shorten":
-            if elapsed >= SHORTEN_TIME:
+        "reach":
+            if elapsed >= REACH_TIME:
                 enter(arm, "anchor", time)
         "anchor":
-            # With suction ON use only real attached suckers. With suction
-            # OFF, floor static friction can supply a limited push footing.
-            if (attached and elapsed >= ANCHOR_CONFIRM) or (not suction_enabled and elapsed >= 0.10):
-                enter(arm, "elongate", time)
+            # Real suction contact is mandatory for a suction-powered pull.
+            # Without Space, allow a weaker friction-powered pull attempt.
+            if attached and suction_enabled and elapsed >= ANCHOR_CONFIRM:
+                enter(arm, "pull", time)
+            elif not suction_enabled and elapsed >= 0.10:
+                enter(arm, "pull", time)
             elif elapsed >= ANCHOR_TIMEOUT:
                 enter(arm, "release", time)
-        "elongate":
-            if (suction_enabled and not attached) or elapsed >= ELONGATE_TIME:
+        "pull":
+            if (suction_enabled and not attached) or elapsed >= PULL_TIME:
                 enter(arm, "release", time)
         "release":
             if elapsed >= RELEASE_TIME:
-                enter(arm, "shorten", time)
+                enter(arm, "reach", time)
     match phases[arm]:
-        "shorten":
-            return {"activation": 0.62, "extension": 0.88, "curvature": 0.65, "sweep": 0.0}
+        "reach":
+            return {"activation": 0.80, "extension": 1.38, "curvature": 0.05, "sweep": 0.0}
         "anchor":
-            return {"activation": 0.82, "extension": 1.07, "curvature": 0.20, "sweep": 0.0}
-        "elongate":
-            # The sucker anchor resists displacement while proximal tissue
-            # lengthens: motion arises through XPBD reaction, not a body push.
-            return {"activation": 0.96, "extension": 1.47, "curvature": 0.0, "sweep": 0.0}
+            # Press arm sections onto the floor, giving real suckers time to seal.
+            return {"activation": 0.85, "extension": 1.32, "curvature": 0.22, "sweep": 0.0}
+        "pull":
+            # Shorten ONLY the body-to-foothold tissue. A sealed sucker
+            # stays attached during this phase (no forced peel on contraction).
+            return {"activation": 1.0 if suction_enabled else 0.85,
+                "extension": 0.67 if suction_enabled else 0.80,
+                "curvature": 0.30, "sweep": 0.0}
         "release":
-            return {"activation": 0.0, "extension": 0.76, "curvature": 0.0, "sweep": 0.0}
+            return {"activation": 0.0, "extension": 1.04, "curvature": 0.0, "sweep": 0.0}
     return {"activation": 0.0, "extension": 1.04, "curvature": 0.0, "sweep": 0.0}
