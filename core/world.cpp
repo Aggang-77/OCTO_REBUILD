@@ -1095,9 +1095,21 @@ for(auto&particle:p)particle.compression=0;
 for(auto&e:d){
  e.lambda=0;
  if(e.adaptive){
-  const double nominal=e.base_rest*(e.arm_axial?
-      animals[p[e.a].animal].arms[p[e.a].arm].active.extension:1.);
-  e.rest=nominal*(1.+e.creep);
+  double extension=1.;
+  if(e.arm_axial){
+   const auto& pa=p[e.a];
+   const auto& arm=animals[pa.animal].arms[pa.arm];
+   extension=arm.active.extension;
+   if(extension>1.12&&arm.active.activation>.6){
+    // Spend the extension on tissue between body and foothold rather
+    // than extending the entire distal arm beyond the planted site.
+    unsigned foothold=std::max(2u,cfg.segments/2);
+    for(const auto& sucker:arm.suckers)
+     if(sucker.attached!=-1)foothold=std::min(foothold,sucker.node);
+    if(pa.node>=int(foothold))extension=1.;
+   }
+  }
+  e.rest=e.base_rest*extension*(1.+e.creep);
  }
 }
 for(auto&t:tetra)t.lambda=0;
