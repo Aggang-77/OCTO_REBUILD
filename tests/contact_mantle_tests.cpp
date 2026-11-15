@@ -49,6 +49,19 @@ int main(){try{
   }
   surface_hits+=a.diagnostics.arm_prop_surface_contacts;
   volume_error=std::max(volume_error,a.diagnostics.max_mantle_volume_error);
+  // Mantle may lean, but its dorsal axis cannot rotate through the
+  // proximal web's reference plane by ~180 degrees.
+  {
+   const auto& arms=animal.arms;
+   const Vec3 web_forward=rm::sub(arms[0].nodes[2],arms[4].nodes[2]);
+   const Vec3 web_right=rm::sub(arms[2].nodes[2],arms[6].nodes[2]);
+   Vec3 web_normal=unit(rm::cross(web_forward,web_right));
+   if(web_normal.y<0)web_normal=rm::mul(web_normal,-1.);
+   const Vec3 dorsal_axis=unit(rm::sub(animal.body_nodes[3],animal.body_nodes[4]));
+   const double orientation=rm::dot(web_normal,dorsal_axis);
+   require(orientation>0.,
+           "dorsal mantle must remain above the arm-web plane");
+  }
   // The anatomical dorsal cage must not invert beneath the ventral cage.
   require(animal.body_nodes[3].y>=animal.body_nodes[4].y-.005,
           "mantle dorsal cage does not flip 180 degrees into the floor");
