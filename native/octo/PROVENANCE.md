@@ -1,83 +1,81 @@
-# OCTO_REBUILD import
+# Mantle-balloon integration
 
-## Local main merge (2026-11-15)
+The integrated game uses `songhh06/OCTO_REBUILD` branch
+`fix/contact-mantle-balloon` at `8bb743438efd13a0642327b39443f53b20cf3d15`.
+The remote ref was verified with Git before importing it. Its history is a
+parent of the local merge, alongside the existing integrated game history.
+The previous selective-arm prototype is preserved in checkpoint `c8ba4b7`
+and is superseded by this branch's movement and controls.
 
-The integrated project now includes `songhh06/OCTO_REBUILD` main at
-`5199960`, merged beneath `native/octo` on `local/merge-octo-main`.
-Git records the previously imported `7a93c0e` baseline and the newer upstream
-history; the root Godot game, characters, map and hidden fight mode are retained.
+## Source authority
 
-The latest stable motor/suction multipliers, progressive uncoiling,
-surface-following, upright recovery, 19-node mantle cage/shell, viscous tissue
-and bounded creep are used by the integrated game. Input now matches upstream:
-extension 1.48/0.58 and stiffness 0.02. The render client also retains upstream's
-texture-preserving wet PBR finish and physical mantle-root skin deformation.
+The source arm controller and GPU skin shader are copied unchanged. The skin
+module changes only its resource path. The renderer retains the source model
+yaw, arm mapping, mantle normalization and deformable interarm web.
 
-Terrain-seeking, following and suction anchors use the actual heightfield, and
-all 19 body sites support the existing scene-force/contact adapter. The separate
-tetrahedral-arm prototype remains an explicit native opt-in as it is upstream;
-the normal integrated launcher uses the stable default physics configuration.
+The source grounded profile is used: `grounded_rest=true`,
+`tissue_stiffness_ratio=0.2`, `spawn_height=0.27`, `upright_strength=0.08`,
+`auto_suction=true`, one animal and no native demo props. The original
+reach/seal/pull/release controller, passive flesh, friction, suction, mantle
+chambers and mantle/web/root constraints are retained without movement tuning.
+Space enables suction only on actively commanded arms; Space-up clears it.
 
-The two-solver coupling limitations described below still apply.
+The map, hunters, character physics, difficulty selection, ten-second continuous
+capture objective, reset/pause and secret fight transition remain from the
+integrated game. A carried hunter uses its existing finite spring bindings.
+While Space remains held, releasing an arm key retains an already established
+hunter hold; Space-up releases it. Occupied arms cannot also grip native ground.
 
-Validation on Windows with Zig 0.13.0 and Godot 4.7.2:
+## Integration boundaries
 
-- Native physics, controls-v1, viscoelastic, volumetric-arm, scene-coupling and
-  integration suites: PASS. The coupling fixture verifies real suction on a
-  raised heightfield and reactions applied to all 19 body sites.
-- Integrated input/renderer/objective/reset suite: 40/40 PASS.
-- Real-contact capture, hidden-fight interruption and ten-second victory:
-  9/9 PASS, including a rendered victory screenshot.
-- Hidden-fight entry, keyboard combat, suspension and return: 23/23 PASS.
+`core/scene_coupling.inl` adds registered terrain/triangle contact, per-site
+scene forces/planes, reaction impulses, contact metadata and an external
+floor-grip exclusion mask. Without registered terrain or scene inputs the
+source flat-floor paths are unchanged. These hooks do not replace the source
+muscle/controller or mantle/web algorithms.
 
-These results verify the tested fixtures; they are not a full performance or
-biological-fidelity acceptance claim.
+The `game_server.cpp` adapter exposes `game_reset5` and `step5`. It applies the
+uniform compatibility transform `world = origin + 1.5 * native` to snapshots,
+geometry and contacts. Forces enter divided by scale and reaction impulses
+leave multiplied by scale. Drag stiffness is unchanged, and its force cap is
+converted by scale. No geometry/mass/inertia multiplier is applied inside the
+source engine. This retains the source simulation profile while keeping the
+larger integrated octopus and its contact envelope.
 
-## Original import
+Static Godot map shapes are uploaded as world-space triangles and indexed by
+native BVH. Hunters and dynamic props retain Godot/Jolt physics; bounded spring
+loads and contact reactions cross the adapter. This is explicit coupling between
+two solvers, not a migration of all character dynamics into C++.
 
-Imported from the local `GitHub/OCTO_REBUILD` checkout at
-`7a93c0e886cc7625f44c778e98c5abaee31ff129` on 2026-11-15.
-The original checkout is preserved. `core`, `include`, `bridge/server.cpp` and
-the original tests retain their source structure. The Godot skin/input/reader
-client is retained in `scripts/octopus/rebuild_demo.gd` with its model path and
-pipe write mode adapted. `octopus_controller.gd` owns the merged request worker.
-The original local GameReady v5 asset is in `assets/octopus`.
+## Verification
 
-The merged client adds a `game_server.cpp` executable, terrain height samples,
-per-site scene forces, and contact planes queried from the real Godot shapes.
-The octopus stays in its C++ XPBD solver at 1/60 s. Hunters and map props retain
-their existing Godot/Jolt physics. Their spring reactions are sent to native
-sites, and native scene-contact impulses are applied back to Godot bodies once.
-This is explicit sample-and-hold coupling between two solvers, not a migration
-of the character or map props into the original single C++ world. Large/fast
-contacts can need tuning; the contact bridge is discrete, not general CCD.
-Static terrain is now exported from enabled Godot static collision shapes as
-world-space triangles. A native BVH resolves body spheres and full tapered arm
-segments against that mesh, with per-contact surface normals. The 65 by 65
-heightfield remains a compatibility fallback when no triangles are provided.
-Dynamic hunters/props still use the explicit two-solver coupling above.
+On Windows with Zig 0.13.0 and Godot 4.7.2:
 
-## Selective-arm locomotion
+- The original 8bb7434 executable and integrated native executable produced
+  exactly equal serialized movement for 360 frames under identical commands,
+  including source suction toggles, asymmetric input and bounded drag.
+- Source controls/skin parity: 18 checks passed, including native-time phases.
+- Adapter protocol: 129 requests passed, including atomic triangle upload,
+  origin/scale conversion, source identity, active-only suction and carry masks.
+- Godot integration passed 125 checks and secret-fight isolation passed 24.
+  Real hunter acquisition, carry after arm-key release and Space-up release
+  were observed. A complete ten-second physical hold with the new source
+  remains unverified: later acquisition/reacquisition fixture attempts did
+  not complete, and further runs were stopped at the user's request to
+  minimize testing. The superseded prototype's victory screenshot is not
+  evidence for this source version.
+- Native physics, viscoelastic, volumetric-arm, integration and scene-coupling
+  suites passed. Scene coverage includes actual raised/slope mesh contact,
+  loads/reactions and floor-mask exclusion with native object-grip retention.
+- Two unchanged upstream suites fail identically against both original and
+  integrated physics: `controls_v1_tests` still expects idle-arm suction under
+  Space despite the later active-only rule; `contact_mantle_tests` still expects
+  passive rear proximal forward projection greater than -0.02 m (the original
+  reports -0.0907439 m). These failures are retained and are not hidden by
+  changing the authoritative movement or lowering assertions.
 
-`config/arm_layout.json` is the shared source for symmetric home angles, model
-arm correspondence and both independent input keys. `tools/generate_arm_layout.ps1`
-generates the native and both Godot tables. Game geometry, mass, inertia and
-rendered model use a 1.5 size scale.
-
-Protocol `step4` carries explicit extend, stroke and carried-target flags for
-each arm. Empty inactive arms release and recover with low tangential friction;
-carried targets retain their own state. Static suction requires an extend cycle,
-stable real contact, the actual material sucker direction and supported contact
-area. Broken or Space-released grips require a fresh extend press, independently
-of cooldown. Releasing peels suckers from tip to root before shortening the arm.
-Power strokes combine a 27-degree sweep with a smooth muscle-length contraction.
-Proximal ordering uses the torso material frame; distal segments remain free to
-wrap. Recovery and placement use bounded internal forces, not input teleports.
-
-Controls preserve the original bounded muscle targets and force drag. A sword
-can disable an arm's threat, grabbing and control until round reset. The visible
-GameReady mesh is retained; this does not implement mesh amputation.
-
-Build locally with `tools/build_octopus.ps1 -Tests`, or build the native target
-`octo_game_server` with CMake and a C++20 compiler. The current Windows binary
-is included beside this file so launching the merged game needs no compiler.
+Run `tools/build_octopus.ps1` to rebuild. `-Tests` also runs the source tests and
+will report those known upstream failures. Game integration fixtures are in
+`tests/test_octopus_merge.gd`, `test_octopus_contact.gd` and `test_secret_fight.gd`.
+This record does not establish biological fidelity, a maximum climb angle or a
+real-time 60 Hz performance guarantee.

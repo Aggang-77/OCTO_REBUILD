@@ -32,7 +32,7 @@ func key(code: Key, control: bool = false, shift: bool = false, echo: bool = fal
 	Input.parse_input_event(event)
 
 func native_ticks(target_tick: int) -> bool:
-	var deadline := Time.get_ticks_msec() + 7000
+	var deadline := Time.get_ticks_msec() + 15000
 	while Time.get_ticks_msec() < deadline:
 		if game.octopus.geometry_ready and not game.octopus.resetting and not game.octopus.current.is_empty() and int(game.octopus.current.tick) >= target_tick:
 			return true

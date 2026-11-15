@@ -1,14 +1,14 @@
 extends Node3D
 const MODEL = "res://assets/Octopus_GameReady_v5.glb"
-# Input, spawn directions and skin mapping share one generated layout.
-const ARM_LAYOUT = preload("res://scripts/arm_layout.gd")
-const EXTEND_KEYS = ARM_LAYOUT.EXTEND_KEYS
-const STROKE_KEYS = ARM_LAYOUT.STROKE_KEYS
-const MODEL_ARM_IDS = ARM_LAYOUT.MODEL_ARM_IDS
-const HOME_DEGREES = ARM_LAYOUT.HOME_DEGREES
+const OCTOPUS_SKIN = preload("res://scripts/octopus_skin.gd")
+# Solver arms 0..7 go around the body: right-front, right-side-front,
+# right-side-rear, right-rear, left-rear, left-side-rear,
+# left-side-front, left-front. Heading is torso-local +Z.
+const ARM_CONTROLS = preload("res://scripts/arm_controls.gd")
+const ARM_KEYS = ARM_CONTROLS.KEYS
+var arm_controllers: Array = []
 const MODEL_SCALE = 1.35 / 2.3
-const MODEL_YAW = ARM_LAYOUT.MODEL_YAW
-var creature_scale := 1.0
+const MODEL_YAW = -PI / 8.0
 var child := {}
 var pipe: FileAccess
 var buffer := PackedByteArray()
@@ -30,6 +30,7 @@ var sent_at := 0
 var last_progress_usec := 0
 var current := {}
 var views: Array = []
+var skin_deformer = OCTOPUS_SKIN.new()
 var props: Array = []
 var selected := 0
 var animals := 2
@@ -40,6 +41,12 @@ var test_all_active := false
 var test_reset := false
 var test_kill_native := false
 var test_input := false
+var test_crawl := false
+var crawl_started := false
+var crawl_released := false
+var crawl_origin := Vector3.ZERO
+var crawl_phases := {}
+var crawl_grips := 0
 var input_phase := 0
 var input_arm_seen := false
 var input_drag_seen := false
@@ -60,8 +67,6 @@ var distance := 8.0
 var dragging := false
 var drag_kind := 0
 var drag_index := 0
-var drag_stiffness := 30.0
-var drag_max_force := 20.0
 var drag_target := Vector3.ZERO
 var drag_plane: Plane
 var frame_sum := 0.0
@@ -88,6 +93,7 @@ func _ready() -> void:
         if arg == "--test-reset": test_reset = true
         if arg == "--test-kill-native": test_kill_native = true; smoke = true
         if arg == "--test-input": test_input = true; smoke = true
+        if arg == "--test-crawl": test_crawl = true; smoke = true
         if arg == "--dense": dense_scene = true
         if arg.begins_with("--screenshot="): screenshot = arg.substr(13); smoke = true
     if animals not in [1, 2, 5, 10]: fail("Choose --animals=1, 2, 5 or 10"); return
@@ -97,11 +103,9 @@ func _ready() -> void:
     for i in animals:
         var scene := packed.instantiate() as Node3D
         add_child(scene)
-        # Preserve the imported GLB texture/normal maps. Only alter
-        # inexpensive built-in PBR parameters; no jelly vertex shader.
-        var coated_surfaces := apply_slime_finish(scene)
-        print("SLIME_FINISH animal=%d coated_surfaces=%d shader=none" % [i,coated_surfaces])
-        scene.scale = Vector3.ONE * MODEL_SCALE * creature_scale
+        # Import the untouched GameReady GLB before installing physical
+        # mesh-space skin. The legacy PBR mode is opt-in as a fallback.
+        scene.scale = Vector3.ONE * MODEL_SCALE
         scene.rotation.y = MODEL_YAW
         var skels := scene.find_children("*", "Skeleton3D", true, false)
         if skels.is_empty(): fail("Model skeleton missing"); return
@@ -118,6 +122,15 @@ func _ready() -> void:
                 rests.append(skel.get_bone_global_rest(id))
             bone_ids.append(ids)
             bone_rests.append(rests)
+        var skin_config := {}
+        if OS.get_environment("OCTO_SKIN_MODE") != "legacy":
+            skin_config = skin_deformer.install(scene, skel, bone_ids)
+            print("NATIVE_MESH_SKIN animal=%d covered=%d skipped=%d reason=%s" % [
+                i, skin_config.covered_surfaces,
+                skin_config.rejected_surfaces, skin_config.reason])
+        else:
+            var coated_surfaces := apply_slime_finish(scene)
+            print("SLIME_FINISH_LEGACY animal=%d surfaces=%d" % [i,coated_surfaces])
         # Optional imported independent mantle mesh: preserve its original
         # material and vertex data, deform only its object transform from
         # the low-resolution physical shell. Never deform a combined arm mesh.
@@ -133,9 +146,39 @@ func _ready() -> void:
         # follow this bone, while arm bones are re-targeted below.
         var torso_root: int = skel.get_bone_parent(bone_ids[0][0])
         var torso_rest := skel.get_bone_global_rest(torso_root) if torso_root >= 0 else Transform3D.IDENTITY
-        views.append({"scene": scene, "skel": skel, "bone_ids": bone_ids,
+        var volume_preview: MeshInstance3D = null
+        var web := MeshInstance3D.new()
+        web.mesh = ImmediateMesh.new()
+        var web_material := StandardMaterial3D.new()
+        web_material.albedo_color = Color(0.43, 0.21, 0.16)
+        web_material.roughness = 0.32
+        web_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+        web.material_override = web_material
+        web.name = "InterarmWeb"
+        add_child(web)
+        var key_labels: Array = []
+        for k in 8:
+            var key_label := Label3D.new()
+            key_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+            key_label.font_size = 28
+            key_label.pixel_size = 0.006
+            add_child(key_label)
+            key_labels.append(key_label)
+        if OS.get_environment("OCTO_VOLUME_ARM") == "1":
+            volume_preview = MeshInstance3D.new()
+            volume_preview.name = "PhysicalArmShellPreview"
+            var preview_material := StandardMaterial3D.new()
+            preview_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+            preview_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+            preview_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+            preview_material.albedo_color = Color(0.15, 0.9, 0.7, 0.35)
+            volume_preview.material_override = preview_material
+            add_child(volume_preview)
+        views.append({"skin_config": skin_config, "volume_preview": volume_preview,
+            "scene": scene, "skel": skel, "bone_ids": bone_ids,
             "bone_rests": bone_rests, "mantles": mantles,
-            "torso_root": torso_root, "torso_rest": torso_rest})
+            "torso_root": torso_root, "torso_rest": torso_rest,
+            "mantle_rest_shell": [], "web": web, "key_labels": key_labels})
         print("TISSUE_MANTLE_SKIN animal=%d independent_meshes=%d torso_root=%d" % [i,mantles.size(),torso_root])
     print("MODEL_LOADED animals=%d skeleton_bones=%d arm_bones=192" % [animals, views[0].skel.get_bone_count()])
     var server := OS.get_environment("OCTO_SERVER")
@@ -147,11 +190,12 @@ func _ready() -> void:
     send(reset_command())
 
 func reset_command() -> String:
-    var command := "reset %d %f 1" % [animals,1.0 if dense_scene else 2.2]
-    if OS.get_environment("OCTO_VOLUME_ARM") == "1":
-        # Explicit experimental toggle, never activated in normal demo.
-        command += " 1"
-    return command
+    # The fifth field enables low, gravity-settled rest physics.
+    # Keep the tetrahedral arm prototype separate and opt-in.
+    var volume_arm := 1 if OS.get_environment("OCTO_VOLUME_ARM") == "1" else 0
+    var grounded := 0 if OS.get_environment("OCTO_REST_MODE") == "legacy" else 1
+    return "reset %d %f 1 %d %d" % [animals,
+        1.0 if dense_scene else 2.2, volume_arm, grounded]
 
 func read_pipe() -> void:
     # Drain the pipe independently of render frames. Only complete lines cross
@@ -241,13 +285,13 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "R/E: left front    U/I: right front\nW/Q: left side-front    O/P: right side-front\nF/D: left side-rear    J/K: right side-rear\nS/A: left rear    L/;: right rear\nHold extend / stroke; release returns an unheld arm\nSPACE: release every sucker; hold to prevent gripping\nTab: select octopus   F5: reset\nLeft drag: force   Right drag: orbit"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "W / E: front arms   Q / D: side-front\nA / C: side-rear    Z / X: rear arms\nHold arm: reach > contact > pull > release\nShift + arm: keep reaching   Ctrl + arm: brace\nComma / Period + arm: twist\nArrows: staggered crawl assist (body-relative)\nSPACE: release all grips; overrides every input\nTab: select octopus   F5: reset\nLeft drag: force   Right drag: orbit"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
-    if not current.is_empty():
-        for a in current.animals: center += vec(a.center)
-        center /= current.animals.size()
+    var states: Array = current.get("animals", [])
+    if not states.is_empty():
+        center = vec(states[clampi(selected, 0, states.size() - 1)].center)
     camera.position = center + Vector3(sin(yaw)*cos(pitch), sin(pitch), cos(yaw)*cos(pitch))*distance
     camera.look_at(center, Vector3.UP)
 
@@ -280,7 +324,7 @@ func poll() -> void:
         if not parsed.get("ok", false):
             var bridge_error := str(parsed.get("error", "unknown"))
             if bridge_error == "bad_operation":
-                fail("C++ server cannot handle controls-v2 'step4'. Close the game, run tools/build.ps1 and relaunch PLAY_DEMO.cmd. Server: " + OS.get_environment("OCTO_SERVER"))
+                fail("C++ server cannot handle controls-v1 'step2'. Close the game, run tools/build.ps1 and relaunch PLAY_DEMO.cmd. Server: " + OS.get_environment("OCTO_SERVER"))
             else:
                 fail("Bridge: " + bridge_error)
             return
@@ -316,10 +360,17 @@ func mantle_scale_from_shell(nodes: Array, center: Vector3, inverse: Quaternion)
         minimum = minimum.min(local_point)
         maximum = maximum.max(local_point)
     var span := maximum - minimum
-    return Vector3(
-        clampf(span.x / (0.44 * creature_scale), 0.55, 1.55),
-        clampf(span.y / (0.25 * creature_scale), 0.50, 1.65),
-        clampf(span.z / (0.38 * creature_scale), 0.55, 1.55))
+    var shape := Vector3(clampf(span.x / 0.44, 0.85, 1.20),
+        clampf(span.y / 0.25, 0.85, 1.20),
+        clampf(span.z / 0.38, 0.85, 1.20))
+    # Scaling the three axes independently previously destroyed visible
+    # volume, on top of the shell shader deformation. Keep determinant one.
+    return shape / pow(shape.x * shape.y * shape.z, 1.0 / 3.0)
+
+func mantle_respiration(shape: Vector3, elapsed: float) -> Vector3:
+    # Slow physiological mantle pumping (~0.25 Hz), not oscillating arm
+    # stiffness. Preserve the large shape deformation from the C++ shell.
+    return shape
 
 func apply_torso_root_skin(skel: Skeleton3D, root_id: int, rest: Transform3D, size: Vector3) -> void:
     if root_id < 0:
@@ -329,15 +380,41 @@ func apply_torso_root_skin(skel: Skeleton3D, root_id: int, rest: Transform3D, si
     var global_target := Transform3D(rest.basis * Basis.from_scale(size), rest.origin)
     skel.set_bone_pose(root_id, parent_rest.affine_inverse() * global_target)
 
+func create_volumetric_preview_mesh(rings: Array) -> ArrayMesh:
+    # Explicit experimental 36-vertex physical surface visualizer.
+    # Only the *one-arm prototype* uses this compact per-tick mesh;
+    # the production GameReady model still uses GPU skeleton skinning.
+    var mesh := ArrayMesh.new()
+    if rings.size() < 2:
+        return mesh
+    var vertices := PackedVector3Array()
+    for ring in rings:
+        if not ring is Array or ring.size() != 4:
+            return mesh
+        for vertex in ring:
+            vertices.append(vec(vertex))
+    var indices := PackedInt32Array()
+    for j in range(rings.size() - 1):
+        for k in 4:
+            var a := j * 4 + k
+            var b := j * 4 + (k + 1) % 4
+            var c := (j + 1) * 4 + k
+            var d := (j + 1) * 4 + (k + 1) % 4
+            indices.append_array(PackedInt32Array([a, b, d, a, d, c]))
+    var arrays := []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_INDEX] = indices
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    return mesh
+
 func update_scene() -> void:
-    creature_scale = float(current.get("size_scale", creature_scale))
-    var render_scale := MODEL_SCALE * creature_scale
     for i in current.animals.size():
         var a: Dictionary = current.animals[i]; var view: Dictionary = views[i]
         var scene: Node3D = view.scene; var skel: Skeleton3D = view.skel
         var center := vec(a.center); var orientation := quat(a.orientation)
-        scene.scale = Vector3.ONE * render_scale
-        scene.position = center - orientation * Quaternion(Vector3.UP,MODEL_YAW) * (Vector3(0,.15,.1)*render_scale)
+        update_web(view.web, a.arms)
+        scene.position = center - orientation * Quaternion(Vector3.UP,MODEL_YAW) * (Vector3(0,.15,.1)*MODEL_SCALE)
         scene.quaternion = orientation * Quaternion(Vector3.UP,MODEL_YAW)
         var inverse := Quaternion(Vector3.UP,-MODEL_YAW) * orientation.inverse()
         # A physical shell of 12 particles controls the gross mantle
@@ -345,7 +422,21 @@ func update_scene() -> void:
         # GPU keeps its original vertices; no per-frame mesh allocations.
         var tissue_nodes: Array = a.get("body_nodes", [])
         if tissue_nodes.size() >= 19:
-            var shape_scale := mantle_scale_from_shell(tissue_nodes, center, inverse)
+            var shell_rest: Array = view.mantle_rest_shell
+            if shell_rest.is_empty() or int(current.tick) == 0:
+                shell_rest = []
+                for n in range(7, 19):
+                    shell_rest.append(inverse * (vec(tissue_nodes[n]) - center) / MODEL_SCALE)
+                views[i]["mantle_rest_shell"] = shell_rest
+            var offsets := PackedVector3Array()
+            for n in range(7, 19):
+                var local_shell := inverse * (vec(tissue_nodes[n]) - center) / MODEL_SCALE
+                offsets.append((local_shell - shell_rest[n - 7]).limit_length(0.045))
+            if not view.skin_config.is_empty():
+                skin_deformer.update_mantle(view.skin_config, offsets)
+            var shape_scale := mantle_respiration(
+                mantle_scale_from_shell(tissue_nodes, center, inverse),
+                float(current.get("time", 0.0)))
             var root_id: int = view.torso_root
             if root_id >= 0:
                 apply_torso_root_skin(skel, root_id, view.torso_rest, shape_scale)
@@ -356,8 +447,18 @@ func update_scene() -> void:
                     mantle.transform = Transform3D(
                         rest_transform.basis * Basis.from_scale(shape_scale),
                         rest_transform.origin)
+        if not view.skin_config.is_empty():
+            skin_deformer.update_skin(view.skin_config, a.arms)
         for arm in 8:
             var nodes: Array = a.arms[arm].nodes
+            var key_label: Label3D = view.key_labels[arm]
+            key_label.visible = i == selected
+            key_label.position = point(nodes, 0.70) + Vector3.UP * 0.10
+            var phase := "rest"
+            if i < arm_controllers.size() and not arm_controllers[i].phases.is_empty():
+                phase = arm_controllers[i].phases[arm]
+            key_label.text = OS.get_keycode_string(ARM_KEYS[arm])
+            key_label.modulate = Color("e7d29a") if phase != "rest" else Color("adbfc8")
             var material_roll: Array = a.arms[arm].roll
             var radii: Array = a.arms[arm].radii
             if nodes.size() < 2: continue
@@ -367,7 +468,7 @@ func update_scene() -> void:
                 # Seed the parent transform with the physically deformed
                 # torso root so arm targets stay world-space correct.
                 globals[torso_root] = skel.get_bone_global_pose(torso_root)
-            var art: int = MODEL_ARM_IDS[arm]
+            var art := (7-arm)%8
             var ids: Array = view.bone_ids[art]
             var rests: Array = view.bone_rests[art]
             for j in 24:
@@ -381,40 +482,112 @@ func update_scene() -> void:
                 if (rest1-rest0).length_squared() > 0.000001 and tangent.length_squared() > 0.000001: swing = Quaternion((rest1-rest0).normalized(), tangent)
                 var roll_index := mini(int(float(j)*material_roll.size()/24.0),material_roll.size()-1)
                 var material_rotation := Quaternion(tangent, float(material_roll[roll_index])) * swing
-                var base_radius := .036 * creature_scale * (1.0-.8*float(roll_index)/float(material_roll.size()))
+                var base_radius := .036 * (1.0-.8*float(roll_index)/float(material_roll.size()))
                 var cross_section := Vector3(clampf(float(radii[roll_index][0])/base_radius,.40,2.5),1.0,clampf(float(radii[roll_index][1])/base_radius,.40,2.5))
-                var target := Transform3D(Basis(material_rotation)*rest.basis*Basis.from_scale(cross_section), Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/render_scale)
+                var target := Transform3D(Basis(material_rotation)*rest.basis*Basis.from_scale(cross_section), Vector3(0,.15,.1)+inverse*(point(nodes,float(j)/23.0)-center)/MODEL_SCALE)
                 var parent := skel.get_bone_parent(id)
                 var parent_global: Transform3D = globals.get(parent, skel.get_bone_global_rest(parent) if parent >= 0 else Transform3D.IDENTITY)
                 skel.set_bone_pose(id,parent_global.affine_inverse()*target); globals[id] = target
     while props.size() < current.rigids.size():
         var mesh := MeshInstance3D.new(); mesh.mesh = BoxMesh.new(); var mat := StandardMaterial3D.new(); mat.albedo_color = Color("42a4c4"); mat.roughness = 0.4; mesh.material_override = mat; add_child(mesh); props.append(mesh)
+    if OS.get_environment("OCTO_VOLUME_ARM") == "1":
+        for i in current.animals.size():
+            var candidate: MeshInstance3D = views[i].volume_preview
+            if candidate != null:
+                candidate.mesh = create_volumetric_preview_mesh(
+                    current.animals[i].arms[0].get("volume_rings", []))
     for i in current.rigids.size():
         var r: Dictionary = current.rigids[i]; props[i].position = vec(r.center); props[i].quaternion = quat(r.orientation); props[i].scale = vec(r.half_extents)*2.0
     if current.tick == 0 or current.tick == 1: print("SNAPSHOT tick=%d animals=%d arms=%d first_node=%s" % [current.tick,current.animals.size(),current.animals[0].arms.size(),str(current.animals[0].arms[0].nodes[0])])
 
+func update_web(web: MeshInstance3D, arms: Array) -> void:
+    var mesh := web.mesh as ImmediateMesh
+    mesh.clear_surfaces()
+    var hub := Vector3.ZERO
+    for arm in arms:
+        hub += vec(arm.nodes[0]) / 8.0
+    var outline: Array[Vector3] = []
+    for k in 8:
+        var a := point(arms[k].nodes, 0.25)
+        var b := point(arms[(k + 1) % 8].nodes, 0.25)
+        outline.append(a)
+        # Scalloped edge leaves the outer three quarters of every arm free.
+        outline.append(hub.lerp((a + b) * 0.5, 0.78))
+    mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+    for k in range(outline.size()):
+        var a := outline[k]
+        var b := outline[(k + 1) % outline.size()]
+        var normal := (a - hub).cross(b - hub).normalized()
+        for vertex in [hub, a, b]:
+            mesh.surface_set_normal(normal)
+            mesh.surface_add_vertex(vertex)
+    mesh.surface_end()
+
+func idle_arm_shape(animal: int, arm: int) -> Dictionary:
+    # Mirror-symmetric radial rest target. The C++ motor is weak and
+    # yields to collision/gravity, so limbs do not rigidly snap home.
+    return {"extension": 1.04,
+            "curvature": 0.0,
+            "activation": 0.0,
+            "sweep": 0.0}
+
+func measure_skin_floor() -> void:
+    if DisplayServer.get_name() == "headless":
+        return
+    var minimum := INF
+    for view in views:
+        view.skel.force_update_all_bone_transforms()
+        for child_node in view.scene.find_children("*", "MeshInstance3D", true, false):
+            var mesh_node := child_node as MeshInstance3D
+            if mesh_node.mesh == null or mesh_node.skin == null:
+                continue
+            var baked := mesh_node.bake_mesh_from_current_skeleton_pose()
+            if baked == null:
+                continue
+            var part_min := INF
+            for surface in range(baked.get_surface_count()):
+                var vertices: PackedVector3Array = baked.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
+                for vertex in vertices:
+                    minimum = minf(minimum, (mesh_node.global_transform * vertex).y)
+                    part_min = minf(part_min, (mesh_node.global_transform * vertex).y)
+            if part_min < -0.01:
+                print("SKIN_FLOOR_PART name=%s min_y=%.5f" % [mesh_node.name,part_min])
+    print("SKIN_FLOOR min_baked_vertex_y_m=%.6f (shader displacement excluded)" % minimum)
+
 func step_command() -> String:
-    # The C++ step4 protocol carries explicit extend/stroke/carry phases and global
-    # Space release. Neither channel writes positions directly.
-    var out := "step4 %d" % (animals * 8)
+    while arm_controllers.size() < animals:
+        arm_controllers.append(ARM_CONTROLS.new())
+    var time := float(current.get("time", 0.0))
+    var suction_on := Input.is_physical_key_pressed(KEY_SPACE)
+    var out := "step2 %d" % (animals * 8)
     for i in animals:
         for arm in 8:
-            var controlled := i == selected
-            var reach := test_all_active or (test_actuation and i == 0 and arm == 0) or (
-                controlled and Input.is_physical_key_pressed(EXTEND_KEYS[arm]))
-            var paddle := test_all_active or (
-                controlled and Input.is_physical_key_pressed(STROKE_KEYS[arm]))
-            var extension := 1.48 if reach else 0.58
-            var curvature := 0.0 if reach else 3.6
-            var sweep := 1.0 if paddle else (-1.0 if reach else 0.0)
-            var twist := 3.0 if test_actuation and i == 0 and arm == 0 else 0.0
-            out += " %d %d %f %f %f %f %f %d %f %d %d %d" % [
-                i, arm, 1.0 if reach or paddle else 0.0, curvature, extension, twist, 0.02, 0, sweep,
-                int(reach), int(paddle), 0]
-    out += " %d %d 0 %f %f %f %f %f %d" % [
+            var manual := i == selected and Input.is_physical_key_pressed(ARM_KEYS[arm])
+            var held := manual or test_all_active or (test_actuation and i == 0 and arm == 0)
+            var attached := false
+            if not current.is_empty():
+                for grip in current.animals[i].arms[arm].get("attached", []):
+                    attached = attached or bool(grip)
+            var sign := 1.0
+            var cmd: Dictionary = arm_controllers[i].sample(arm, time, held,
+                manual and Input.is_physical_key_pressed(KEY_SHIFT),
+                manual and Input.is_physical_key_pressed(KEY_CTRL), false, attached and suction_on, sign, suction_on)
+            if arm_controllers[i].phases[arm] == "rest":
+                # Symmetric resting configuration, with an active low-force
+                # restoring motor in the C++ world rather than a teleport.
+                cmd.extension = 1.04
+                cmd.curvature = 0.0
+                cmd.sweep = 0.0
+            var twist := 0.0
+            if manual:
+                twist = (float(Input.is_physical_key_pressed(KEY_PERIOD)) - float(Input.is_physical_key_pressed(KEY_COMMA))) * 3.0
+            if test_actuation and i == 0 and arm == 0: twist = 3.0
+            out += " %d %d %f %f %f %f %f %d %f" % [
+                i, arm, cmd.activation, cmd.curvature, cmd.extension, twist, 0.02, 0, cmd.sweep]
+    out += " %d %d 0 %f %f %f 30 20 %d" % [
         drag_kind if dragging else 0, drag_index,
-        drag_target.x, drag_target.y, drag_target.z, drag_stiffness * creature_scale * creature_scale, drag_max_force * pow(creature_scale, 3.0),
-        1 if Input.is_physical_key_pressed(KEY_SPACE) else 0]
+        drag_target.x, drag_target.y, drag_target.z,
+        1 if suction_on else 0]
     return out
 
 func inject_key(code: Key, pressed: bool) -> void:
@@ -439,10 +612,10 @@ func exercise_input() -> void:
         input_arm_baseline = active_tip.distance_to(passive_tip)
         inject_key(KEY_TAB,true)
         inject_key(KEY_TAB,false)
-        inject_key(EXTEND_KEYS[0],true)
+        inject_key(KEY_R,true)
         input_phase = 1
     if current.tick >= 55 and input_phase == 1:
-        inject_key(EXTEND_KEYS[0],false)
+        inject_key(KEY_R,false)
         input_center_baseline = vec(current.animals[1].center)
         var event := InputEventMouseButton.new()
         event.button_index = MOUSE_BUTTON_LEFT
@@ -478,6 +651,17 @@ func _process(delta: float) -> void:
     var start := Time.get_ticks_usec(); poll()
     if current.is_empty() or quitting: return
     exercise_input()
+    if test_crawl:
+        if current.tick >= 10 and not crawl_started:
+            crawl_started = true
+            crawl_origin = vec(current.animals[selected].center)
+            inject_key(KEY_UP, true)
+        if current.tick >= benchmark_ticks - 45 and not crawl_released:
+            crawl_released = true
+            inject_key(KEY_UP, false)
+        crawl_grips = maxi(crawl_grips, count_grips_from_snapshot(current))
+        if selected < arm_controllers.size():
+            for phase in arm_controllers[selected].phases: crawl_phases[phase] = true
     if test_kill_native and current.tick >= 20 and not killed_native:
         killed_native = true
         OS.kill(child.pid)
@@ -490,10 +674,17 @@ func _process(delta: float) -> void:
     update_camera()
     var grip_count := count_grips_from_snapshot(current)
     label.text = "Animal %d / %d    Tick %d    %.2f s\nSolver %.2f ms   RPC %.2f ms   Contacts %d   Grips %d\nParse %.2f ms   Skin %.2f ms   Command %.2f ms" % [selected+1,animals,current.tick,current.time,current.diagnostics.step_ms,rpc_ms,current.diagnostics.contact_count,grip_count,parse_ms,skin_ms,command_ms]
+    var active_labels := PackedStringArray()
+    if selected < arm_controllers.size():
+        for arm in arm_controllers[selected].phases.size():
+            var phase: String = arm_controllers[selected].phases[arm]
+            if phase != "rest":
+                active_labels.append("%s:%s" % [OS.get_keycode_string(ARM_KEYS[arm]),phase])
+    label.text += "\nArms: " + (", ".join(active_labels) if not active_labels.is_empty() else "relaxed")
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
-        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(EXTEND_KEYS[0]) and next_command.contains(" 1 0 1.000000 0.000000 1.480000"))
+        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_R) and next_command.contains(" 1 0 0.800000 0.050000 1.380000"))
         input_drag_seen = input_drag_seen or (dragging and drag_kind == 1 and drag_index == 1 and drag_target.distance_to(vec(current.animals[1].center)) > .05)
     command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
     inbox_lock.lock()
@@ -504,6 +695,11 @@ func _process(delta: float) -> void:
         send(next_command)
     frame_sum += float(Time.get_ticks_usec()-start)/1000.0; frame_count += 1
     if smoke and current.tick >= benchmark_ticks and (not test_reset or reset_observed):
+        if test_crawl:
+            var travel := vec(current.animals[selected].center) - crawl_origin
+            print("CRAWL_CHECK phases=%s grips_peak=%d travel_m=%s released=%s" % [str(crawl_phases.keys()),crawl_grips,str(travel),str(crawl_released)])
+            if not crawl_phases.has("pull") or crawl_grips == 0 or not crawl_released:
+                fail("Crawl assist did not complete a physical grip/pull/release cycle"); return
         if test_input:
             print("INPUT_CHECK selected=%d arm=%s drag=%s phase=%d arm_delta_m=%.5f center_delta_m=%.5f" % [selected,str(input_arm_seen),str(input_drag_seen),input_phase,input_arm_delta,input_center_delta])
             if not input_arm_seen or not input_drag_seen or input_arm_delta < .005 or input_center_delta < .002: fail("Key or mouse input did not produce physical response"); return
@@ -513,6 +709,7 @@ func _process(delta: float) -> void:
             var measured_roll := float(current.animals[0].arms[0].roll[8])
             print("ACTUATION_CHECK roll_mid_rad=%.5f tip_y_m=%.5f" % [measured_roll,float(current.animals[0].arms[0].nodes[-1][1])])
             if measured_roll < 0.25: fail("Nonzero twist did not reach the original-model renderer"); return
+        measure_skin_floor()
         var elapsed_ms := float(Time.get_ticks_usec()-first_tick_usec)/1000.0
         var ordered := frame_wall_ms.duplicate()
         ordered.sort()

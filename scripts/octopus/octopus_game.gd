@@ -41,7 +41,7 @@ func _ready() -> void:
 	octopus.hunter = hunter
 	octopus.camera = camera
 	octopus.spawn = $Spawns/Octopus.global_position
-	octopus.spawn.y = arena.terrain_height(octopus.spawn.x, octopus.spawn.z) + 0.65 * 1.5
+	octopus.spawn.y = arena.terrain_height(octopus.spawn.x, octopus.spawn.z)
 	octopus.bridge_failed.connect(_on_bridge_failed)
 	octopus.native_reset.connect(func(): ready_for_round = true)
 	add_child(octopus)
@@ -298,9 +298,9 @@ func _build_ui() -> void:
 	level_picker.item_selected.connect(_select_level)
 	row.add_child(level_picker)
 	box.add_child(HSeparator.new())
-	box.add_child(_label("촉수 조작  ·  뻗기 / 뒤로 젓기", 16, Color("dcf1e8")))
-	box.add_child(_label("왼쪽 앞    R / E       오른쪽 앞    U / I\n왼쪽 옆앞  W / Q       오른쪽 옆앞  O / P\n왼쪽 옆뒤  F / D       오른쪽 옆뒤  J / K\n왼쪽 뒤    S / A       오른쪽 뒤    L / ;", 15, Color("d2dddd")))
-	box.add_child(_label("잡은 팔은 유지 · 빈 팔은 놓으면 회수 / 복귀\nSpace · 모든 잡기 해제 (누르는 동안 잡기 금지)\n문어 좌드래그 · 힘으로 당기기\n우드래그 / 휠 · 시점 회전 / 확대\nC · 문어 / 둘 다 추적    1·2·3 · 난이도", 14, Color("a5b9ba")))
+	box.add_child(_label("촉수 조작 · 누르면 뻗기 → 흡착 → 당기기 → 풀기", 16, Color("dcf1e8")))
+	box.add_child(_label("왼손 · Q W E R       오른손 · U I O P\n각 키는 촉수 하나를 독립적으로 조작합니다\nShift + 촉수 · 계속 뻗기   Ctrl + 촉수 · 버티기\n, / . + 촉수 · 비틀기", 15, Color("d2dddd")))
+	box.add_child(_label("Space 누르기 · 조작 중인 촉수만 흡착 허용\nSpace 놓기 · 모든 흡착과 미소녀 잡기 해제\nSpace 유지 중 잡은 촉수는 키를 놓아도 유지\n문어 좌드래그 · 힘으로 당기기\n우드래그 / 휠 · 시점 회전 / 확대\nC · 문어 / 둘 다 추적    1·2·3 · 난이도", 14, Color("a5b9ba")))
 	var buttons := HBoxContainer.new()
 	box.add_child(buttons)
 	var restart := Button.new()

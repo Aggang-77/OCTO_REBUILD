@@ -26,6 +26,97 @@ func _exercise() -> void:
     await process_frame
     octo.animals = 2
     octo.selected = 1
+    # The imported GLB is private, so exercise the exact GPU material
+    # conversion with a synthetic StandardMaterial and live shader.
+    var skin_rig := Skeleton3D.new()
+    skin_rig.add_bone("BodyRoot")
+    skin_rig.add_bone("A0_00")
+    var skin_scene := Node3D.new()
+    skin_scene.add_child(skin_rig)
+    var skin_mesh := MeshInstance3D.new()
+    var skin_sphere := SphereMesh.new()
+    var skin_source := StandardMaterial3D.new()
+    skin_source.albedo_color = Color(0.42, 0.27, 0.18, 1.0)
+    skin_source.roughness = 0.52
+    var skin_image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
+    skin_image.fill(Color(0.7, 0.5, 0.3))
+    skin_source.albedo_texture = ImageTexture.create_from_image(skin_image)
+    skin_source.roughness_texture = skin_source.albedo_texture
+    skin_source.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
+    skin_source.uv1_scale = Vector3(1.2, 0.8, 1.0)
+    skin_source.uv1_offset = Vector3(0.11, -0.04, 0.0)
+    skin_sphere.material = skin_source
+    skin_mesh.mesh = skin_sphere
+    skin_scene.add_child(skin_mesh)
+    octo.add_child(skin_scene)
+    var skin_bone_ids: Array = []
+    for idx in 8:
+        skin_bone_ids.append([])
+    skin_bone_ids[7] = [1]
+    var native_skin = octo.skin_deformer.install(skin_scene, skin_rig, skin_bone_ids)
+    if not _check(native_skin.covered_surfaces == 1 and
+            skin_mesh.get_active_material(0) is ShaderMaterial,
+            "original imported mesh receives deformation shader"):
+        return
+    var converted: ShaderMaterial = skin_mesh.get_active_material(0)
+    if not _check(converted.get_shader_parameter("albedo_tex") != null and
+            converted.get_shader_parameter("roughness_tex") != null and
+            int(converted.get_shader_parameter("roughness_channel")) == 1 and
+            (converted.get_shader_parameter("uv_scale") as Vector2).distance_to(Vector2(1.2, 0.8)) < 0.0001 and
+            (converted.get_shader_parameter("uv_offset") as Vector2).distance_to(Vector2(0.11, -0.04)) < 0.0001 and
+            absf(float(converted.get_shader_parameter("base_roughness")) - 0.52) < 0.0001,
+            "texture and authored roughness preserved"):
+        return
+    var synthetic_arms: Array = []
+    for idx in 8:
+        synthetic_arms.append({"tissue": [[1.0, 0.6]], "creep": [0.08]})
+    octo.skin_deformer.update_skin(native_skin, synthetic_arms)
+    var skin_compression: PackedFloat32Array = converted.get_shader_parameter("bone_compression")
+    var skin_activity: PackedFloat32Array = converted.get_shader_parameter("bone_activity")
+    if not _check(skin_compression.size() == 256 and
+            absf(skin_compression[1] - 0.4) < 0.0001 and
+            skin_activity[1] > 0.4 and skin_compression[0] == 0.0,
+            "live C++ tissue pressure maps to exact imported bone index"):
+        return
+    var override_mesh := MeshInstance3D.new()
+    override_mesh.mesh = SphereMesh.new()
+    override_mesh.material_override = skin_source
+    var override_scene := Node3D.new()
+    override_scene.add_child(override_mesh)
+    octo.add_child(override_scene)
+    var override_skin: Dictionary = octo.skin_deformer.install(override_scene, skin_rig, skin_bone_ids)
+    if not _check(override_skin.covered_surfaces == 1 and
+            override_mesh.material_override is ShaderMaterial,
+            "GLB mesh-level material overrides receive real GPU deformation"):
+        return
+    print("GLB_VERTEX_SKIN_PASS surfaces=1 bone_map=true textures_preserved=true overrides=true")
+
+    # The prototype's real 3D shell surface is generated from physical
+    # ring positions, not from a fixed circular centerline tube.
+    var ring_a := [[0.0,0.0,0.0], [1.0,0.0,0.0],
+                   [1.0,1.0,0.0], [0.0,1.0,0.0]]
+    var ring_b := [[0.0,0.0,1.0], [1.0,0.0,1.0],
+                   [1.0,1.0,1.0], [0.0,1.0,1.0]]
+    var physical_preview := octo.create_volumetric_preview_mesh([ring_a,ring_b])
+    if not _check(physical_preview.get_surface_count() == 1 and
+            physical_preview.surface_get_array_len(0) == 8 and
+            physical_preview.surface_get_array_index_len(0) == 24,
+            "3D surface triangle topology follows two physical rings"):
+        return
+    OS.set_environment("OCTO_VOLUME_ARM", "1")
+    if not _check(octo.reset_command().ends_with(" 1 1"),
+            "experimental volume is independent of default grounded rest"):
+        return
+    OS.set_environment("OCTO_VOLUME_ARM", "")
+    if not _check(octo.reset_command().ends_with(" 0 1"),
+            "default demo starts grounded with tetra experiment disabled"):
+        return
+    OS.set_environment("OCTO_REST_MODE", "legacy")
+    if not _check(octo.reset_command().ends_with(" 0 0"),
+            "legacy posture is available for direct A/B comparison"):
+        return
+    OS.set_environment("OCTO_REST_MODE", "")
+    print("VOLUMETRIC_GODOT_PREVIEW_PASS physical_vertices=8 triangles=8")
     # Exercise GPU-bone mantle deformation independently of the private GLB:
     # the real GameReady skeleton has one shared root and 192 arm bones.
     var skeleton := Skeleton3D.new()
@@ -47,8 +138,13 @@ func _exercise() -> void:
             0.14*sin(theta)])
     var torso_scale := octo.mantle_scale_from_shell(faux_shell,
         Vector3.ZERO, Quaternion.IDENTITY)
-    if not _check(torso_scale.x < 1.0 and torso_scale.y < 1.0,
-            "shell dimensions feed visible torso shape"):
+    var exhale: Vector3 = octo.mantle_respiration(torso_scale, 0.0)
+    var inhale: Vector3 = octo.mantle_respiration(torso_scale, 1.0)
+    if not _check(inhale.distance_to(exhale) < 0.0001,
+            "torso has no artificial breathing scale"):
+        return
+    if not _check(absf(torso_scale.x * torso_scale.y * torso_scale.z - 1.0) < 0.001,
+            "shell-based torso scale preserves determinant"):
         return
     print("TISSUE_GPU_SKIN_PASS root=true mantle_bounds=true no_cpu_remesh=true")
     # Apply the cheap PBR wet-look to a local mesh; no original private GLB
@@ -86,58 +182,117 @@ func _exercise() -> void:
             "grip count uses only explicitly present contacts"):
         return
     print("GRIP_HUD_COMPAT_PASS legacy_missing=true counted=3")
-    if not _check(DEMO.EXTEND_KEYS.size() == 8 and DEMO.STROKE_KEYS.size() == 8, "16-key arrays"):
+    if not _check(DEMO.ARM_KEYS == [KEY_R, KEY_E, KEY_W, KEY_Q, KEY_P, KEY_O, KEY_I, KEY_U], "top-down radial two-hand arm mapping"):
+        return
+    if not _check(DEMO.ARM_KEYS.size() == 8, "eight arm keys"):
         return
     var unique := {}
     for arm in range(8):
-        var extension: Key = DEMO.EXTEND_KEYS[arm]
-        var stroke: Key = DEMO.STROKE_KEYS[arm]
-        if not _check(not unique.has(extension) and not unique.has(stroke) and extension != stroke, "unique keys %d" % arm):
+        var key: Key = DEMO.ARM_KEYS[arm]
+        if not _check(not unique.has(key), "unique arm key"):
             return
-        unique[extension] = true
-        unique[stroke] = true
-        _key(extension, true)
+        unique[key] = true
+        octo.arm_controllers.clear()
+        _key(key, true)
         await process_frame
         var parts := octo.step_command().split(" ")
         if not _check(parts[0] == "step2" and parts[1] == "16", "step2 header"):
             return
-        for j in range(8):
-            var begin := 2 + (8 + j) * 9
-            var actual := float(parts[begin + 4])
-            if not _check(absf(actual - (1.48 if j == arm else 0.58)) < 0.001, "extend arm %d vs %d" % [j, arm]):
-                return
-        _key(extension, false)
-        _key(stroke, true)
+        for animal in 2:
+            for j in 8:
+                var begin := 2 + (animal * 8 + j) * 9
+                if not _check(float(parts[begin + 2]) == (0.80 if animal == 1 and j == arm else 0.0), "independent arm and animal"):
+                    return
+        _key(KEY_SHIFT, true)
         await process_frame
         parts = octo.step_command().split(" ")
-        for j in range(8):
-            var begin := 2 + (8 + j) * 9
-            if not _check(absf(float(parts[begin + 8]) - (1.0 if j == arm else -1.0)) < 0.001, "stroke arm %d vs %d" % [j, arm]):
-                return
-        _key(stroke, false)
+        var begin := 2 + (8 + arm) * 9
+        if not _check(float(parts[begin + 4]) > 1.3 and float(parts[begin + 8]) == 0.0, "Shift reach"):
+            return
+        _key(KEY_SPACE, true)
         await process_frame
-    # Same-arm simultaneous extension + stroke.
-    _key(KEY_F, true)
-    _key(KEY_D, true)
+        parts = octo.step_command().split(" ")
+        if not _check(parts[-1] == "1" and float(parts[begin + 2]) == 0.78, "Space enables suction without disabling Shift reach"):
+            return
+        _key(KEY_SPACE, false)
+        await process_frame
+        parts = octo.step_command().split(" ")
+        if not _check(parts[-1] == "0" and float(parts[begin + 2]) == 0.78, "Space release disables suction but not arm motion"):
+            return
+        _key(KEY_SHIFT, false)
+        _key(key, false)
+        await process_frame
+    _key(KEY_U, true)
+    _key(KEY_R, true)
     await process_frame
-    var parts := octo.step_command().split(" ")
-    var arm7 := 2 + (8 + 7) * 9
-    if not _check(absf(float(parts[arm7 + 4])-1.48)<0.001 and absf(float(parts[arm7 + 8])-1.0)<0.001, "simultaneous F+D"):
+    var pair := octo.step_command().split(" ")
+    if not _check(float(pair[2 + (8 + 0) * 9 + 2]) == 0.80 and float(pair[2 + (8 + 7) * 9 + 2]) == 0.80, "two arms simultaneously"):
         return
-    _key(KEY_F, false)
-    _key(KEY_D, false)
+    _key(KEY_U, false)
+    _key(KEY_R, false)
+    _key(KEY_UP, true)
     await process_frame
-    parts = octo.step_command().split(" ")
-    if not _check(absf(float(parts[arm7 + 4])-0.58)<0.001 and absf(float(parts[arm7 + 8])+1.0)<0.001, "release returns"):
+    var assisted := octo.step_command()
+    var assisted_parts := assisted.split(" ")
+    var all_passive := true
+    for arm in 8:
+        all_passive = all_passive and float(assisted_parts[2 + (8 + arm) * 9 + 2]) == 0.0
+    if not _check(all_passive, "arrow keys do not override two-hand arm controls"):
         return
-    _key(KEY_SPACE, true)
+    _key(KEY_UP, false)
     await process_frame
-    if not _check(octo.step_command().ends_with(" 1"), "Space release"):
+    var a0 := octo.idle_arm_shape(0,0)
+    var a1 := octo.idle_arm_shape(0,1)
+    if not _check(absf(a0.extension-a1.extension)<0.0001 and
+            a0.activation == 0.0 and a0.sweep == 0.0 and a0.curvature == 0.0,
+            "symmetric arm rest configuration"):
         return
-    _key(KEY_SPACE, false)
-    await process_frame
-    if not _check(octo.step_command().ends_with(" 0"), "Space release clears"):
+    # Space-held suction: reach, confirm a real grip, pull while attached,
+    # and release. Missing grip must never create a remote attachment.
+    var gait = preload("res://scripts/arm_controls.gd").new()
+    var initial: Dictionary = gait.sample(0, 0.0, true, false, false, false, false)
+    if not _check(gait.phases[0] == "reach" and initial.extension > 1.3,
+            "suction stroke reaches first"):
         return
-    print("CONTROL_V1_KEYS_PASS 16_keys=true simultaneous=true release_return=true space_priority=true")
+    var seeking: Dictionary = gait.sample(0, 0.19, true, false, false, false, false)
+    if not _check(gait.phases[0] == "anchor" and seeking.extension > 1.2,
+            "reach transitions to real sucker sealing"):
+        return
+    var no_grip: Dictionary = gait.sample(0, 0.25, true, false, false, false, false)
+    if not _check(gait.phases[0] == "anchor" and no_grip.extension > 1.2,
+            "no power pull before suction contact"):
+        return
+    var pulling: Dictionary = gait.sample(0, 0.29, true, false, false, false, true)
+    if not _check(gait.phases[0] == "pull" and pulling.extension < 0.75,
+            "suction contact unlocks strong axial contraction"):
+        return
+    var continued: Dictionary = gait.sample(0, 0.48, true, false, false, false, true)
+    if not _check(gait.phases[0] == "pull" and continued.activation > 0.95,
+            "sealed sucker remains under load during pull"):
+        return
+    var detached: Dictionary = gait.sample(0, 0.50, true, false, false, false, false)
+    if not _check(gait.phases[0] == "release" and detached.activation == 0.0,
+            "lost suction ends contraction"):
+        return
+    var again: Dictionary = gait.sample(0, 0.68, true, false, false, false, false)
+    if not _check(gait.phases[0] == "reach" and again.extension > 1.3,
+            "released stroke returns to reach"):
+        return
+    # Space-up is still a friction-only stroke and never pretends suction.
+    var friction_gait = preload("res://scripts/arm_controls.gd").new()
+    var friction: Dictionary = friction_gait.sample(0, 0.0, true, false, false, false, false, 1.0, false)
+    if not _check(friction_gait.phases[0] == "reach" and friction.extension > 1.3,
+            "friction stroke starts with reach"):
+        return
+    friction = friction_gait.sample(0, 0.20, true, false, false, false, false, 1.0, false)
+    if not _check(friction_gait.phases[0] == "anchor",
+            "friction stroke has a contact-setting interval"):
+        return
+    friction = friction_gait.sample(0, 0.32, true, false, false, false, false, 1.0, false)
+    if not _check(friction_gait.phases[0] == "pull" and friction.extension < 0.9,
+            "Space-up permits weaker friction-based pull"):
+        return
+    print("CONTACT_PULL_PASS reach_anchor_grip_pull_release=true")
+    print("CONTACT_KEYS_PASS eight_keys=true modifiers=true crawl=false space_priority=true")
     octo.free()
     quit(0)

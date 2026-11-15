@@ -43,7 +43,8 @@ $configureArgs = @(
     '-G', 'Ninja',
     "-DCMAKE_BUILD_TYPE=$Configuration",
     "-DOCTO_ASAN=$asanValue",
-    '-DCMAKE_CXX_COMPILER=cl.exe'
+    '-DCMAKE_CXX_COMPILER=cl.exe',
+    "-DCMAKE_TRY_COMPILE_CONFIGURATION=$Configuration"
 )
 & $cmakeTool.Source @configureArgs
 if ($LASTEXITCODE -ne 0) {

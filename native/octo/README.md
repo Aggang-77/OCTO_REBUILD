@@ -17,36 +17,25 @@ Click the Godot window to focus it. Tab switches between octopuses;
 left mouse drag applies bounded force, right mouse drag orbits the
 camera, and F5 resets.
 
-## Game controls v1.0
+## Contact-driven controls
 
-| Torso-relative arm | Extend (hold) | Stroke backward (hold) |
-|---|---|---|
-| Left front | F | D |
-| Right front | J | K |
-| Left side-front | S | A |
-| Right side-front | L | ; |
-| Left side-rear | R | E |
-| Right side-rear | U | I |
-| Left rear | W | Q |
-| Right rear | O | P |
+| Arms (left / right) | Keys |
+|---|---|
+| Front | W / E |
+| Side-front | Q / D |
+| Side-rear | A / C |
+| Rear | Z / X |
 
-Let go of extend to retract/curl, let go of stroke to return
-toward the front. Both inputs are independent, so F+D together
-extends and paddles the same arm.
+Hold an arm key: reach, grip on real contact, pull, release, repeat.
+Release it to peel and relax. Shift + arm keeps reaching; Ctrl + arm
+braces; comma/period + arm twists. Multiple arms work together.
+Arrow keys assist crawling through staggered muscle/suction targets
+relative to the body. Space releases every grip and overrides controls.
+Tab selects an octopus. F5 resets. Labels over the selected arms show keys.
 
-**Space** immediately releases every suction contact. While held,
-automatic gripping stays disabled. Upon release a short re-grip
-cooldown applies. Retracting a floor-attached arm peels contacts;
-a gripped movable object remains held during retraction unless
-Space is used or the attachment breaks. Release does not reset
-the object's velocity.
-
-See [the controls specification and simulation caveats](docs/design/CONTROL_V1.md).
-
-The main branch does **not** include the abandoned expensive jelly
-shader/membrane experiment. Original skeleton skin is retained.
-The automatic suction/contact implementation uses coarse discrete rod
-sites, not full anatomical sucker surface mechanics.
+See [the contact controls guide](docs/design/CONTACT_CONTROLS.md). The gait
+is a gameplay controller; directional accuracy and anatomical fidelity
+remain incomplete. The conservative ground skin envelope can leave gaps.
 
 ## Tests
 
@@ -179,3 +168,116 @@ are available in the bridge as `creep` and `elastic_strain`.
 All calculations remain in the shared C++ world; GPU skinning remains
 unchanged. This is an approximate and bounded gameplay material,
 not a measured biological viscoelastic constitutive model.
+
+## Experimental true 3D arm — isolated preview
+
+Run `PLAY_VOLUMETRIC_DEMO.cmd` after pulling `main` and placing the
+private GameReady GLB in `game/assets/Octopus_GameReady_v5.glb`.
+The normal `PLAY_DEMO.cmd` is unchanged and keeps the experimental
+feature **off**. A new `OCTO_VOLUME_ARM=1` environment flag enables
+one physical arm (arm index 0) on each octopus via an optional fourth
+argument to the native `reset` protocol. See
+`tests/volumetric_arm_tests.cpp` for the live C++ stability fixture.
+
+The new physical arm contains **nine rings of four independent 3D mass
+nodes**, connected to its original rod by compliant cross-sectional,
+longitudinal and diagonal strands. Every pair of adjacent rings has
+XPBD signed-volume tetrahedra. Ring masses collide with the world;
+separately enforced projected area constraints allow irregular
+flattening with sideways bulging. The two other existing systems
+(Cosserat muscle drive and C++ sucker contacts) still use the same
+shared physics world. The native bridge transmits real surface points
+in `arms[0].volume_rings`. The Godot pilot overlays a translucent,
+**36-vertex dynamically built surface** on the original GLB arm so
+these true non-elliptical section movements can be seen independently
+of its existing bone weights. This small CPU mesh update is **only an
+experimental visualization** and is NOT the final GPU-skinned surface.
+
+**Important limitation:** this prototype is not ready for global
+default enablement or expansion to eight arms. In the current two-animal
+rigid-prop/floor CI fixture, the original torso volume residual stays
+bounded (maximum about 0.016), but the maximum **individual arm
+soft-tetra relative volume residual is still about 3.41**. In other
+words, there is real volumetric geometry and contacts but high
+local volume errors: local incompressibility and inversion stability
+have *not* been solved. Further work must improve tet quality and
+contact-constrained volume projection before replacing the production
+rendering. Neither the GameReady GLB frame time nor realistic slime
+appearance has been verified by the CI environment.
+
+The instrumented Linux CI run for **two octopuses** reported physics
+step mean 2.45 ms with the pilot versus 1.97 ms without (same runner;
+not a hardware-independent claim). The global Godot frame time,
+rendering and original GameReady visual realism remain unmeasured.
+
+## Biologically grounded living GameReady skin (2026-11-15)
+
+The standard `PLAY_DEMO.cmd` now applies **live deformation to the
+original imported GLB mesh vertices** through Godot GPU skinning and
+bone-weighted physical tissue pressure from the shared C++ simulator.
+The shader retains source color, UV, normal, metallic and roughness
+textures, adds small physical-contact flattening and sideways skin
+bulging, subtle nonoscillating papillae and slow pigment modulation.
+Arms now rest **asymmetrically and passively** rather than all eight
+retracting/actively sweeping in unison; a gentle mantle respiration
+also helps avoid the frozen cooked-octopus appearance.
+
+The unstable tetrahedral trial is still off by default. The new GPU
+skin does **not** create full surface-level collisions or validated
+incompressible material behavior. The actual private GameReady GLB is
+not tracked in the repository and still requires on-device visual
+validation. Use `$env:OCTO_SKIN_MODE="legacy"` before launching to
+compare the old appearance. See
+[`docs/design/REALISTIC_OCTOPUS_SURFACE.md`](docs/design/REALISTIC_OCTOPUS_SURFACE.md).
+Run `python tools/audit_gameready_mesh.py game/assets/Octopus_GameReady_v5.glb`
+on the local asset to check vertex/face, skin and topological details.
+
+## Gravity-settled octopus rest pose (2026-11-15)
+
+The standard `PLAY_DEMO.cmd` now uses a distinct **grounded** native
+physics profile (the final optional field in `reset` is 1). Its spawn
+height is 0.27 m instead of 0.75 m, torso upright torque multiplier
+0.08 instead of 0.45, and uncommanded arm activation and curvature
+are both zero. Unpressed arms have long, slightly asymmetric lengths
+rather than actively bending into eight similar raised curls. The
+C++ bend and director compliance is higher when muscles are off,
+particularly toward the distal ends. At rest, sucker contact does not
+automatically glue every arm to the floor; pressing an arm control
+still activates its force-limited motion and suction.
+
+A native C++ 6-second gravity/floor regression measured torso center
+height **0.2247 m** and **100%** of sampled distal arm *centerline*
+nodes below 0.115 m. This is evidence of a physically grounded pose,
+**not proof that all triangles of the original GLB have collision
+contact**. Existing shared world collision and user input remain active.
+
+For an A/B comparison with the old posture, run PowerShell:
+```powershell
+$env:OCTO_REST_MODE = "legacy"
+.\\PLAY_DEMO.cmd
+Remove-Item Env:\\OCTO_REST_MODE
+```
+Actual GameReady GUI rendering is still unverified in CI because the
+private source GLB is not stored in Git. Screenshots should be checked
+for residual skinning mismatches against the now-correct floor-laying
+centerline physics.
+
+## Flexible arm-to-mantle junction (2026-11-15)
+
+The prior solver anchored each arm root to **all seven stiff body
+cage vertices**, effectively creating a rigid internal hub even if
+arm tissue parameters were soft. Default grounded gameplay now uses
+an outer **deformable mantle-shell attachment**: three neighboring
+shell particles plus a softer one-node deep tissue connection and a
+secondary strand from the next arm segment. The arm's load now
+physically deforms its attached mantle region. The core 7-node volume
+cage continues to conserve body volume. The original world and 16-key
+input protocol are unchanged; the older root constraints remain for
+legacy non-grounded physics regression scenarios only.
+
+A high-force native pull fixture confirms that the arm root moves
+relative to the body cage and carries the actual mantle shell along.
+This improvement does **not** imply that the private GLB's skin weights
+now create a completely smooth arm-to-body visual junction; vertex
+weight painting/re-rigging may still be needed after inspecting the
+source asset on the user's PC.

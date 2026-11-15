@@ -207,3 +207,129 @@ Dedicated numerical tests verify under held 20% deformation that
 stress relaxes over seconds, and after release memory recovers;
 an integration fixture loads the actual physical arm tip. Tests must
 be verified against Linux+Windows CI and local GameReady visuals.
+
+2026-11-15 first genuine 3D volumetric arm pilot on main:
+Added 9 cross-sectional rings x 4 C++ dynamic surface particles for
+arm 0 only (per octopus), longitudinal/perimeter/diagonal constraints,
+32 signed-volume tetrahedra and local area-conserving XPBD projection.
+All ring particles participate in shared floor/object/octopus C++
+contact. Rest of the arms retain old centerline implementation; pilot
+is opt-in by environment OCTO_VOLUME_ARM=1 and optional native reset
+parameter. Added an explicit PLAY_VOLUMETRIC_DEMO.cmd; ordinary
+PLAY_DEMO.cmd is unchanged. The experiment overlays a lightweight
+36-vertex translucent procedural shell driven by actual ring coordinates,
+which demonstrates non-elliptical shape changes but is not final
+weighted GPU skin. The cross section radius of the existing GameReady
+arm is also sampled from the physical cage when enabled.
+The original first unguarded rollout broke existing tests, so the
+feature was moved behind an off-by-default option and a separate
+6-test native regression including 2 octopuses, floor and boxes.
+**Known blocker:** test maximum individual tetra relative volume
+residual ~3.41463 under two-animal shared-world contact; unacceptable
+for a calibrated incompressible soft-body. No claim of complete
+volumetric soft-body stability or production gameplay fidelity.
+Linux benchmark two octopuses: prototype 2.45 ms mean vs baseline
+1.97 ms mean physics step (runner-dependent). No full GameReady GUI
+benchmark. Deformation/contact tests and demo-input path checked
+through CI.
+
+2026-11-15 living source-GLB skin pass: direct vertex shader deformation
+of the original GameReady mesh before its existing GPU skeletal
+skinning, driven by native arm tissue compression mapped to actual
+GLB bone indices. Source albedo/normal/roughness/metallic textures and
+UVs are preserved; unsupported transparent/custom materials stay
+unchanged. Stable micro-papillae, roughness variation, and slow
+chromatophore-like pigment changes added without per-frame CPU mesh
+rebuild. The player command path now releases unpressed arms to a
+lightly coiled asymmetric passive posture with zero idle sweep,
+instead of eight identical tight active coils. Added slow mantle
+respiratory skin scale. Godot synthetic skin/real shader test covers
+texture preservation, bone mapping, baseline control, and breathing.
+Original private GLB absent from GitHub, so full model screenshot/FPS
+and exact source surface-to-C++ contact accuracy remain unverified.
+Physics 3D tetra pilot remains deliberately opt-in due high local
+volume errors. Source GLB audit script and design report added.
+
+2026-11-15 physics posture correction after screenshot feedback: old
+GameReady demo was spider-like with a raised torso and 8 tense arms.
+Added opt-in `WorldConfig::grounded_rest` and a fourth optional native
+reset argument (0/1), and enabled grounded mode by default in the
+Godot demo. Native gameplay start height .27 m (was .75), anti-upright
+strength .08 (was .45); rest commands have zero motor activation,
+zero curvature, zero sweep, small asymmetric length variations. At
+zero muscle activation, distal centerline bending and director
+constraints are more compliant so gravity dominates rather than
+imposing curled spring shapes. Inactive suction contacts no longer
+create persistent floor anchors. Controls and Space remain intact.
+Isolated 360-tick / six-second physics regression: torso center height
+.224737 m, distal-node ground fraction 1.0 (<.115 m), with native
+floor contact. These measured metrics do not test the private
+GameReady model's visual triangle-to-floor clearance. Old mode can be
+enabled temporarily via `OCTO_REST_MODE=legacy` for A/B.
+
+2026-11-15 arm-mantle junction correction: confirmed the original solver
+hard-tied every arm's root to **all 7 torso cage nodes** at
+`1e-7 * softness` compliance. In grounded gameplay this is now
+replaced by spatially local, distributed XPBD constraints from the arm
+root to 3 closest lower mantle-shell vertices, from the second arm
+node to the nearest shell vertex, and one **very soft** central
+connective-tissue tether. The outer mantle-shell masses and arm nodes
+remain fully dynamic and exchange forces in the shared C++ world.
+Unmodified rigid-root constraints remain only for legacy isolated
+physics fixtures (`grounded_rest=false`) so established unit tests
+are not silently reinterpreted. Config exposes
+`arm_root_shell_compliance=3e-5`,
+`arm_root_center_compliance=2e-4` before softness scaling.
+New real physical arm-drag regression verifies displacement of the
+mantle shell and relative motion of arm root vs cage, in addition to
+previous floor contact and no-penetration checks. Linux CI measured
+maximum shell displacement 0.555837 m and relative root deformation
+0.11756 m in a sustained high-force stress fixture, not typical idle
+movement and not an acceptable calibration for final real-animal
+fidelity. Existing idle case: torso y=0.224709, 94.79% distal nodes
+near ground; visual proxy floor clipping 0, lower belly contact 1.
+Actual private GLB skin continuity still requires local visual review.
+
+2026-11-15 contact/mantle checkpoint: grounded gameplay gained a compliant
+12-cell outer mantle chamber and arm-segment midpoint versus dynamic-prop
+face contacts with bilateral reaction. Floor projection covers the mantle
+shell and runs after the final solver pass. GameReady shader receives twelve
+local native shell offsets, but moving visual skin-to-collider error is not yet
+measured. Release build and CTest 8/8 PASS; 180-tick loaded contact fixture
+max local mantle volume error 1.81%, 724 face corrections and bilateral prop
+motion. Two-animal GPU screenshot/240 ticks PASS at 60.10 simulated ticks/s.
+Ten-animal grounded active native 600-tick p95 14.65 ms, zero nonfinite; full
+Godot ten-animal gate still open. Two-animal grounded active 10,000-tick soak
+also had zero nonfinite. See docs/validation/CONTACT_MANTLE_BALLOON.md.
+
+2026-11-15 posture correction after user review: visual torso scales now
+preserve determinant one, breathing scale removed, shell offsets bounded.
+Grounded upper shell rest center/mass shifted rearwards; first arm segment
+has a 65-degree body-relative cone limit. Loaded regression maximum angle
+65 degrees, local mantle volume error 1.31%, passive upper/lower rear offset
+-0.1775 m. Original GLB GPU 240-tick run PASS at 59.98 ticks/s; shader eye
+height and hood lean are explicit visual calibration. Rounded junction shape
+and exact moving skin volume remain incomplete. See
+docs/validation/MANTLE_POSTURE_REVISION.md.
+
+2026-11-15 soft/web follow-up: gameplay flesh profile uses .2 stiffness ratio
+(fivefold tissue compliance, one-fifth motor force). Inactive proximal
+bending targets/second-node tether released, rear root sliding allowed,
+lean-dependent bounded rest-tissue forces permit rear arms to fold forward.
+Added shared-world compliant interarm strands and visible scalloped web.
+GPU baked skin measurement exposed -0.129 m floor clipping missed by native
+centerline checks. A conservative folding-skin support clears the measured
+600-tick two-animal pose (+0.102 m), but excess ground clearance remains;
+exact skin contact is OPEN. Final scene: 59.73 sim ticks/s, frame p95 8.33 ms.
+See docs/validation/SOFT_WEB_PROFILE.md for limits and passive fold evidence.
+
+2026-11-15 contact-driven keymap: eight labelled arm keys replace sixteen
+independent reach/stroke keys. Hold cycles reach, native grip, pull, release;
+Shift reaches, Ctrl braces, comma/period twist, arrows stagger crawl groups,
+Space releases all. No body-coordinate/velocity writes. Suction now uses
+the actual native floor support and cannot reacquire while peeling.
+Release CTest 11/11 PASS. GPU two-animal 360-tick Up-arrow event fixture:
+18 grips peak, +0.443 m forward/+0.261 m lateral displacement, 59.43 sim
+ticks/s. Drift and previous bridge/floor-proxy limitations remain open.
+See docs/design/CONTACT_CONTROLS.md and
+docs/validation/CONTACT_CONTROL_RESULTS.md.

@@ -5,7 +5,7 @@ signal native_reset
 const ANCHOR = preload("res://scripts/octopus/contact_anchor.gd")
 var arena: TidalArena
 var hunter: HunterTarget
-var spawn := Vector3(0, 0.65, 0)
+var spawn := Vector3.ZERO # World origin at the map floor; native center starts at localY0.27.
 var anchors: Array[Node3D] = []
 var threats: Array[HunterThreat] = []
 var capture_threat: HunterThreat
@@ -30,8 +30,7 @@ var geometry_ready: bool = false
 var setup_started_usec: int = 0
 var mesh_upload_started_usec: int = 0
 var grip_candidates: Dictionary = {}
-var grab_rearm_required: Array[bool] = [false, false, false, false, false, false, false, false]
-var extend_was_pressed: Array[bool] = [false, false, false, false, false, false, false, false]
+var arm_commands: Array[Dictionary] = []
 
 func _ready() -> void:
 	setup_started_usec = Time.get_ticks_usec()
@@ -84,7 +83,7 @@ func make_stage() -> void:
 	pass # The integration scene supplies arena, camera and UI.
 
 func _build_reset_command() -> String:
-	var command := "game_reset4 %.5f %.5f %.5f %.5f 65 -28 -28 0.875" % [spawn.x, spawn.y, spawn.z, creature_scale]
+	var command := "game_reset5 %.5f %.5f %.5f %.5f 65 -28 -28 0.875" % [spawn.x, spawn.y, spawn.z, creature_scale]
 	for z in range(65):
 		for x in range(65):
 			command += " %.4f" % arena.terrain_height(-28.0 + x * 0.875, -28.0 + z * 0.875)
@@ -159,8 +158,9 @@ func request_reset() -> void:
 	resetting = true
 	geometry_ready = false
 	grip_candidates.clear()
-	grab_rearm_required.fill(false)
-	extend_was_pressed.fill(false)
+	arm_commands.clear()
+	for controls in arm_controllers:
+		controls.reset()
 	for threat in threats:
 		threat.reset_threat()
 	inbox_lock.lock()
@@ -171,19 +171,44 @@ func add_site_force(arm: int, site: int, force: Vector3) -> void:
 	var key := Vector2i(arm, site)
 	forces[key] = (forces.get(key, Vector3.ZERO) + force).limit_length(700.0)
 
+func _actual_actor_grip(arm: int) -> bool:
+	return grips.has(arm) and hunter.physics_rig.grips.has(grips[arm].id)
+
+func _source_arm_command(arm: int) -> Dictionary:
+	while arm_controllers.size() < animals:
+		arm_controllers.append(ARM_CONTROLS.new())
+	var manual := threats[arm].active and Input.is_physical_key_pressed(ARM_KEYS[arm])
+	var suction_on := Input.is_physical_key_pressed(KEY_SPACE)
+	var attached := _actual_actor_grip(arm)
+	if not current.is_empty():
+		for held in current.animals[0].arms[arm].get("attached", []):
+			attached = attached or bool(held)
+	var cmd: Dictionary = arm_controllers[0].sample(arm, float(current.get("time", 0.0)), manual,
+		manual and Input.is_physical_key_pressed(KEY_SHIFT),
+		manual and Input.is_physical_key_pressed(KEY_CTRL), false, attached and suction_on, 1.0, suction_on)
+	if arm_controllers[0].phases[arm] == "rest":
+		cmd.extension = 1.04
+		cmd.curvature = 0.0
+		cmd.sweep = 0.0
+	cmd["twist"] = (float(Input.is_physical_key_pressed(KEY_PERIOD)) - float(Input.is_physical_key_pressed(KEY_COMMA))) * 3.0 if manual else 0.0
+	return cmd
+
+func _actor_suction_allowed(arm: int) -> bool:
+	return Input.is_physical_key_pressed(KEY_SPACE) and threats[arm].active and float(_source_arm_command(arm).activation) > 0.5
+
 func step_command() -> String:
-	var out := "step4 8"
+	var out := "step5 8"
+	arm_commands.clear()
 	for arm in range(8):
-		var enabled := threats[arm].active
-		var reach := enabled and Input.is_physical_key_pressed(EXTEND_KEYS[arm])
-		var paddle := enabled and Input.is_physical_key_pressed(STROKE_KEYS[arm])
-		var carry: bool = enabled and grips.has(arm) and hunter.physics_rig.grips.has(grips[arm].id)
-		out += " 0 %d %f %f %f 0 0.02 0 %f %d %d %d" % [arm, 1.0 if reach or paddle else 0.0,
-			0.0 if reach else 3.6, 1.48 if reach else 0.58,
-			1.0 if paddle else (-1.0 if reach else 0.0), int(reach), int(paddle), int(carry)]
+		var cmd := _source_arm_command(arm)
+		arm_commands.append(cmd)
+		out += " 0 %d %f %f %f %f 0.02 0 %f" % [arm, cmd.activation,
+			cmd.curvature, cmd.extension, cmd.twist, cmd.sweep]
 	out += " %d 0 %d %f %f %f %f %f %d" % [drag_kind if dragging else 0,
-		drag_index, drag_target.x, drag_target.y, drag_target.z, drag_stiffness * creature_scale * creature_scale, drag_max_force * pow(creature_scale, 3.0),
-		1 if Input.is_physical_key_pressed(KEY_SPACE) else 0]
+		drag_index, drag_target.x, drag_target.y, drag_target.z, drag_stiffness, drag_max_force * creature_scale,
+		int(Input.is_physical_key_pressed(KEY_SPACE))]
+	for arm in range(8):
+		out += " %d" % int(Input.is_physical_key_pressed(KEY_SPACE) and _actual_actor_grip(arm))
 	return out + scene_suffix
 
 func read_pipe() -> void:
@@ -239,7 +264,12 @@ func read_pipe() -> void:
 				pipe.store_string("1 %d %s\n" % [request_id, command])
 				pipe.flush()
 		inbox_lock.unlock()
-		OS.delay_msec(1)
+		# A millisecond sleep can round to a Windows15ms scheduler slot.
+		# Drain the finite setup queue promptly; normal gameplay stays paced.
+		if mesh_setup_active or not pending_bytes.is_empty() or available > 0:
+			OS.delay_usec(100)
+		else:
+			OS.delay_msec(1)
 
 func poll() -> void:
 	if pipe == null or quitting:
@@ -309,11 +339,9 @@ func _process(delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	if quitting or get_tree().paused or suspended or current.is_empty() or resetting:
 		return
-	_update_grab_rearm()
 	release_cooldown = maxf(0.0, release_cooldown - delta)
-	if Input.is_physical_key_pressed(KEY_SPACE):
+	if not Input.is_physical_key_pressed(KEY_SPACE):
 		release_grips()
-		release_cooldown = 0.25
 	_validate_grips()
 	var contacts: Array[String] = []
 	var world := get_world_3d().direct_space_state
@@ -344,7 +372,7 @@ func _physics_process(delta: float) -> void:
 				point.x, point.y, point.z, normal.x, normal.y, normal.z, collider_id])
 			# Query the hunter independently so a simultaneous floor contact does
 			# not hide a real foot/leg contact from suction detection.
-			if arm >= 0 and site >= 4 and not grips.has(arm) and Input.is_physical_key_pressed(EXTEND_KEYS[arm]):
+			if arm >= 0 and site >= 4 and not grips.has(arm) and _actor_suction_allowed(arm):
 				query.collision_mask = 4
 				var hunter_info := world.get_rest_info(query)
 				if not hunter_info.is_empty():
@@ -361,16 +389,6 @@ func _physics_process(delta: float) -> void:
 		out += contact
 	scene_suffix = out
 
-func _update_grab_rearm() -> void:
-	var release := Input.is_physical_key_pressed(KEY_SPACE)
-	for arm in range(8):
-		var pressed := Input.is_physical_key_pressed(EXTEND_KEYS[arm])
-		if release:
-			grab_rearm_required[arm] = true
-		elif pressed and not extend_was_pressed[arm]:
-			grab_rearm_required[arm] = false
-		extend_was_pressed[arm] = pressed
-
 func _contact_radius(arm: int, site: int) -> float:
 	if arm < 0:
 		return (0.065 if site < 7 else 0.033) * creature_scale
@@ -381,18 +399,18 @@ func _contact_radius(arm: int, site: int) -> float:
 	return 0.036 * creature_scale * (1.0 - 0.8 * float(site) / 16.0)
 
 func _try_grip(arm: int, site: int, body: RigidBody3D, point: Vector3, normal: Vector3 = Vector3.ZERO) -> void:
-	if grab_rearm_required[arm] or not Input.is_physical_key_pressed(EXTEND_KEYS[arm]) or grips.has(arm) or not threats[arm].active or release_cooldown > 0.0 or Input.is_physical_key_pressed(KEY_SPACE) or hunter.objective.result != &"":
+	if not _actor_suction_allowed(arm) or grips.has(arm) or release_cooldown > 0.0 or hunter.objective.result != &"":
 		return
 	# Broadphase is enlarged; suction itself requires real hitbox surface contact.
 	var center := vec(current.animals[0].arms[arm].nodes[site])
 	var radius := _contact_radius(arm, site)
 	if center.distance_to(point) > radius + 0.008 * creature_scale:
 		return
-	var directions: Array = current.animals[0].arms[arm].get("sucker_directions", [])
+	var directions: Array = current.animals[0].arms[arm].get("sucker_dirs", [])
 	if normal.is_zero_approx() or site >= directions.size() or vec(directions[site]).dot(-normal.normalized()) < 0.3:
 		return
 	# Two consecutive physical contact samples distinguish a resting sucker
-	# from a fast fly-by. Releasing the extend key never drops an existing grip.
+	# from a fast fly-by. Existing carrying grips remain while Space is held, independently of the cycle.
 	var frame := Engine.get_physics_frames()
 	var previous: Dictionary = grip_candidates.get(arm, {})
 	if not previous.is_empty() and int(previous.frame) == frame:
@@ -432,7 +450,6 @@ func _validate_grips() -> void:
 		release_grips()
 
 func _drop_grip(arm: int) -> void:
-	grab_rearm_required[arm] = true
 	grip_candidates.erase(arm)
 	if grips.has(arm):
 		hunter.physics_rig.release_grip(grips[arm].id)
@@ -457,7 +474,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if get_tree().paused or suspended or resetting:
 		return
 	if event is InputEventKey:
-		if event.pressed and event.keycode == KEY_SPACE:
+		if not event.pressed and event.keycode == KEY_SPACE:
 			release_grips()
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not current.is_empty():

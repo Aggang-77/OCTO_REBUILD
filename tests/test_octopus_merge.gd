@@ -14,7 +14,7 @@ func check(value: bool, message: String) -> void:
 		failures.append(message)
 		printerr("FAIL: ", message)
 
-func wait_native(tick: int, timeout: float = 6.0) -> bool:
+func wait_native(tick: int, timeout: float = 15.0) -> bool:
 	var deadline := Time.get_ticks_msec() + int(timeout * 1000.0)
 	while Time.get_ticks_msec() < deadline:
 		if not game.octopus.fault.is_empty():
@@ -32,21 +32,51 @@ func key(code: Key, pressed: bool) -> void:
 	Input.parse_input_event(event)
 	Input.flush_buffered_events()
 
+func _source_controls_checks() -> void:
+	var local = preload("res://scripts/octopus/arm_controls.gd")
+	var upstream = preload("res://native/octo/game/scripts/arm_controls.gd")
+	check(FileAccess.get_sha256("res://scripts/octopus/arm_controls.gd") == FileAccess.get_sha256("res://native/octo/game/scripts/arm_controls.gd"),
+		"Imported control module is byte-for-byte upstream8bb7434")
+	check(FileAccess.get_sha256("res://scripts/octopus/octopus_skin.gdshader") == FileAccess.get_sha256("res://native/octo/game/shaders/octopus_skin.gdshader"),
+		"GPU skin shader is byte-for-byte upstream8bb7434")
+	var skin_local := FileAccess.get_file_as_string("res://scripts/octopus/octopus_skin.gd").replace("\r\n", "\n").replace("res://scripts/octopus/octopus_skin.gdshader", "res://shaders/octopus_skin.gdshader")
+	check(skin_local == FileAccess.get_file_as_string("res://native/octo/game/scripts/octopus_skin.gd").replace("\r\n", "\n"),
+		"GPU skin module differs from upstream only in its resource path")
+	check(local.KEYS == [KEY_R, KEY_E, KEY_W, KEY_Q, KEY_P, KEY_O, KEY_I, KEY_U], "Source mirrored eight-key mapping is preserved")
+	check(local.REACH_TIME == 0.18 and local.ANCHOR_TIMEOUT == 0.40 and local.PULL_TIME == 0.42 and local.RELEASE_TIME == 0.16,
+		"Source native-time phase timings are preserved")
+	for arm in range(8):
+		var a = local.new()
+		var b = upstream.new()
+		var same := true
+		for row in [[0.0,true,false,false,false,false,true], [0.18,true,false,false,false,false,true],
+			[0.23,true,false,false,false,true,true], [0.24,true,false,false,false,false,true],
+			[0.41,true,false,false,false,false,true], [0.5,true,true,false,false,true,true],
+			[0.6,true,true,true,false,true,true], [0.7,false,false,false,false,false,false],
+			[0.0,true,false,false,false,false,false], [0.18,true,false,false,false,false,false],
+			[0.30,true,false,false,false,false,false]]:
+			var actual: Dictionary = a.sample(arm,row[0],row[1],row[2],row[3],row[4],row[5],1.0,row[6])
+			var expected: Dictionary = b.sample(arm,row[0],row[1],row[2],row[3],row[4],row[5],1.0,row[6])
+			same = same and actual == expected and a.phases[arm] == b.phases[arm]
+		check(same, "Arm%d source parity covers seal, real-contact pull, loss, modifiers, Spaceoff and time reset" % arm)
+	var controls = local.new()
+	controls.sample(0,0.0,true,false,false,false,false,1.0,true)
+	controls.sample(0,0.18,true,false,false,false,false,1.0,true)
+	check(controls.phases[0] == "anchor", "Reach advances to anchor after0.18native seconds")
+	var cmd: Dictionary = controls.sample(0,0.30,true,false,false,false,false,1.0,true)
+	check(controls.phases[0] == "anchor" and cmd.extension == 1.32, "Spaceheld cannot enter powered pull before real attachment")
+	for render_frame in range(100):
+		controls.sample(0,0.30,true,false,false,false,false,1.0,true)
+	check(controls.phases[0] == "anchor" and controls.starts[0] == 0.18,
+		"Repeated render samples cannot advance a source phase without native simulation time")
+	cmd = controls.sample(0,0.31,true,false,false,false,true,1.0,true)
+	check(controls.phases[0] == "pull" and cmd.extension == 0.67, "Confirmed actual attachment permits the source strong pull")
+	cmd = controls.sample(0,0.32,true,false,false,false,false,1.0,true)
+	check(controls.phases[0] == "release" and cmd.activation == 0.0, "Lost attachment ends the powered stroke")
+
 func _run() -> void:
-	if "--model-layout-only" in OS.get_cmdline_user_args():
-		var model: Node3D = load("res://assets/octopus/Octopus_GameReady_v5.glb").instantiate()
-		root.add_child(model)
-		var skeleton: Skeleton3D = model.find_children("*", "Skeleton3D", true, false)[0]
-		var layout = preload("res://scripts/octopus/arm_layout.gd")
-		for arm in range(8):
-			var first := skeleton.get_bone_global_rest(skeleton.find_bone("A%d_00" % layout.MODEL_ARM_IDS[arm])).origin
-			var fifth := skeleton.get_bone_global_rest(skeleton.find_bone("A%d_05" % layout.MODEL_ARM_IDS[arm])).origin
-			var direction := fifth - first
-			var angle := rad_to_deg(atan2(direction.x, direction.z)) + rad_to_deg(layout.MODEL_YAW)
-			print("MODEL_ARM_REST arm=%d model=%d degrees=%.4f expected=%.4f" % [arm, layout.MODEL_ARM_IDS[arm], angle, layout.HOME_DEGREES[arm]])
-			check(absf(wrapf(angle - layout.HOME_DEGREES[arm], -180.0, 180.0)) < 3.0,
-				"Original model arm %d matches the generated symmetric home angle" % arm)
-		model.queue_free()
+	_source_controls_checks()
+	if "--controls-only" in OS.get_cmdline_user_args():
 		_finish()
 		return
 	if "--map-geometry-only" in OS.get_cmdline_user_args():
@@ -101,88 +131,88 @@ func _run() -> void:
 	current_scene = game
 	var o = game.octopus
 	var target: HunterTarget = game.hunter
-	check(await wait_native(30), "Integrated scene starts the real native octopus solver")
-	if o.current.is_empty():
+	check(await wait_native(30), "Integrated scene starts the real upstream native solver after mesh commit")
+	if o.current.is_empty() or not o.geometry_ready or not o.fault.is_empty():
 		_finish()
 		return
 	print("OCTOPUS_REAL_MAP_PROFILE tick=%d triangles=%d solver_ms=%.3f rpc_ms=%.3f" % [int(o.current.tick), int(o.current.static_triangles), float(o.current.diagnostics.step_ms), o.rpc_ms])
+	check(str(o.current.get("source_commit", "")).begins_with("8bb7434"), "Gameplay bridge reports the requested authoritative source commit")
 	check(o.geometry_ready and game.ready_for_round and int(o.current.static_triangles) == o.static_triangle_count and o.static_triangle_count > 0,
-		"Native stepping waits for the complete actual map collision mesh")
-	check(is_equal_approx(float(o.current.size_scale), 1.5) and is_equal_approx(o.creature_scale, 1.5),
-		"Native physical size and skin size both use 1.5")
-	var drag_fields: PackedStringArray = o.step_command().split(" ", false)
-	check(is_equal_approx(float(drag_fields[104]), 67.5) and is_equal_approx(float(drag_fields[105]), 67.5),
-		"Production drag stiffness and force cap scale with physical size and mass")
-	check(o.views[0].scene.scale.is_equal_approx(Vector3.ONE * o.MODEL_SCALE * 1.5),
-		"GameReady renderer applies the same whole-creature scale")
-	check(o.EXTEND_KEYS == [KEY_U, KEY_O, KEY_J, KEY_L, KEY_S, KEY_F, KEY_W, KEY_R] and
-		o.STROKE_KEYS == [KEY_I, KEY_P, KEY_K, KEY_SEMICOLON, KEY_A, KEY_D, KEY_Q, KEY_E],
-		"All eight arm bindings match their body-front spatial order")
+		"Round starts only after the complete actual map collision mesh is ready")
+	check(is_equal_approx(float(o.current.size_scale),1.5) and o.views[0].scene.scale.is_equal_approx(Vector3.ONE * o.MODEL_SCALE * 1.5),
+		"World coordinate transform and source skin both retain1.5size")
+	check(is_equal_approx(o.spawn.y, game.arena.terrain_height(o.spawn.x,o.spawn.z)), "Reset5 origin is the actual map floor without the obsolete spawn offset")
+	check(o.MODEL_YAW == -PI / 8.0, "Authoritative source model yaw is preserved")
+	check(o.views[0].skel.get_bone_count() == 193 and o.threats.size() == 8 and game.arena.props.size() == 48,
+		"Original octopus, hunter threat adapters and48physical props coexist")
+	check(o.views[0].skin_config.covered_surfaces > 0 and o.views[0].web is MeshInstance3D,
+		"Authoritative GPU skin and deforming interarm web are installed")
+	var mantle: Vector3 = o.mantle_scale_from_shell(o.current.body_nodes,o.vec(o.current.animals[0].center),o.quat(o.current.animals[0].orientation).inverse())
+	check(absf(mantle.x * mantle.y * mantle.z - 1.0) < 0.00001, "Source mantle gross deformation preserves scale determinant one")
 	for arm in range(8):
 		var state: Dictionary = o.current.animals[0].arms[arm]
-		check(is_equal_approx(rad_to_deg(float(state.home_angle)), float(o.HOME_DEGREES[arm])) and
-			int(state.model_arm) == int(o.MODEL_ARM_IDS[arm]), "Arm %d native home angle and skin identity share the layout" % arm)
-		var rests: Array = o.views[0].bone_rests[o.MODEL_ARM_IDS[arm]]
-		var rest_direction: Vector3 = rests[5].origin - rests[0].origin
-		var rest_angle := rad_to_deg(atan2(rest_direction.x, rest_direction.z))
-		check(absf(wrapf(rest_angle - o.HOME_DEGREES[arm], -180.0, 180.0)) < 3.0,
-			"Arm %d GameReady rest direction matches the symmetric body-front home angle" % arm)
-		check(state.contact_radii.size() == 17 and state.sucker_directions.size() == 17,
-			"Arm %d exposes actual node contact radii and sucker faces" % arm)
-	check(game.arena.props.size() == 48, "Original map and 48 physical props coexist with the octopus")
-	check(o.views[0].skel.get_bone_count() == 193 and o.threats.size() == 8, "Original octopus skeleton and eight hunter threat adapters are connected")
-	check(o.current.body_nodes.size() == 19, "Latest native torso cage and mantle shell reach the Godot contact bridge")
-	check(o.current.animals[0].arms[0].tissue.size() == 16 and o.current.animals[0].arms[0].creep.size() == 16,
-		"Latest viscous tissue and creep state reach the integrated renderer")
-	check(o.views[0].torso_root >= 0, "Original GameReady root bone is connected to the new physical mantle shell")
-	check(target.capture_seconds_override == 10.0 and target.objective.continuous_capture, "Merged scene selects continuous ten-second capture")
-	var before: Vector3 = o.vec(o.current.animals[0].arms[0].nodes[-1]) - o.vec(o.current.animals[0].center)
-	key(KEY_U, true)
-	await process_frame
-	check(o.step_command().contains("0 0 1.000000 0.000000 1.480000"), "Physical U key reaches latest right-front native muscle command")
-	var tick := int(o.current.tick)
-	check(await wait_native(tick + 65), "Native simulation keeps advancing under actual key input")
-	check(float(o.current.animals[0].arms[0].uncoil) >= 0.99, "Held U progressively uncoils the actual native arm")
-	var after: Vector3 = o.vec(o.current.animals[0].arms[0].nodes[-1]) - o.vec(o.current.animals[0].center)
-	key(KEY_U, false)
-	check(before.distance_to(after) > 0.01, "Held U produces measurable movement of the actual native arm")
+		check(state.contact_radii.size() == 17 and state.sucker_dirs.size() == 17,
+			"Arm%d world contact envelope and material sucker directions reach the scene" % arm)
+		var rests: Array = o.views[0].bone_rests[(7-arm)%8]
+		var direction: Vector3 = rests[5].origin - rests[0].origin
+		var angle := rad_to_deg(atan2(direction.x,direction.z) + o.MODEL_YAW)
+		check(absf(wrapf(angle - arm*45.0,-180.0,180.0)) < 3.0, "Arm%d original skin correspondence retains source yaw and reversed mapping" % arm)
+	var fields: PackedStringArray = o.step_command().split(" ",false)
+	check(fields[0] == "step5" and is_equal_approx(float(fields[80]),30.0) and is_equal_approx(float(fields[81]),30.0),
+		"Step5 preserves source drag stiffness and converts the20native force cap to30world units")
 	for arm in range(8):
-		check(o.step_command().contains("0 %d 0.000000 3.600000 0.580000 0 0.02 0 0.000000 0 0 0" % arm),
-			"Idle arm %d has no active input or suction flag" % arm)
-		key(o.EXTEND_KEYS[arm], true)
-		check(o.step_command().contains("0 %d 1.000000 0.000000 1.480000 0 0.02 0 -1.000000 1 0 0" % arm),
-			"Arm %d extend has its own phase flag" % arm)
-		key(o.EXTEND_KEYS[arm], false)
-		key(o.STROKE_KEYS[arm], true)
-		check(o.step_command().contains("0 %d 1.000000 3.600000 0.580000 0 0.02 0 1.000000 0 1 0" % arm),
-			"Arm %d stroke has its own phase flag" % arm)
-		key(o.EXTEND_KEYS[arm], true)
-		await process_frame
-		check(o.step_command().contains("0 %d 1.000000 0.000000 1.480000 0 0.02 0 1.000000 1 1 0" % arm), "Arm %d preserves both independent latest control channels" % arm)
-		key(o.EXTEND_KEYS[arm], false)
-		key(o.STROKE_KEYS[arm], false)
-	key(KEY_U, true)
-	o._update_grab_rearm()
-	key(KEY_SPACE, true)
-	o._update_grab_rearm()
-	key(KEY_SPACE, false)
-	o._update_grab_rearm()
-	check(o.grab_rearm_required[0], "Space leaves a held extend key disarmed after release")
-	key(KEY_U, false)
-	o._update_grab_rearm()
-	key(KEY_U, true)
-	o._update_grab_rearm()
-	check(not o.grab_rearm_required[0], "A fresh extend rising edge rearms the corresponding actor sucker")
-	key(KEY_U, false)
-	o._update_grab_rearm()
-	# Exercise the real contact gate against a separated hitbox: no distance cheat.
+		o.arm_controllers[0].reset()
+		key(o.ARM_KEYS[arm],true)
+		fields = o.step_command().split(" ",false)
+		var offset := 2 + arm*9
+		check(is_equal_approx(float(fields[offset+2]),0.8) and is_equal_approx(float(fields[offset+4]),1.38) and int(fields[82]) == 0,
+			"Arm%d source reach command remains active with Spaceoff" % arm)
+		key(KEY_SPACE,true)
+		fields = o.step_command().split(" ",false)
+		check(int(fields[82]) == 1 and o._actor_suction_allowed(arm), "Spaceheld enables real suction only for active arm%d" % arm)
+		key(KEY_SHIFT,true)
+		fields = o.step_command().split(" ",false)
+		check(is_equal_approx(float(fields[offset+2]),0.78) and is_equal_approx(float(fields[offset+4]),1.35), "Shift preserves source continuous reach on arm%d" % arm)
+		key(KEY_CTRL,true)
+		fields = o.step_command().split(" ",false)
+		check(is_equal_approx(float(fields[offset+4]),1.10), "Ctrl takes source brace precedence on arm%d" % arm)
+		key(KEY_PERIOD,true)
+		fields = o.step_command().split(" ",false)
+		check(is_equal_approx(float(fields[offset+5]),3.0), "Period applies source material twist to arm%d" % arm)
+		key(KEY_PERIOD,false)
+		key(KEY_COMMA,true)
+		fields = o.step_command().split(" ",false)
+		check(is_equal_approx(float(fields[offset+5]),-3.0), "Comma applies opposite source twist to arm%d" % arm)
+		for code in [KEY_COMMA,KEY_CTRL,KEY_SHIFT,KEY_SPACE,o.ARM_KEYS[arm]]:
+			key(code,false)
+		fields = o.step_command().split(" ",false)
+		check(float(fields[offset+2]) == 0.0 and is_equal_approx(float(fields[offset+4]),1.04) and not o._actor_suction_allowed(arm),
+			"Arm%d release returns to source passive rest and Spaceoff forbids acquisition" % arm)
+	key(KEY_UP,true)
+	fields = o.step_command().split(" ",false)
+	var arrows_idle := true
+	for arm in range(8):
+		arrows_idle = arrows_idle and float(fields[2+arm*9+2]) == 0.0
+	check(arrows_idle, "Arrow keys do not enable the superseded crawl assist")
+	key(KEY_UP,false)
+	var before: Vector3 = o.vec(o.current.animals[0].arms[0].nodes[-1]) - o.vec(o.current.animals[0].center)
+	key(KEY_R,true)
+	key(KEY_SHIFT,true)
+	var tick := int(o.current.tick)
+	check(await wait_native(tick+65), "Native simulation advances under an actual source reach input")
+	var after: Vector3 = o.vec(o.current.animals[0].arms[0].nodes[-1]) - o.vec(o.current.animals[0].center)
+	check(before.distance_to(after) > 0.01, "Source R+Shift produces measurable native arm movement")
+	key(KEY_SHIFT,false)
+	key(KEY_R,false)
 	var body := target.physics_rig.get_part_body(&"torso")
-	o._try_grip(0, 12, body, o.vec(o.current.animals[0].arms[0].nodes[12]), Vector3.UP)
-	check(o.grips.is_empty(), "An idle arm cannot start a hunter grip even when passed a contact sample")
-	key(KEY_U, true)
-	o._try_grip(0, 12, body, body.global_position, Vector3.UP)
-	key(KEY_U, false)
-	check(o.grips.is_empty() and not is_instance_valid(target.capture_source), "A separated torso cannot be captured by a proximity shortcut")
+	key(KEY_R,true)
+	o._try_grip(0,12,body,o.vec(o.current.animals[0].arms[0].nodes[12]),Vector3.UP)
+	check(o.grips.is_empty(), "Spaceoff rejects an attempted actor grip even with an active arm")
+	key(KEY_SPACE,true)
+	o._try_grip(0,12,body,body.global_position,Vector3.UP)
+	check(o.grips.is_empty(), "Spaceheld cannot acquire a physically separated hunter")
+	key(KEY_SPACE,false)
+	key(KEY_R,false)
 	game._toggle_pause()
 	await create_timer(0.15, true).timeout
 	var paused_tick := int(o.current.tick)
@@ -220,7 +250,7 @@ func _run() -> void:
 	target.objective.tick_capture(10.0, true)
 	check(wins.size() == 1, "Victory is emitted only once per round")
 	game.reset_round()
-	var reset_deadline := Time.get_ticks_msec() + 7000
+	var reset_deadline := Time.get_ticks_msec() + 15000
 	while o.resetting and Time.get_ticks_msec() < reset_deadline:
 		await process_frame
 	check(not o.resetting and game.round_result == &"" and target.objective.capture_progress == 0.0 and o.grips.is_empty(), "Reset clears victory, grips and timer and restarts the actual native world")

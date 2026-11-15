@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -12,13 +13,11 @@ struct MuscleCommand {
     std::uint32_t animal=0, arm=0;
     double activation=0;          // [0,1], filtered by solver
     double curvature=0;          // rad/m, signed curl in arm's vertical plane
-    double extension=1;          // rest-length ratio, clamp [0.55,1.50]
+    double extension=1;          // rest-length ratio, clamp [0.65,1.35]
     double twist=0;              // rad/m
     double stiffness=0;          // [0,1]
     bool attach=false;           // legacy explicit tip attachment
     double sweep=0;              // [-1,1] body-relative anterior/posterior muscle drive
-    bool explicit_control=false; // step4 keeps extend/stroke independent of activation
-    bool extend=false, stroke=false, carry=false;
 };
 struct DragCommand {
     enum class Kind { None, Animal, ArmTip, Rigid };
@@ -29,15 +28,14 @@ struct DragCommand {
     double max_force=20;         // N
 };
 struct WorldConfig {
+    double tissue_stiffness_ratio=1.0; // .2 = fivefold compliance, one-fifth motor force
     std::uint32_t animals=2, segments=16, substeps=4, iterations=8;
     Vec3 gravity{0,-9.81,0};
     double fixed_dt=1.0/60.0, damping=0.4, friction=0.65;
+    // Grounded gameplay floor: high Coulomb breakaway, low sliding drag.
+    // These are dimensionless friction coefficients, not velocity thresholds.
+    double floor_static_friction=2.2, floor_kinetic_friction=0.12;
     double spacing=2.2, spawn_height=0.75;
-    double size_scale=1.0;         // metres and kg scale together; game uses 1.5
-    double sweep_limit_degrees=27.0;
-    double idle_friction_ratio=0.06;
-    double body_friction=0.22;
-    bool locomotion_assist=true;
     // Gameplay actuator and adhesion strength multipliers. Applied in the
     // C++ shared world (not Godot forces or visual animation).
     double arm_motor_strength=2.2;      // moderated from the overpowered 4.0 profile
@@ -64,27 +62,28 @@ struct WorldConfig {
     // Staged volumetric arm prototype, enabled for physical arm 0 only.
     bool volumetric_arm_prototype=false;
     double volumetric_compliance=2e-10; // per-tetra XPBD volume compliance
+    double mantle_volume_compliance=2e-8; // compliant low-resolution mantle chamber tetrahedra
+    bool grounded_rest=false;           // opt-in gravity-settled octopus posture (gameplay)
+    double visual_arm_floor_radius=0.065; // world m: conservative GameReady skin/sucker envelope
+    double visual_mantle_floor_radius=0.065; // world m: cage surface clearance
+    double arm_root_shell_compliance=3e-5; // m/N XPBD: local mantle-to-arm tissue junction
+    double arm_root_center_compliance=2e-4; // softer deep-tissue tether, avoids rigid root hub
     bool reach_ground_on_extend=true;   // guide ungripped extended tips to contact
     std::uint32_t rigid_count=3;
     bool auto_suction=false;      // enabled for gameplay; original native tests retain passive baseline
     bool collisions=true, floor=true;
-    Vec3 spawn_origin{};
 };
-// Explicit sample-and-hold coupling to the existing Godot character/scene.
-struct SceneForce { int arm=-1, node=0; Vec3 force{}; };
-struct SceneContact { int arm=-1, node=0; Vec3 point{}, normal{0,1,0}; std::uint32_t collider=0; };
-struct SceneReaction { std::uint32_t collider=0; Vec3 impulse{}, point{}; };
+// Scene coupling uses native local metres, newtons and N*s. The bridge owns
+// world-origin/visual-scale conversion. Sites address animal 0; arm -1 means
+// body cage then mantle-shell snapshot nodes, otherwise arm is 0..7.
+struct SceneForce { int arm=-1,node=0;Vec3 force{}; };
+struct SceneContact { int arm=-1,node=0;Vec3 point{},normal{0,1,0};std::uint32_t collider=0; };
+struct SceneReaction { std::uint32_t collider=0;Vec3 impulse{},point{}; };
 struct ArmSnapshot {
-    // 0 recover, 1 contact preparation, 2 support, 3 releasing, 4 carry, 5 air stroke.
-    unsigned phase=0;
-    bool extend=false, stroke=false, carry=false, rearm_required=false;
-    double home_angle=0;
-    unsigned model_arm=0;
-    std::vector<Vec3> sucker_directions;
-    std::vector<double> contact_radii;
-    std::vector<double> grip_coverage;
     double uncoil_progress=0;      // base-to-tip unwound fraction [0,1]
     std::vector<Vec3> nodes;     // segments+1, root -> tip, world metres
+    std::vector<double> contact_radii; // source conservative contact envelope, one per node
+    std::vector<Vec3> sucker_directions; // same underside direction used by native acquisition
     std::vector<Quat> frames;    // segments, local +Z is tangent
     std::vector<Vec3> angular_velocities; // 3D director angular velocity, world rad/s
     std::vector<double> material_roll; // segments, physically solved torsion angle (radians)
@@ -110,6 +109,9 @@ struct Diagnostics {
     std::uint64_t contact_count=0, candidate_pairs=0, attachments=0, broken_attachments=0, nonfinite_count=0;
     std::uint64_t cross_animal_contacts=0, animal_prop_contacts=0;
     std::uint64_t swept_contacts=0;
+    std::uint64_t arm_prop_surface_contacts=0;
+    double max_mantle_volume_error=0;
+    std::uint64_t static_triangles=0;
 };
 struct RenderSnapshot {
     std::uint64_t tick=0;
@@ -117,7 +119,6 @@ struct RenderSnapshot {
     std::vector<AnimalSnapshot> animals;
     std::vector<RigidSnapshot> rigids;
     Diagnostics diagnostics{};
-    double size_scale=1.0;
     std::uint64_t static_triangles=0;
     std::vector<SceneReaction> scene_reactions;
 };
@@ -134,11 +135,14 @@ public:
     void reset(const WorldConfig& config);
     bool command(const MuscleCommand& command);
     bool drag(const DragCommand& command);
-    void release_all_suckers(bool held); // Space overrides all grips while held
+    void release_all_suckers(bool held); // Legacy native API: force release while held
+    void set_suction_enabled(bool enabled); // Gameplay: Space held = ON, otherwise OFF
     bool impulse_rigid(std::uint32_t index, Vec3 impulse); // N·s at the prop center, for controlled physical fixtures
-    bool terrain(unsigned width, double origin_x, double origin_z, double cell, const std::vector<double>& heights);
+    bool terrain(unsigned width,double origin_x,double origin_z,double cell,const std::vector<double>& heights);
     bool static_geometry(const std::vector<Vec3>& triangle_vertices);
-    bool scene_inputs(const std::vector<SceneForce>& forces, const std::vector<SceneContact>& contacts);
+    std::size_t static_triangle_count() const;
+    bool scene_inputs(const std::vector<SceneForce>& forces,const std::vector<SceneContact>& contacts);
+    void external_grips(const std::array<bool,8>& carried); // suppress only native floor grips on animal 0
     bool step();                 // exactly config.fixed_dt; false on invalid state
     RenderSnapshot snapshot() const;
     const WorldConfig& config() const;
