@@ -30,7 +30,7 @@ static void render_snapshot(const RenderSnapshot& s){
    for(size_t j=0;j<rings.size();++j){if(j)std::cout<<',';std::cout<<'[';
     for(int vtx=0;vtx<4;++vtx){if(vtx)std::cout<<',';v(rings[j][vtx]);}
     std::cout<<']';}
-   std::cout<<"],\"attached\":[";const auto& held=a.arms[k].attached;for(size_t j=0;j<held.size();++j){if(j)std::cout<<',';std::cout<<(held[j]?"true":"false");}std::cout<<"]}";}
+   std::cout<<"],\"grabbed\":"<<(a.arms[k].grabbed?"true":"false");std::cout<<",\"attached\":[";const auto& held=a.arms[k].attached;for(size_t j=0;j<held.size();++j){if(j)std::cout<<',';std::cout<<(held[j]?"true":"false");}std::cout<<"]}";}
   std::cout<<"]}";}
  std::cout<<"],\"rigids\":[";
  for(size_t i=0;i<s.rigids.size();++i){if(i)std::cout<<',';const auto& r=s.rigids[i];std::cout<<"{\"center\":";v(r.center);std::cout<<",\"orientation\":";q(r.orientation);std::cout<<",\"half_extents\":";v(r.half_extents);std::cout<<'}';}
