@@ -289,9 +289,9 @@ func make_stage() -> void:
 
 func update_camera() -> void:
     var center := Vector3.ZERO
-    if not current.is_empty():
-        for a in current.animals: center += vec(a.center)
-        center /= current.animals.size()
+    var states: Array = current.get("animals", [])
+    if not states.is_empty():
+        center = vec(states[clampi(selected, 0, states.size() - 1)].center)
     camera.position = center + Vector3(sin(yaw)*cos(pitch), sin(pitch), cos(yaw)*cos(pitch))*distance
     camera.look_at(center, Vector3.UP)
 
