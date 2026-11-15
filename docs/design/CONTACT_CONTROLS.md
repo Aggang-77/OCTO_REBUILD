@@ -216,3 +216,36 @@ These are provisional game stability parameters. The web is a
 deformable collision approximation, and the model still requires
 Godot visualization plus native test runs to establish that neither
 body inversion nor skin self-intersection occurs in all scenarios.
+
+
+## Object grabbing and camera zoom (2026-11-15)
+
+Gameplay mapping supersedes all earlier Shift-reach and Ctrl-brace actions:
+
+- **Shift + an arm key:** command that arm to seek and grab the nearest
+  **external C++-simulated object** (dynamic box or other octopus tissue).
+  A contact joint forms only after the physical envelopes meet. Within a
+  bounded one-metre search range, a force-limited motor approaches the
+  closest candidate; it cannot remotely weld a target. A successful
+  grab persists even after Shift is released, until Ctrl releases it
+  or its physical load threshold breaks it.
+- **Ctrl + arm key:** release that arm's object grab. **Ctrl alone:**
+  release all object grabs on the selected octopus. Ctrl takes priority
+  over Shift if both are held. Other octopuses are not affected.
+- **Space:** remains the separate, held-only floor/prop sucker adhesion
+  toggle for commanded arms. Object grabs are independent of Space.
+- **Mouse wheel up/down:** multiply orbit-camera distance by 0.88
+  or 1/0.88, clamped to 1.7–30 world metres; right drag still orbits.
+
+The native step2 per-arm attachment slot is now a gameplay opcode:
+0=keep, 1=request nearest-external grab, 2=release. The legacy step
+attachment bit retains its original semantics. MuscleCommand.grab_mode
+carries the parsed opcode. An attached tip transmits bilateral XPBD
+reactions to a contacted object or other octopus. Only simulated bodies
+can be selected; a separate character type requires registration into
+the shared C++ physics world.
+
+Regressions added for keyboard opcode serialization, Ctrl-only release,
+invalid native opcodes and stable approach/release. **Not yet executed:**
+native build/CTest, Godot input tests, visual mesh contact, force
+calibration and physically verified grab persistence.
