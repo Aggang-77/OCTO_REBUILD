@@ -744,9 +744,9 @@ void sweep_motors(double h){
     const double u=double(j)/cfg.segments;
     auto&site=p[ar.p[j]];
     const Vec3 desired=root+goal*(.9*u*(idle?1.04:ar.active.extension));
-    Vec3 force=(desired-site.x)*(idle?.20:1.0)*cfg.arm_motor_strength;
+    Vec3 force=(desired-site.x)*(idle?.20:1.20)*cfg.arm_motor_strength;
     const double mag=norm(force);
-    const double max_motor_force=(idle?.014:.060)*cfg.arm_motor_strength;
+    const double max_motor_force=(idle?.014:.075)*cfg.arm_motor_strength;
     if(mag>max_motor_force)force=force*(max_motor_force/mag);
     site.x=site.x+force*(site.inv*h*h);
     for(int b:animal.body)p[b].x=p[b].x-force*(p[b].inv*h*h/animal.body.size());
