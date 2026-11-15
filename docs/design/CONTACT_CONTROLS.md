@@ -151,3 +151,42 @@ This is a code-level correction, **not a verified rendered result**.
 After building, check a no-input 300-tick grounded settle, rear mantle
 lean and proximal arm angles, idle tip variance under perturbation,
 suction-off behaviour and GameReady GLB mesh skin contact.
+
+
+## Reach → seal → strong pull → release (2026-11-15)
+
+This section **supersedes** all earlier `shorten → anchor → elongate`
+or `reach → pull` descriptions.
+
+- **Reach (0.18s)**: axial length 1.38, active shaping.
+- **Seal (up to 0.40s)**: hold an extended arm near the contacted surface.
+  When Space is held, proceed only after a real sucker attachment has been
+  reported by the native world. No remote/fabricated contact is allowed.
+- **Pull (0.42s maximum)**: axial contraction target 0.67 on
+  *body-to-first-real-sucker* sections, with distal tissue beyond the
+  planted sucker kept near neutral rest length. During this phase the
+  native XPBD sucker compliance and break threshold are reinforced; a
+  small centerline radius can no longer erase most available contact
+  force. Lost grip terminates the pull. When Space is not held, a weaker
+  friction-only shortening attempt uses extension 0.80; no suction is
+  silently enabled.
+- **Release (0.16s)**: muscle relaxes to extension 1.04. Suction ON is
+  still controlled exclusively by Space, but the release phase
+  deliberately detaches its old stroke contact so the next reach can
+  place a new foothold. Unpressed arms may grip while Space is held.
+
+**Contact topology:** the physical web was previously modeled only
+with distance strands. New grounded-world one-sided contacts act between
+deforming triangles spanning adjoining proximal arms (including a fan
+to the central compliant socket) and the dorsal mantle ring. Near-root
+arm capsules are also checked against upper mantle shell particles.
+The root-most physically attached sections remain exempt from
+self-separation, avoiding a hard disconnected hinge. This is a
+coarse deformable collision approximation, not a watertight
+continuous-triangle collision system or a new GPU cloth mesh.
+
+**Status:** changes and controller tests are committed, but there is
+no measured increase in per-stroke body travel and no on-screen proof
+that flipping has stopped. Required: compile, run all regression
+fixtures, and inspect GameReady skin under sustained suction while
+a root is pulled into the torso.
