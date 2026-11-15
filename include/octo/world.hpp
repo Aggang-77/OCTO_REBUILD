@@ -31,6 +31,9 @@ struct WorldConfig {
     std::uint32_t animals=2, segments=16, substeps=4, iterations=8;
     Vec3 gravity{0,-9.81,0};
     double fixed_dt=1.0/60.0, damping=0.4, friction=0.65;
+    // Grounded gameplay floor: high Coulomb breakaway, low sliding drag.
+    // These are dimensionless friction coefficients, not velocity thresholds.
+    double floor_static_friction=2.2, floor_kinetic_friction=0.12;
     double spacing=2.2, spawn_height=0.75;
     // Gameplay actuator and adhesion strength multipliers. Applied in the
     // C++ shared world (not Godot forces or visual animation).
