@@ -636,8 +636,12 @@ void web_mantle_contacts(){
  for(auto& animal:animals)for(int k=0;k<8;++k){
   const auto& a=animal.arms[k];
   const auto& b=animal.arms[(k+1)%8];
-  for(unsigned j=1;j<=std::min(4u,cfg.segments-1);++j){
-   const std::array<std::array<int,3>,2> faces{{
+  for(unsigned j=0;j<=std::min(4u,cfg.segments-1);++j){
+   // The proximal membrane includes a fan from the compliant body core:
+   // otherwise the ~0.16 m dorsal mantle fits wholly through the web's
+   // empty ~0.26 m inner rim even though outer arm strands are constrained.
+   const std::array<std::array<int,3>,3> faces{{
+    {{j==0?animal.body[0]:a.p[j],a.p[j],b.p[j]}},
     {{a.p[j],b.p[j],a.p[j+1]}},
     {{b.p[j],b.p[j+1],a.p[j+1]}}
    }};
@@ -657,7 +661,7 @@ void web_mantle_contacts(){
      if(t<0||u<0||w<0)continue;
      const double surface=x.y*w+y.y*t+z.y*u;
      const double depth=surface+.035+shell.r-shell.x.y;
-     if(depth<=0||depth>.22)continue;
+     if(depth<=0||depth>.45)continue;
      const double sum=shell.inv+v0.inv*w*w+v1.inv*t*t+v2.inv*u*u;
      if(sum<=1e-10)continue;
      const double impulse=std::min(depth,.065)/sum;
