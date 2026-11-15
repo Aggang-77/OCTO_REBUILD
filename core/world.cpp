@@ -1103,9 +1103,16 @@ for(auto&e:d){
    if(extension>1.12&&arm.active.activation>.6){
     // Spend the extension on tissue between body and foothold rather
     // than extending the entire distal arm beyond the planted site.
-    unsigned foothold=std::max(2u,cfg.segments/2);
+    unsigned foothold=cfg.segments;
+    bool has_grip=false;
     for(const auto& sucker:arm.suckers)
-     if(sucker.attached!=-1)foothold=std::min(foothold,sucker.node);
+     if(sucker.attached!=-1){
+      foothold=std::min(foothold,sucker.node);
+      has_grip=true;
+     }
+    // With suction off, model a planted middle-arm section
+    // supported by static floor friction, not an invented sucker.
+    if(!has_grip)foothold=std::max(2u,cfg.segments/2);
     if(pa.node>=int(foothold))extension=1.;
    }
   }
