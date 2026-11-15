@@ -41,7 +41,7 @@ struct Sucker{
 struct TissueSection{double transverse=1,rate=0,pressure=0;};
 struct Arm{std::vector<TissueSection> tissue;std::vector<Sucker> suckers;double peel_clock=0;double uncoil_front=0;unsigned arm_index=0;std::vector<int> p;std::vector<double> radius;std::vector<double> squash;std::vector<Roll> roll;std::vector<Director> directors;std::vector<Vec3> bend_lambda,bend_creep;std::vector<int> axial_edges;std::vector<std::array<int,4>> volume_rings;MuscleCommand target{},active{};int attached=-1;Vec3 anchor{};double attach_rest=0;};
 struct Animal{std::vector<int> body;std::vector<int> shell;std::array<Arm,8> arms;};
-WorldConfig cfg,requested_cfg;bool release_held=false;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;std::vector<Bounds> contact_bounds;std::vector<int> contact_order;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
+WorldConfig cfg,requested_cfg;bool release_held=false,suction_enabled=true,suction_explicit_control=false;std::vector<P> p;std::vector<D> d;std::vector<T> tetra;std::vector<Animal> animals;std::vector<std::vector<int>> rigids;std::vector<Bounds> contact_bounds;std::vector<int> contact_order;DragCommand drag;Diagnostics diag;std::uint64_t tick=0;double time=0;
 int particle(Vec3 x,double mass,double radius,int animal=-1,int arm=-1,int node=-1,int rigid=-1){p.push_back({x,x,{},1/mass,radius,animal,arm,node,rigid});return int(p.size()-1);}
 void edge(int a,int b,double compliance){const double rest=norm(p[a].x-p[b].x);d.push_back({a,b,rest,compliance,0,rest,0,false,false});}
 double volume(const T&t)const{auto a=p[t.p[0]].x;return dot(p[t.p[1]].x-a,cross(p[t.p[2]].x-a,p[t.p[3]].x-a))/6;}
@@ -751,7 +751,7 @@ void record_sucker_frame(Arm& ar,Sucker& s){
  s.wrap_radius=radius;
 }
 void follow_surface(double h){
- if(!cfg.auto_suction||release_held)return;
+ if(!cfg.auto_suction||release_held||!suction_enabled)return;
  for(auto& animal:animals)for(auto& ar:animal.arms){
   if(ar.target.activation<.5||ar.target.extension<1.0)continue;
   const Sucker* latest=nullptr;
@@ -841,7 +841,7 @@ void torso_above_arms(double h){
  }
 }
 void seek_floor_contact(double h){
- if(!cfg.auto_suction||!cfg.floor||!cfg.reach_ground_on_extend||release_held)return;
+ if(!cfg.auto_suction||!cfg.floor||!cfg.reach_ground_on_extend||release_held||!suction_enabled)return;
  for(auto&animal:animals)for(auto&ar:animal.arms){
   if(ar.target.activation<.5||ar.target.extension<1.0)continue;
   bool has_grip=false;
@@ -859,7 +859,7 @@ void seek_floor_contact(double h){
  }
 }
 void suction_constraints(double h){
- if(!cfg.auto_suction||release_held)return;
+ if(!cfg.auto_suction||release_held||!suction_enabled)return;
  for(auto&animal:animals)for(auto&ar:animal.arms)for(auto&s:ar.suckers){
   if(s.attached==-1)continue;
   auto&node=p[ar.p[s.node]];
@@ -957,7 +957,7 @@ void update_suckers(double h){
   else ar.peel_clock=0;
   for(auto&s:ar.suckers){
    s.cooldown=std::max(0.0,s.cooldown-h);
-   if(release_held||(ar.target.activation<.1&&ar.target.extension<.82)){
+   if(release_held||!suction_enabled||(ar.target.activation<.1&&ar.target.extension<.82)){
     // Clear timed push-stroke grips before the next shortening phase.
     s.attached=-1;s.dwell=0;s.cooldown=.12;continue;
    }
@@ -973,7 +973,7 @@ void update_suckers(double h){
    // An octopus resting under its own weight can make contact without
    // automatically welding every inactive sucker to the seabed. Gripping
    // remains a separate, active behavior and Space still releases.
-   if(ar.target.extension<.87||(cfg.grounded_rest&&ar.target.activation<.1&&ar.active.activation<.15)){
+   if(ar.target.extension<.87||(cfg.grounded_rest&&!suction_explicit_control&&ar.target.activation<.1&&ar.active.activation<.15)){
     s.dwell=0;
     continue;
    }
@@ -1095,6 +1095,16 @@ PhysicsWorld::~PhysicsWorld()=default;PhysicsWorld::PhysicsWorld(PhysicsWorld&&)
 void PhysicsWorld::reset(const WorldConfig&c){auto fresh=std::make_unique<Impl>(c);impl_=std::move(fresh);}
 const WorldConfig&PhysicsWorld::config()const{return impl_->requested_cfg;}
 bool PhysicsWorld::command(const MuscleCommand&c){if(c.animal>=impl_->animals.size()||c.arm>=8||!std::isfinite(c.activation)||!std::isfinite(c.curvature)||!std::isfinite(c.extension)||!std::isfinite(c.twist)||!std::isfinite(c.stiffness)||!std::isfinite(c.sweep))return false;auto v=c;v.activation=std::clamp(v.activation,0.,1.);v.curvature=std::clamp(v.curvature,-15.,15.);v.extension=std::clamp(v.extension,.55,1.50);v.twist=std::clamp(v.twist,-20.,20.);v.stiffness=std::clamp(v.stiffness,0.,1.);v.sweep=std::clamp(v.sweep,-1.,1.);impl_->animals[c.animal].arms[c.arm].target=v;return true;}
+void PhysicsWorld::set_suction_enabled(bool enabled){
+ impl_->suction_explicit_control=true;
+ impl_->suction_enabled=enabled;
+ if(!enabled){
+  for(auto&animal:impl_->animals)for(auto&arm:animal.arms){
+   arm.attached=-1;
+   for(auto&site:arm.suckers){site.attached=-1;site.dwell=0;site.cooldown=0;}
+  }
+ }
+}
 void PhysicsWorld::release_all_suckers(bool held){impl_->release_held=held;if(held)for(auto&a:impl_->animals)for(auto&ar:a.arms){ar.attached=-1;for(auto&s:ar.suckers){s.attached=-1;s.dwell=0;s.cooldown=std::max(s.cooldown,.18);}}}
 bool PhysicsWorld::drag(const DragCommand&c){if(!finite(c.target)||!std::isfinite(c.stiffness)||!std::isfinite(c.max_force)||c.stiffness<0||c.max_force<0||c.stiffness>1e5||c.max_force>1e4)return false;switch(c.kind){case DragCommand::Kind::None:break;case DragCommand::Kind::Animal:if(c.index>=impl_->animals.size())return false;break;case DragCommand::Kind::ArmTip:if(c.index>=impl_->animals.size()||c.arm>=8)return false;break;case DragCommand::Kind::Rigid:if(c.index>=impl_->rigids.size())return false;break;default:return false;}impl_->drag=c;return true;}
 bool PhysicsWorld::impulse_rigid(std::uint32_t index,Vec3 impulse){if(index>=impl_->rigids.size()||!finite(impulse))return false;const auto&ids=impl_->rigids[index];const Vec3 share=impulse/double(ids.size());for(int id:ids)impl_->p[id].v=impl_->p[id].v+share*impl_->p[id].inv;return true;}
