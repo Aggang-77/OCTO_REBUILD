@@ -247,48 +247,52 @@ func _exercise() -> void:
             a0.activation == 0.0 and a0.sweep == 0.0 and a0.curvature == 0.0,
             "symmetric arm rest configuration"):
         return
-    # Locomotion only enters power extension after an actual anchored contact.
+    # Space-held suction: reach, confirm a real grip, pull while attached,
+    # and release. Missing grip must never create a remote attachment.
     var gait = preload("res://scripts/arm_controls.gd").new()
     var initial: Dictionary = gait.sample(0, 0.0, true, false, false, false, false)
-    if not _check(gait.phases[0] == "shorten" and initial.extension < 1.0,
-            "stroke begins with axial shortening"):
+    if not _check(gait.phases[0] == "reach" and initial.extension > 1.3,
+            "suction stroke reaches first"):
         return
     var seeking: Dictionary = gait.sample(0, 0.19, true, false, false, false, false)
-    if not _check(gait.phases[0] == "anchor" and seeking.extension > 1.0,
-            "shortening transitions to contact search"):
+    if not _check(gait.phases[0] == "anchor" and seeking.extension > 1.2,
+            "reach transitions to real sucker sealing"):
         return
-    var no_grip: Dictionary = gait.sample(0, 0.24, true, false, false, false, false)
-    if not _check(gait.phases[0] == "anchor" and no_grip.extension < 1.38,
-            "no premature body propulsion without suction contact"):
+    var no_grip: Dictionary = gait.sample(0, 0.25, true, false, false, false, false)
+    if not _check(gait.phases[0] == "anchor" and no_grip.extension > 1.2,
+            "no power pull before suction contact"):
         return
-    var powered: Dictionary = gait.sample(0, 0.28, true, false, false, false, true)
-    if not _check(gait.phases[0] == "elongate" and powered.extension > 1.3,
-            "real sucker contact unlocks elongation"):
+    var pulling: Dictionary = gait.sample(0, 0.29, true, false, false, false, true)
+    if not _check(gait.phases[0] == "pull" and pulling.extension < 0.75,
+            "suction contact unlocks strong axial contraction"):
         return
-    var detached: Dictionary = gait.sample(0, 0.34, true, false, false, false, false)
+    var continued: Dictionary = gait.sample(0, 0.48, true, false, false, false, true)
+    if not _check(gait.phases[0] == "pull" and continued.activation > 0.95,
+            "sealed sucker remains under load during pull"):
+        return
+    var detached: Dictionary = gait.sample(0, 0.50, true, false, false, false, false)
     if not _check(gait.phases[0] == "release" and detached.activation == 0.0,
-            "lost contact ends power stroke"):
+            "lost suction ends contraction"):
         return
-    var again: Dictionary = gait.sample(0, 0.55, true, false, false, false, false)
-    if not _check(gait.phases[0] == "shorten" and again.extension < 1.0,
-            "released stroke repeats shortening"):
+    var again: Dictionary = gait.sample(0, 0.68, true, false, false, false, false)
+    if not _check(gait.phases[0] == "reach" and again.extension > 1.3,
+            "released stroke returns to reach"):
         return
-    # Without Space the high-static-friction floor must permit a push
-    # stroke, rather than waiting forever for an impossible sucker grip.
+    # Space-up is still a friction-only stroke and never pretends suction.
     var friction_gait = preload("res://scripts/arm_controls.gd").new()
-    var without_suction: Dictionary = friction_gait.sample(0, 0.0, true, false, false, false, false, 1.0, false)
-    if not _check(without_suction.extension < 1.0 and friction_gait.phases[0] == "shorten",
-            "friction stroke first shortens"):
+    var friction: Dictionary = friction_gait.sample(0, 0.0, true, false, false, false, false, 1.0, false)
+    if not _check(friction_gait.phases[0] == "reach" and friction.extension > 1.3,
+            "friction stroke starts with reach"):
         return
-    without_suction = friction_gait.sample(0, 0.15, true, false, false, false, false, 1.0, false)
+    friction = friction_gait.sample(0, 0.20, true, false, false, false, false, 1.0, false)
     if not _check(friction_gait.phases[0] == "anchor",
-            "friction stroke establishes a ground contact interval"):
+            "friction stroke has a contact-setting interval"):
         return
-    without_suction = friction_gait.sample(0, 0.28, true, false, false, false, false, 1.0, false)
-    if not _check(friction_gait.phases[0] == "elongate" and without_suction.extension > 1.3,
-            "Space-up still permits active extension against floor friction"):
+    friction = friction_gait.sample(0, 0.32, true, false, false, false, false, 1.0, false)
+    if not _check(friction_gait.phases[0] == "pull" and friction.extension < 0.9,
+            "Space-up permits weaker friction-based pull"):
         return
-    print("CONTACT_PUSH_PASS shorten_anchor_contact_elongate_release=true")
+    print("CONTACT_PULL_PASS reach_anchor_grip_pull_release=true")
     print("CONTACT_KEYS_PASS eight_keys=true modifiers=true crawl=false space_priority=true")
     octo.free()
     quit(0)
