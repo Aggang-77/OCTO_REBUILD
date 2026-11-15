@@ -16,7 +16,10 @@ struct MuscleCommand {
     double twist=0;              // rad/m
     double stiffness=0;          // [0,1]
     bool attach=false;           // legacy explicit tip attachment
-    std::uint32_t grab_mode=0;    // 0 keep, 1 grab nearest external body, 2 release
+    std::uint32_t grab_mode=0;    // 0 keep, 1 seek chosen entity, 2 release
+    std::uint32_t grab_target_kind=0; // 1 = other animal, 2 = rigid prop
+    std::uint32_t grab_target_index=0;
+    Vec3 grab_target_point{}; // clicked world-space location on that entity
     double sweep=0;              // [-1,1] body-relative anterior/posterior muscle drive
 };
 struct DragCommand {
