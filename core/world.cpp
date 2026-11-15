@@ -402,6 +402,7 @@ double floor_surface_radius(const P& particle)const{
   // Preserve genuine mantle/cage contact instead of passing a tiny
   // centerline sphere through the seabed.
   radius=std::max(radius,cfg.visual_mantle_floor_radius);
+  if(particle.node==0)radius=std::max(radius,.16);
  }
  return radius;
 }
@@ -515,6 +516,25 @@ void arm_prop_surfaces(){
      // Exclude the arm root and adjoining tissue: they are intentionally
      // connected to the mantle by compliant links.
      if(j<3)continue;
+      // Inner torso collider closes holes between the sparse mantle shell particles.
+      P& core=p[animal.body[0]];
+      const Vec3 span=b.x-a.x;
+      const double span2=dot(span,span);
+      const double q=span2>eps?std::clamp(dot(core.x-a.x,span)/span2,0.,1.):0.;
+      const Vec3 delta_core=core.x-(a.x+span*q);
+      const double dist_core=norm(delta_core),limit_core=ra+.175;
+      if(dist_core<limit_core){
+       const Vec3 normal=dist_core>1e-9?delta_core/dist_core:Vec3{0,1,0};
+       const double invsum=a.inv*(1-q)*(1-q)+b.inv*q*q+core.inv;
+       if(invsum>eps){
+        const Vec3 corr=normal*((limit_core-dist_core)/invsum);
+        a.x=a.x-corr*(a.inv*(1-q));
+        b.x=b.x-corr*(b.inv*q);
+        core.x=core.x+corr*core.inv;
+        ++diag.contact_count;
+        diag.max_penetration=std::max(diag.max_penetration,limit_core-dist_core);
+       }
+      }
      for(int id:animal.shell){
       P& shell=p[id];
       const Vec3 edge=b.x-a.x;
@@ -538,6 +558,27 @@ void arm_prop_surfaces(){
   }
  }
 
+void limit_local_arm_kinks(){
+ // Activate only for a turn sharper than 120 degrees.
+ if(!cfg.grounded_rest)return;
+ constexpr double kink_cos=.50;
+ for(auto& animal:animals)for(auto& arm:animal.arms)
+  for(unsigned j=2;j<cfg.segments;++j){
+   P& l=p[arm.p[j-1]],&m=p[arm.p[j]],&r=p[arm.p[j+1]];
+   const Vec3 left=l.x-m.x,right=r.x-m.x;
+   const double ll=norm(left),rr=norm(right);
+   if(ll<1e-7||rr<1e-7)continue;
+   const double cosine=dot(left,right)/(ll*rr);
+   if(cosine<=kink_cos)continue;
+   const Vec3 midpoint=(l.x+r.x)*.5;
+   const Vec3 move=(midpoint-m.x)*std::min(.24,.48*(cosine-kink_cos));
+   const double weights=m.inv+.25*(l.inv+r.inv);
+   if(weights<1e-12)continue;
+   m.x=m.x+move*(m.inv/weights);
+   l.x=l.x-move*(.5*l.inv/weights);
+   r.x=r.x-move*(.5*r.inv/weights);
+  }
+}
 void contacts(){root_angle_limits();project_floor();
 if(!cfg.collisions)return;
 // Swept AABB broadphase includes both endpoints so fast crossing paths remain candidates.
@@ -560,7 +601,7 @@ if((a.animal>=0&&b.rigid>=0)||(b.animal>=0&&a.rigid>=0))++diag.animal_prop_conta
 double w=a.inv+b.inv;a.x=a.x-n*(depth*a.inv/w);b.x=b.x+n*(depth*b.inv/w);
 Vec3 relative=(b.x-b.old)-(a.x-a.old);Vec3 tangent=relative-n*dot(relative,n);double tl=norm(tangent);
 if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}
-}}intra_animal_surface_contacts();arm_prop_surfaces();project_floor();}
+}}intra_animal_surface_contacts();arm_prop_surfaces();limit_local_arm_kinks();project_floor();}
 
 
 
@@ -953,7 +994,7 @@ for(unsigned sub=0;sub<cfg.substeps;++sub){for(auto&a:animals)for(auto&ar:a.arms
  const double uncoil_target=(ar.target.activation>.5&&ar.target.extension>=1.0)?1.0:0.0;
  const double max_change=cfg.uncoil_speed*h;
  ar.uncoil_front+=std::clamp(uncoil_target-ar.uncoil_front,-max_change,max_change);
- double f=1-std::exp(-h*12);auto blend=[&](double&v,double t){v+=(t-v)*f;};blend(ar.active.activation,ar.target.activation);blend(ar.active.curvature,ar.target.curvature);blend(ar.active.extension,ar.target.extension);blend(ar.active.stiffness,ar.target.stiffness);blend(ar.active.twist,ar.target.twist);blend(ar.active.sweep,ar.target.sweep);}
+ double f=1-std::exp(-h*22);auto blend=[&](double&v,double t){v+=(t-v)*f;};blend(ar.active.activation,ar.target.activation);blend(ar.active.curvature,ar.target.curvature);blend(ar.active.extension,ar.target.extension);blend(ar.active.stiffness,ar.target.stiffness);blend(ar.active.twist,ar.target.twist);blend(ar.active.sweep,ar.target.sweep);}
 for(auto&particle:p)particle.compression=0;
 for(auto&e:d){
  e.lambda=0;
