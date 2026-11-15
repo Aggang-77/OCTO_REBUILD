@@ -49,6 +49,16 @@ int main(){try{
   }
   surface_hits+=a.diagnostics.arm_prop_surface_contacts;
   volume_error=std::max(volume_error,a.diagnostics.max_mantle_volume_error);
+  // The anatomical dorsal cage must not invert beneath the ventral cage.
+  require(animal.body_nodes[3].y>=animal.body_nodes[4].y-.005,
+          "mantle dorsal cage does not flip 180 degrees into the floor");
+  double dorsal=0,ventral=0;
+  for(int j=0;j<6;++j){
+   ventral+=animal.body_nodes[7+j].y/6.;
+   dorsal+=animal.body_nodes[13+j].y/6.;
+  }
+  require(dorsal>=ventral-.01,
+          "mantle dorsal shell ring remains above ventral shell ring");
   // Physical mantle center and every shell mass must clear the new
   // skin envelope; particle-only collision would have allowed rendered
   // belly penetration even when the center was above the old radius.
