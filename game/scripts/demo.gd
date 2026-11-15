@@ -524,12 +524,9 @@ func update_web(web: MeshInstance3D, arms: Array) -> void:
     mesh.surface_end()
 
 func idle_arm_shape(animal: int, arm: int) -> Dictionary:
-    # A real octopus does not continuously contract all eight arms into
-    # identical tight scrolls. Deterministic offsets produce asymmetric
-    # lightly coiled, ground-draped postures with no jitter or random
-    # forces that would break repeatable native physics tests.
-    var phase := float(arm) * 2.37 + float(animal) * 1.31
-    return {"extension": 1.10 + 0.06 * sin(phase),
+    # Mirror-symmetric radial rest target. The C++ motor is weak and
+    # yields to collision/gravity, so limbs do not rigidly snap home.
+    return {"extension": 1.04,
             "curvature": 0.0,
             "activation": 0.0,
             "sweep": 0.0}
@@ -562,26 +559,25 @@ func step_command() -> String:
         arm_controllers.append(ARM_CONTROLS.new())
     var time := float(current.get("time", 0.0))
     var release := Input.is_physical_key_pressed(KEY_SPACE)
-    var direction := Vector2(
-        float(Input.is_physical_key_pressed(KEY_RIGHT)) - float(Input.is_physical_key_pressed(KEY_LEFT)),
-        float(Input.is_physical_key_pressed(KEY_UP)) - float(Input.is_physical_key_pressed(KEY_DOWN))).normalized()
     var out := "step2 %d" % (animals * 8)
     for i in animals:
         for arm in 8:
             var manual := i == selected and Input.is_physical_key_pressed(ARM_KEYS[arm])
-            var radial := Vector2(sin(float(arm) * PI / 4.0), cos(float(arm) * PI / 4.0))
-            var auto_reach := i == selected and direction.length_squared() > 0.1 and radial.dot(direction) > -0.25 and fmod(time + float(arm % 2) * 0.85, 1.7) < 1.25
-            var held := manual or auto_reach or test_all_active or (test_actuation and i == 0 and arm == 0)
+            var held := manual or test_all_active or (test_actuation and i == 0 and arm == 0)
             var attached := false
             if not current.is_empty():
                 for grip in current.animals[i].arms[arm].get("attached", []):
                     attached = attached or bool(grip)
-            var sign := -1.0 if not manual and direction.y < -0.1 else 1.0
+            var sign := 1.0
             var cmd: Dictionary = arm_controllers[i].sample(arm, time, held,
                 manual and Input.is_physical_key_pressed(KEY_SHIFT),
                 manual and Input.is_physical_key_pressed(KEY_CTRL), release, attached, sign)
-            if not release and arm_controllers[i].phases[arm] == "rest" and time - arm_controllers[i].starts[arm] >= 0.32:
-                cmd.extension = idle_arm_shape(i, arm).extension
+            if not release and arm_controllers[i].phases[arm] == "rest":
+                # Symmetric resting configuration, with an active low-force
+                # restoring motor in the C++ world rather than a teleport.
+                cmd.extension = 1.04
+                cmd.curvature = 0.0
+                cmd.sweep = 0.0
             var twist := 0.0
             if manual:
                 twist = (float(Input.is_physical_key_pressed(KEY_PERIOD)) - float(Input.is_physical_key_pressed(KEY_COMMA))) * 3.0
@@ -616,10 +612,10 @@ func exercise_input() -> void:
         input_arm_baseline = active_tip.distance_to(passive_tip)
         inject_key(KEY_TAB,true)
         inject_key(KEY_TAB,false)
-        inject_key(KEY_E,true)
+        inject_key(KEY_U,true)
         input_phase = 1
     if current.tick >= 55 and input_phase == 1:
-        inject_key(KEY_E,false)
+        inject_key(KEY_U,false)
         input_center_baseline = vec(current.animals[1].center)
         var event := InputEventMouseButton.new()
         event.button_index = MOUSE_BUTTON_LEFT
@@ -688,7 +684,7 @@ func _process(delta: float) -> void:
     var command_start := Time.get_ticks_usec()
     var next_command := step_command()
     if test_input:
-        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_E) and next_command.contains(" 1 0 1.000000 0.000000 1.480000"))
+        input_arm_seen = input_arm_seen or (selected == 1 and Input.is_physical_key_pressed(KEY_U) and next_command.contains(" 1 0 0.780000 0.000000 1.350000"))
         input_drag_seen = input_drag_seen or (dragging and drag_kind == 1 and drag_index == 1 and drag_target.distance_to(vec(current.animals[1].center)) > .05)
     command_ms = float(Time.get_ticks_usec()-command_start)/1000.0
     inbox_lock.lock()
