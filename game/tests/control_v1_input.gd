@@ -243,6 +243,33 @@ func _exercise() -> void:
             a0.activation == 0.0 and a0.sweep == 0.0 and a0.curvature == 0.0,
             "symmetric arm rest configuration"):
         return
+    # Locomotion only enters power extension after an actual anchored contact.
+    var gait = preload("res://scripts/arm_controls.gd").new()
+    var initial: Dictionary = gait.sample(0, 0.0, true, false, false, false, false)
+    if not _check(gait.phases[0] == "shorten" and initial.extension < 1.0,
+            "stroke begins with axial shortening"):
+        return
+    var seeking: Dictionary = gait.sample(0, 0.19, true, false, false, false, false)
+    if not _check(gait.phases[0] == "anchor" and seeking.extension > 1.0,
+            "shortening transitions to contact search"):
+        return
+    var no_grip: Dictionary = gait.sample(0, 0.24, true, false, false, false, false)
+    if not _check(gait.phases[0] == "anchor" and no_grip.extension < 1.38,
+            "no premature body propulsion without suction contact"):
+        return
+    var powered: Dictionary = gait.sample(0, 0.28, true, false, false, false, true)
+    if not _check(gait.phases[0] == "elongate" and powered.extension > 1.3,
+            "real sucker contact unlocks elongation"):
+        return
+    var detached: Dictionary = gait.sample(0, 0.34, true, false, false, false, false)
+    if not _check(gait.phases[0] == "release" and detached.activation == 0.0,
+            "lost contact ends power stroke"):
+        return
+    var again: Dictionary = gait.sample(0, 0.55, true, false, false, false, false)
+    if not _check(gait.phases[0] == "shorten" and again.extension < 1.0,
+            "released stroke repeats shortening"):
+        return
+    print("CONTACT_PUSH_PASS shorten_anchor_contact_elongate_release=true")
     print("CONTACT_KEYS_PASS eight_keys=true modifiers=true crawl=false space_priority=true")
     octo.free()
     quit(0)
