@@ -38,3 +38,21 @@ cannot accelerate the cycle. Per-arm states are retained separately per
 animal and reset when simulation time resets. Native sucker acquisition
 uses the same conservative floor support as native collision, and cannot
 reacquire while extension is below the peel threshold.
+
+
+## Two-hand control update (2026-11-15)
+
+The current gameplay mapping supersedes earlier keyboard tables. Physical
+left-hand keys Q/W/A/S drive arm indices 7/6/5/4, respectively; right-hand
+U/I/J/K drive indices 0/1/2/3. Both hands operate simultaneously. Arrow-key
+crawl assistance is disabled. Shift/Ctrl with an arm retain reach/brace,
+Space releases suckers, and Tab changes the selected animal.
+
+Reach/pull/release phase limits are reduced (0.75/0.32/0.16 seconds,
+respectively; grip-dependent transitions can shorten phases further).
+Command activation is reduced from 1.0 to 0.78, peak sweep force cap from
+0.085 to 0.060 times configured motor strength. Unpressed arms have a weak,
+body-relative, mirror-symmetric radial home force and no coordinate snapping.
+The grounded torso has a bounded reaction-pair lift against supporting near-root
+arm particles, and grounded octopus floor friction decreases while sliding.
+These are gameplay approximations, not validated biomechanical parameters.
