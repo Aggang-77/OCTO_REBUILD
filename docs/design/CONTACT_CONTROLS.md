@@ -43,8 +43,8 @@ reacquire while extension is below the peel threshold.
 ## Two-hand control update (2026-11-15)
 
 The current gameplay mapping supersedes earlier keyboard tables. Physical
-left-hand keys Q/W/A/S drive arm indices 7/6/5/4, respectively; right-hand
-U/I/J/K drive indices 0/1/2/3. Both hands operate simultaneously. Arrow-key
+left-hand keys R/E/W/Q drive arm indices 7/6/5/4, respectively; right-hand
+U/I/O/P drive indices 0/1/2/3. Both hands operate simultaneously. Arrow-key
 crawl assistance is disabled. Shift/Ctrl with an arm retain reach/brace,
 Space releases suckers, and Tab changes the selected animal.
 
@@ -56,3 +56,8 @@ body-relative, mirror-symmetric radial home force and no coordinate snapping.
 The grounded torso has a bounded reaction-pair lift against supporting near-root
 arm particles, and grounded octopus floor friction decreases while sliding.
 These are gameplay approximations, not validated biomechanical parameters.
+
+
+The top-down drawing maps the eight radial arms clockwise from the top:
+`U` (arm 0), `I` (1), `O` (2), `P` (3), `Q` (4), `W` (5),
+`E` (6), `R` (7). This mapping supersedes the previous Q/W/A/S and U/I/J/K scheme.
