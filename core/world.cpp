@@ -740,6 +740,25 @@ void rear_junction_folding(double h){
   }
  }
 }
+void keep_mantle_dorsal_up(){
+ // A unilateral orientation constraint on deformable torso masses.
+ // Avoids a gravity-settled full inversion without rotating the model.
+ if(!cfg.grounded_rest||!cfg.floor)return;
+ for(auto& animal:animals){
+  auto separate_up=[](P& upper,P& lower,double minimum,double fraction){
+   const double violation=minimum-(upper.x.y-lower.x.y);
+   if(violation<=0)return;
+   const double sum=upper.inv+lower.inv;
+   if(sum<=1e-12)return;
+   const double correction=std::min(violation,.10)*fraction/sum;
+   upper.x.y+=correction*upper.inv;
+   lower.x.y-=correction*lower.inv;
+  };
+  separate_up(p[animal.body[3]],p[animal.body[4]],.105,.85);
+  for(int j=0;j<6;++j)
+   separate_up(p[animal.shell[6+j]],p[animal.shell[j]],.085,.33);
+ }
+}
 void upright_motors(double h){
  // A damped restoring *torque*: opposite forces on two existing torso
  // particles, not a hidden transform snap. Contacts still determine
@@ -1097,8 +1116,9 @@ follow_surface(h);
 seek_floor_contact(h);
 rigid_center_sweeps();
 project_floor();
-for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);section_area_constraints(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
+for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);section_area_constraints(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();keep_mantle_dorsal_up();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
 rigid_center_sweeps();
+keep_mantle_dorsal_up();
 project_floor();
 update_creep_memory(h);
 tissue_dynamics(h);
