@@ -207,19 +207,29 @@ func _exercise() -> void:
         await process_frame
         parts = octo.step_command().split(" ")
         var begin := 2 + (8 + arm) * 9
-        if not _check(float(parts[begin + 4]) > 1.3 and float(parts[begin + 8]) == 0.0, "Shift reach"):
+        if not _check(parts[begin + 7] == "1", "Shift+arm requests proximity grab"):
             return
+        _key(KEY_CTRL, true)
+        await process_frame
+        parts = octo.step_command().split(" ")
+        if not _check(parts[begin + 7] == "2", "Ctrl+arm releases grab, taking priority over Shift"):
+            return
+        _key(KEY_SHIFT, false)
+        await process_frame
+        parts = octo.step_command().split(" ")
+        if not _check(parts[begin + 7] == "2", "Ctrl+arm release without Shift"):
+            return
+        _key(KEY_CTRL, false)
         _key(KEY_SPACE, true)
         await process_frame
         parts = octo.step_command().split(" ")
-        if not _check(parts[-1] == "1" and float(parts[begin + 2]) == 0.78, "Space enables suction without disabling Shift reach"):
+        if not _check(parts[-1] == "1" and parts[begin + 7] == "0", "Space enables suction independently of grab"):
             return
         _key(KEY_SPACE, false)
         await process_frame
         parts = octo.step_command().split(" ")
-        if not _check(parts[-1] == "0" and float(parts[begin + 2]) == 0.78, "Space release disables suction but not arm motion"):
+        if not _check(parts[-1] == "0", "Space-up disables suction"):
             return
-        _key(KEY_SHIFT, false)
         _key(key, false)
         await process_frame
     _key(KEY_U, true)
