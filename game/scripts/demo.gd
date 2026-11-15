@@ -285,7 +285,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "U I O P / Q W E R: independent arm controls\\nHold arm: reach > contact > pull > release\\nShift + arm: grab nearest object / other octopus\\nCtrl + arm: release grabbed object\\nSpace + arm: enable sucker adhesion\\nComma / Period + arm: twist\\nMouse wheel: zoom   Right drag: orbit\\nLeft drag: force   Tab: select octopus   F5: reset"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "U I O P / Q W E R: independent arm controls\\nHold arm: reach > contact > pull > release\\nShift + arm: grab nearest object / other octopus\\nCtrl + arm: release that arm   Ctrl alone: release all\\nSpace + arm: enable sucker adhesion\\nComma / Period + arm: twist\\nMouse wheel: zoom   Right drag: orbit\\nLeft drag: force   Tab: select octopus   F5: reset"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -559,11 +559,15 @@ func step_command() -> String:
         arm_controllers.append(ARM_CONTROLS.new())
     var time := float(current.get("time", 0.0))
     var suction_on := Input.is_physical_key_pressed(KEY_SPACE)
+    var ctrl_on := Input.is_physical_key_pressed(KEY_CTRL)
+    var any_arm_pressed := false
+    for key in ARM_KEYS:
+        any_arm_pressed = any_arm_pressed or Input.is_physical_key_pressed(key)
     var out := "step2 %d" % (animals * 8)
     for i in animals:
         for arm in 8:
             var manual := i == selected and Input.is_physical_key_pressed(ARM_KEYS[arm])
-            var release_grab := manual and Input.is_physical_key_pressed(KEY_CTRL)
+            var release_grab := i == selected and ctrl_on and (manual or not any_arm_pressed)
             var grab_nearest := manual and Input.is_physical_key_pressed(KEY_SHIFT) and not release_grab
             var held := (manual and not release_grab) or test_all_active or (test_actuation and i == 0 and arm == 0)
             var attached := false
