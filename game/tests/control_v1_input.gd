@@ -212,9 +212,13 @@ func _exercise() -> void:
         _key(KEY_SPACE, true)
         await process_frame
         parts = octo.step_command().split(" ")
-        if not _check(parts[-1] == "1" and float(parts[begin + 2]) == 0.0, "Space overrides held arm and Shift"):
+        if not _check(parts[-1] == "1" and float(parts[begin + 2]) == 0.78, "Space enables suction without disabling Shift reach"):
             return
         _key(KEY_SPACE, false)
+        await process_frame
+        parts = octo.step_command().split(" ")
+        if not _check(parts[-1] == "0" and float(parts[begin + 2]) == 0.78, "Space release disables suction but not arm motion"):
+            return
         _key(KEY_SHIFT, false)
         _key(key, false)
         await process_frame
