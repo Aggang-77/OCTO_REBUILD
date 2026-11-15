@@ -1224,6 +1224,13 @@ void proximity_grabs(double h){
     if(gap<=.035){
      arm.grabbed=chosen;
      arm.grab_rest=grip.r+other.r;
+     // Stop commanded reaching as soon as the target is secured.
+     // The attachment and compliant distal wrap remain active.
+     arm.target.activation=0.;
+     arm.target.extension=1.04;
+     arm.target.curvature=0.;
+     arm.target.sweep=0.;
+     arm.target.twist=0.;
     }else if(distance>1e-8){
      // Attack is twice the former strong-reaching drive (26 N max,
      // 45 N/m spring), with an opposite reaction on the same animal.
@@ -1388,6 +1395,11 @@ bool PhysicsWorld::command(const MuscleCommand&c){if(c.animal>=impl_->animals.si
  arm.target=v;
  if(c.grab_mode==2){
   arm.grabbed=-1;arm.grab_requested=false;arm.grab_target_kind=0;
+  arm.target.activation=0.;
+  arm.target.extension=1.04;
+  arm.target.curvature=0.;
+  arm.target.sweep=0.;
+  arm.target.twist=0.;
  }
  if(c.grab_mode==1){
   arm.grab_target_kind=c.grab_target_kind;
