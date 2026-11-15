@@ -1194,22 +1194,38 @@ void update_suckers(double h){
 }
 
 void proximity_grabs(double h){
- // One attachment per selected arm, dynamically connected to an
- // external animal tissue mass or prop mass. Nothing can be grabbed
- // remotely; only centers within tip collision reach are candidates.
  if(!cfg.collisions)return;
  for(size_t ai=0;ai<animals.size();++ai)for(auto& arm:animals[ai].arms){
   P& tip=p[arm.p.back()];
   if(arm.grab_requested&&arm.grabbed<0){
-   int nearest=-1;double best=.28; // 28 cm contact opportunity
+   int nearest=-1;double best=1.0; // max 1 m reach, no remote weld
    for(size_t k=0;k<p.size();++k){
     const P& other=p[k];
-    if(other.rigid<0&&(other.animal<0||other.animal==int(ai)))continue;
     if(other.animal==int(ai))continue;
-    const double d=norm(other.x-tip.x)-tip.r-other.r;
-    if(d<best){best=d;nearest=int(k);}
+    if(other.rigid<0&&other.animal<0)continue;
+    const double gap=norm(other.x-tip.x)-tip.r-other.r;
+    if(gap<best){best=gap;nearest=int(k);}
    }
-   if(nearest>=0){arm.grabbed=nearest;arm.grab_rest=norm(p[nearest].x-tip.x);}
+   if(nearest>=0){
+    const P& target=p[nearest];
+    if(best<=.035){
+     // Only form the joint once the actual collision envelopes meet.
+     arm.grabbed=nearest;
+     arm.grab_rest=std::max(.005,tip.r+target.r);
+    }else{
+     // Bounded active grasp reach, with equal/opposite reaction in the
+     // same physics world. This is not teleportation or remote attachment.
+     Vec3 direction=target.x-tip.x;
+     const double length=norm(direction);
+     if(length>1e-8){
+      const double force=std::min(26.0,45.0*best);
+      const Vec3 step=direction*(force*h*h/length);
+      tip.x=tip.x+step*tip.inv;
+      for(int body:animals[ai].body)
+       p[body].x=p[body].x-step*(p[body].inv/animals[ai].body.size());
+     }
+    }
+   }
   }
   arm.grab_requested=false;
   if(arm.grabbed<0)continue;
@@ -1217,7 +1233,6 @@ void proximity_grabs(double h){
   const Vec3 gap=other.x-tip.x;
   const double len=norm(gap);
   if(len<1e-9)continue;
-  // Keep a soft, force-limited joint between the two physical masses.
   const double error=len-arm.grab_rest;
   const double alpha=8e-8/(h*h);
   const double dl=error/(tip.inv+other.inv+alpha);
@@ -1322,7 +1337,7 @@ RenderSnapshot snapshot()const{RenderSnapshot s;s.tick=tick;s.time=time;s.diagno
  const double axial=norm(p[ar.p[j+1]].x-p[ar.p[j]].x);
  out.elastic_strain.push_back(axial/std::max(strand.rest,1e-7)-1.);
 
-bool held=j==cfg.segments-1&&ar.attached!=-1;for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}
+bool held=j==cfg.segments-1&&(ar.attached!=-1||ar.grabbed!=-1);for(const auto& suction:ar.suckers)if(suction.attached!=-1&&suction.node==j+1)held=true;out.attached.push_back(held);}
  for(const auto& ring:ar.volume_rings){
   std::array<Vec3,4> world_ring{};
   for(int v=0;v<4;++v)world_ring[v]=p[ring[v]].x;
