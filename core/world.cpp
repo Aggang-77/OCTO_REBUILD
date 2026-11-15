@@ -225,7 +225,7 @@ void distance(D& e,double h){
  if(e.arm_axial&&a.animal>=0&&a.arm>=0&&a.arm==b.arm){
   const auto& command=animals[a.animal].arms[a.arm].active;
   if(command.activation>.6&&command.extension>1.12)
-   compliance*=.27;
+   compliance*=.12;
  }
  double alpha=compliance/(h*h);
  double dl=(-(l-e.rest)-alpha*e.lambda)/(a.inv+b.inv+alpha);
