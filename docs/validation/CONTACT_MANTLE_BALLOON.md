@@ -88,3 +88,41 @@ Suggested Windows gates:
    peak penetration, and physics p95. Do not interpret a higher
    motor setting alone as a measured speed gain.
 
+
+
+## 2026-11-15 follow-up: dorsal inversion and per-stroke translation
+
+The physical source of two user-observed defects was targeted:
+
+1. **Full torso inversion:** the existing capped upright motor was too weak
+   to stop a very compliant chamber from settling with its dorsal side below
+   the ventral side. Added a one-sided XPBD-style correction between central
+   dorsal/ventral cage particles and corresponding shell-ring particles,
+   applied inside contact solver iterations and once more after the last
+   rigid sweep. It only activates for grounded gameplay and does not rotate
+   the whole octopus transform. The new `contact_mantle_tests.cpp` assertions
+   monitor central and shell orientation throughout its drag/contact fixture.
+2. **Short stride:** the previous controller waited for a real sucker
+   attachment even when Space was UP (suction disabled), preventing
+   `elongate` entirely in normal non-suction locomotion. When Space is UP,
+   the new controller instead enters the elongation phase after a 0.10 s
+   contact-setting interval, using the existing high static / low kinetic
+   floor friction. When Space is held, elongation is still gated on real
+   sucker contact. No imaginary floor attachment is generated.
+3. **Axial force delivery:** while extending, the muscle target now changes
+   the lengths of *proximal-to-foothold* rod edges; segments beyond the
+   actual nearest body-side attached sucker retain their rest length.
+   If there is no sucker, it provisionally uses the mid-arm as the
+   friction-supported stride region. Strongly activated extension now
+   scales axial compliance to 0.12 of its passive value rather than 0.27.
+   The power phase duration was increased from 0.28 to 0.40 s.
+
+These are candidate physics corrections, not measured proof of increased
+travel distance or a watertight visual mantle. GitHub changes were pushed
+without running C++ compilation, native tests or Godot play mode, because
+the container cannot resolve github.com and has no Godot binary.
+
+Required validation: 300+ grounded ticks for upright orientation,
+a comparative one-key cycle with Space up vs Space held, trace actual
+center displacement in metres per cycle and number of true attachments,
+plus check full deformed skin clearance (not just particle clearance).
