@@ -702,6 +702,50 @@ void limit_proximal_arm_kinks(){
    r.x=r.x-move*(.5*r.inv/weight);
   }
 }
+void limit_mantle_web_angle(){
+ // Bounded hinge between the deformable mantle's dorsal axis and the
+ // proximal eight-arm web. Unlike world-up torque this follows the
+ // arm platform as it rolls, preventing a 180-degree relative flip.
+ if(!cfg.grounded_rest)return;
+ constexpr double min_cos=.42261826174069944; // 65 degrees
+ for(auto& animal:animals){
+  const auto& arms=animal.arms;
+  const unsigned ring=std::min(2u,cfg.segments);
+  const Vec3 forward=p[arms[0].p[ring]].x-p[arms[4].p[ring]].x;
+  const Vec3 right=p[arms[2].p[ring]].x-p[arms[6].p[ring]].x;
+  Vec3 normal=cross(forward,right);
+  if(norm(normal)<1e-7)continue;
+  normal=unit(normal);
+  // Preserve the topological web normal: the unflipped web points up.
+  // If the entire web rolls, floor support still constrains its pose.
+  if(normal.y<0)normal=normal*(-1);
+  P& top=p[animal.body[3]];
+  P& bottom=p[animal.body[4]];
+  const Vec3 span=top.x-bottom.x;
+  const double length=norm(span);
+  if(length<1e-7)continue;
+  const Vec3 direction=span/length;
+  const double cosine=dot(direction,normal);
+  if(cosine>=min_cos)continue;
+  Vec3 tangent=direction-normal*cosine;
+  if(norm(tangent)<1e-7){
+   tangent=forward-normal*dot(forward,normal);
+   if(norm(tangent)<1e-7)tangent=right-normal*dot(right,normal);
+  }
+  if(norm(tangent)<1e-7)continue;
+  tangent=unit(tangent);
+  const Vec3 desired=(normal*min_cos+
+    tangent*std::sqrt(1.0-min_cos*min_cos))*length;
+  const Vec3 delta=(desired-span);
+  const double sum=top.inv+bottom.inv;
+  if(sum<1e-12)continue;
+  // Project the relative mantle orientation, not the visual transform.
+  // Limit a single iteration to avoid a violent impulse during recovery.
+  const double step=std::min(1.0,.10/std::max(norm(delta),1e-8));
+  top.x=top.x+delta*(step*top.inv/sum);
+  bottom.x=bottom.x-delta*(step*bottom.inv/sum);
+ }
+}
 void contacts(){root_angle_limits();project_floor();
 if(!cfg.collisions)return;
 // Swept AABB broadphase includes both endpoints so fast crossing paths remain candidates.
@@ -724,13 +768,13 @@ if((a.animal>=0&&b.rigid>=0)||(b.animal>=0&&a.rigid>=0))++diag.animal_prop_conta
 double w=a.inv+b.inv;a.x=a.x-n*(depth*a.inv/w);b.x=b.x+n*(depth*b.inv/w);
 Vec3 relative=(b.x-b.old)-(a.x-a.old);Vec3 tangent=relative-n*dot(relative,n);double tl=norm(tangent);
 if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.inv/w);b.x=b.x-corr*(b.inv/w);}
-}}intra_animal_surface_contacts();web_mantle_contacts();arm_prop_surfaces();limit_proximal_arm_kinks();project_floor();}
+}}intra_animal_surface_contacts();web_mantle_contacts();arm_prop_surfaces();limit_proximal_arm_kinks();limit_mantle_web_angle();project_floor();}
 
 
 
 void root_angle_limits(){
  if(!cfg.grounded_rest)return;
- const double cosine_limit=std::cos((cfg.tissue_stiffness_ratio<.5?105.:65.)*std::acos(-1.)/180.);
+ const double cosine_limit=std::cos((cfg.tissue_stiffness_ratio<.5?85.:65.)*std::acos(-1.)/180.);
  for(auto& animal:animals){
   Vec3 forward=unit(p[animal.body[5]].x-p[animal.body[6]].x);
   Vec3 up=unit(p[animal.body[3]].x-p[animal.body[4]].x);
@@ -1208,6 +1252,7 @@ project_floor();
 for(unsigned it=0;it<cfg.iterations;++it){auto c0=std::chrono::steady_clock::now();for(auto&e:d)distance(e,h);volumes(h);section_area_constraints(h);bending(h);torsion(h);if(it%4==0||it+1==cfg.iterations)director_constraints(h);attachments(h);suction_constraints(h);diag.constraints_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-c0).count();auto t0=std::chrono::steady_clock::now();keep_mantle_dorsal_up();contacts();diag.collision_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();}
 rigid_center_sweeps();
 keep_mantle_dorsal_up();
+limit_mantle_web_angle();
 project_floor();
 update_creep_memory(h);
 tissue_dynamics(h);
