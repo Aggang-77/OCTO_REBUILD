@@ -117,6 +117,29 @@ int main(){try{
             "Space-up cannot regain suction");
    }
   }
+  // Space only enables the actively controlled arm, not all eight.
+  {
+   auto c=floor;c.spawn_height=.14;c.grounded_rest=true;
+   c.tissue_stiffness_ratio=.2;
+   PhysicsWorld selected_only(c);
+   selected_only.set_suction_enabled(true);
+   MuscleCommand active;active.animal=0;active.arm=0;
+   active.activation=1.;active.extension=1.32;
+   require(selected_only.command(active),"selected arm command accepted");
+   for(int tick=0;tick<180;++tick){
+    require(selected_only.step(),"single-arm suction world remains finite");
+    const auto frame=selected_only.snapshot();
+    for(int arm=1;arm<8;++arm)
+     for(bool attached:frame.animals[0].arms[arm].attached)
+      require(!attached,"Space must not attach uncommanded arms");
+   }
+   active.activation=0.;active.extension=1.04;
+   require(selected_only.command(active),"uncommand command accepted");
+   require(selected_only.step(),"uncommanded arm clears suction");
+   for(const auto& arm:selected_only.snapshot().animals[0].arms)
+    for(bool attached:arm.attached)
+     require(!attached,"no grips remain after commanded arm is released");
+  }
   // Extension must seek an actual floor contact, then acquire an
   // ordinary suction constraint; no distant/teleported attachment.
   {auto reach_cfg=floor;reach_cfg.spawn_height=.75;reach_cfg.softness=5.;
