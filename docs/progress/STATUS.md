@@ -301,3 +301,13 @@ motion. Two-animal GPU screenshot/240 ticks PASS at 60.10 simulated ticks/s.
 Ten-animal grounded active native 600-tick p95 14.65 ms, zero nonfinite; full
 Godot ten-animal gate still open. Two-animal grounded active 10,000-tick soak
 also had zero nonfinite. See docs/validation/CONTACT_MANTLE_BALLOON.md.
+
+2026-11-15 posture correction after user review: visual torso scales now
+preserve determinant one, breathing scale removed, shell offsets bounded.
+Grounded upper shell rest center/mass shifted rearwards; first arm segment
+has a 65-degree body-relative cone limit. Loaded regression maximum angle
+65 degrees, local mantle volume error 1.31%, passive upper/lower rear offset
+-0.1775 m. Original GLB GPU 240-tick run PASS at 59.98 ticks/s; shader eye
+height and hood lean are explicit visual calibration. Rounded junction shape
+and exact moving skin volume remain incomplete. See
+docs/validation/MANTLE_POSTURE_REVISION.md.

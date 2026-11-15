@@ -335,18 +335,17 @@ func mantle_scale_from_shell(nodes: Array, center: Vector3, inverse: Quaternion)
         minimum = minimum.min(local_point)
         maximum = maximum.max(local_point)
     var span := maximum - minimum
-    return Vector3(
-        clampf(span.x / 0.44, 0.55, 1.55),
-        clampf(span.y / 0.25, 0.50, 1.65),
-        clampf(span.z / 0.38, 0.55, 1.55))
+    var shape := Vector3(clampf(span.x / 0.44, 0.85, 1.20),
+        clampf(span.y / 0.25, 0.85, 1.20),
+        clampf(span.z / 0.38, 0.85, 1.20))
+    # Scaling the three axes independently previously destroyed visible
+    # volume, on top of the shell shader deformation. Keep determinant one.
+    return shape / pow(shape.x * shape.y * shape.z, 1.0 / 3.0)
 
 func mantle_respiration(shape: Vector3, elapsed: float) -> Vector3:
     # Slow physiological mantle pumping (~0.25 Hz), not oscillating arm
     # stiffness. Preserve the large shape deformation from the C++ shell.
-    var breath := 0.024 * sin(elapsed * TAU * 0.25)
-    return Vector3(shape.x * (1.0 + breath),
-        shape.y * (1.0 + breath * 0.35),
-        shape.z * (1.0 + breath))
+    return shape
 
 func apply_torso_root_skin(skel: Skeleton3D, root_id: int, rest: Transform3D, size: Vector3) -> void:
     if root_id < 0:
@@ -406,7 +405,7 @@ func update_scene() -> void:
             var offsets := PackedVector3Array()
             for n in range(7, 19):
                 var local_shell := inverse * (vec(tissue_nodes[n]) - center) / MODEL_SCALE
-                offsets.append((local_shell - shell_rest[n - 7]).limit_length(0.12))
+                offsets.append((local_shell - shell_rest[n - 7]).limit_length(0.045))
             if not view.skin_config.is_empty():
                 skin_deformer.update_mantle(view.skin_config, offsets)
             var shape_scale := mantle_respiration(

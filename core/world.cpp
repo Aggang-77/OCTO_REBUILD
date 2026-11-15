@@ -85,8 +85,11 @@ for(int x:{1,2})for(int y:{3,4})for(int z:{5,6}){T t{{a.body[0],a.body[x],a.body
   const double radius=level==0?.22:.16;
   for(int k=0;k<6;++k){
    const double phi=2*std::acos(-1.)*k/6.;
-   const Vec3 offset=rotate_spawn({radius*std::cos(phi),y,radius*std::sin(phi)});
-   const int idx=particle(center+offset,.010,.033,int(n),-1,7+level*6+k);
+   // Rearward upper chamber center gives gravity a lever arm relative
+   // to the arm-bearing lower ring, rather than an upright symmetric hub.
+   const Vec3 offset=rotate_spawn({radius*std::cos(phi),y,
+       radius*std::sin(phi)-(c.grounded_rest&&level==1?.07:0.)});
+   const int idx=particle(center+offset,c.grounded_rest&&level==1?.025:.010,.033,int(n),-1,7+level*6+k);
    a.shell.push_back(idx);
    edge(idx,a.body[0],8e-5*c.softness);
    edge(idx,a.body[3],1.2e-4*c.softness);
@@ -435,7 +438,7 @@ void arm_prop_surfaces(){
    }
  }
 }
-void contacts(){project_floor();
+void contacts(){root_angle_limits();project_floor();
 if(!cfg.collisions)return;
 // Swept AABB broadphase includes both endpoints so fast crossing paths remain candidates.
 contact_bounds.resize(p.size());contact_order.resize(p.size());
@@ -461,6 +464,31 @@ if(tl>0){Vec3 corr=tangent*(std::min(tl,cfg.friction*depth)/tl);a.x=a.x+corr*(a.
 
 
 
+void root_angle_limits(){
+ if(!cfg.grounded_rest)return;
+ const double cosine_limit=std::cos(65.*std::acos(-1.)/180.);
+ for(auto& animal:animals){
+  Vec3 forward=unit(p[animal.body[5]].x-p[animal.body[6]].x);
+  Vec3 up=unit(p[animal.body[3]].x-p[animal.body[4]].x);
+  Vec3 right=unit(cross(up,forward));
+  for(auto& arm:animal.arms){
+   const double phi=arm.arm_index*std::acos(-1.)/4.;
+   const Vec3 axis=unit(right*std::sin(phi)+forward*std::cos(phi));
+   auto& root=p[arm.p[0]];auto& next=p[arm.p[1]];
+   const Vec3 delta=next.x-root.x;const double length=norm(delta);
+   if(length<1e-7)continue;
+   const Vec3 tangent=delta/length;const double cosine=dot(tangent,axis);
+   if(cosine>=cosine_limit)continue;
+   Vec3 turn=tangent-axis*cosine;
+   if(norm(turn)<1e-8)turn=up;
+   const Vec3 target=(axis*cosine_limit+unit(turn)*std::sqrt(1.-cosine_limit*cosine_limit))*length;
+   const Vec3 correction=target-delta;
+   const double weight=root.inv+next.inv;
+   root.x=root.x-correction*(root.inv/weight);
+   next.x=next.x+correction*(next.inv/weight);
+  }
+ }
+}
 void upright_motors(double h){
  // A damped restoring *torque*: opposite forces on two existing torso
  // particles, not a hidden transform snap. Contacts still determine

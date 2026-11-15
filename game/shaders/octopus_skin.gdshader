@@ -31,6 +31,7 @@ uniform float bone_activity[256];
 // Twelve native mantle-shell positions relative to their reset pose, in
 // imported model coordinates. Only torso-root-weighted vertices use them.
 uniform vec3 mantle_offsets[12];
+uniform bool eye_surface = false;
 varying float local_load;
 varying float local_activity;
 varying vec3 original_position;
@@ -57,6 +58,11 @@ void vertex() {
     vec2 fields = skinned_fields(BONE_INDICES, BONE_WEIGHTS);
     local_load = clamp(fields.x, 0.0, 1.0);
     local_activity = clamp(fields.y, 0.0, 1.0);
+    // Authored model calibration: keep the eye assembly high on the
+    // cephalic region while the upper mantle extends rearwards (-Z).
+    if (eye_surface) VERTEX.y += 0.065;
+    float hood = smoothstep(0.28, 0.62, original_position.y);
+    VERTEX.z -= hood * 0.10;
     float root_weight = 0.0;
     for (int i = 0; i < 4; i++) {
         if (BONE_INDICES[i] == uint(0)) root_weight += BONE_WEIGHTS[i];

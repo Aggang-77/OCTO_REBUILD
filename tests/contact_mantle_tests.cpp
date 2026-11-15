@@ -1,4 +1,5 @@
 #include "octo/world.hpp"
+#include "octo/rod_math.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -15,10 +16,22 @@ int main(){try{
  DragCommand drag;drag.kind=DragCommand::Kind::ArmTip;drag.arm=0;
  drag.target={0,.28,1.55};drag.max_force=28;drag.stiffness=120;
  require(driven.drag(drag),"arm drag accepted");
- std::uint64_t surface_hits=0;double shell_difference=0,box_difference=0,volume_error=0;
+ std::uint64_t surface_hits=0;double shell_difference=0,box_difference=0,volume_error=0,max_root_angle=0;
  for(int tick=0;tick<180;++tick){
   require(driven.step()&&control.step(),"loaded mantle and contacts remain finite");
   const auto a=driven.snapshot(),b=control.snapshot();
+  namespace rm=rod_math;
+  const auto& animal=a.animals[0];
+  auto unit=[](Vec3 v){return rm::mul(v,1./std::max(rm::length(v),1e-8));};
+  const Vec3 forward=unit(rm::sub(animal.body_nodes[5],animal.body_nodes[6]));
+  const Vec3 up=unit(rm::sub(animal.body_nodes[3],animal.body_nodes[4]));
+  const Vec3 right=unit(rm::cross(up,forward));
+  for(int k=0;k<8;++k){
+   double phi=k*std::acos(-1.)/4.;
+   Vec3 axis=unit(rm::add(rm::mul(right,std::sin(phi)),rm::mul(forward,std::cos(phi))));
+   Vec3 tangent=unit(rm::sub(animal.arms[k].nodes[1],animal.arms[k].nodes[0]));
+   max_root_angle=std::max(max_root_angle,std::acos(std::clamp(rm::dot(axis,tangent),-1.,1.))*180./std::acos(-1.));
+  }
   surface_hits+=a.diagnostics.arm_prop_surface_contacts;
   volume_error=std::max(volume_error,a.diagnostics.max_mantle_volume_error);
   for(size_t j=7;j<19;++j){
@@ -41,5 +54,12 @@ int main(){try{
  require(shell_difference>.002,"mantle shell responds to loaded arm");
  require(std::isfinite(volume_error)&&volume_error<.10,
          "loaded mantle local cells retain volume within ten percent");
+ std::cout<<"ROOT_MAX_ANGLE_DEG="<<max_root_angle<<'\n';
+ require(max_root_angle<75.,"root cone remains bounded after contact projections");
+ const auto passive=control.snapshot();
+ double lower_z=0,upper_z=0;
+ for(int j=0;j<6;++j){lower_z+=passive.animals[0].body_nodes[7+j].z/6.;upper_z+=passive.animals[0].body_nodes[13+j].z/6.;}
+ std::cout<<"MANTLE_REAR_OFFSET="<<upper_z-lower_z<<'\n';
+ require(upper_z<lower_z-.015,"upper mantle rests behind the lower arm junction");
  return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

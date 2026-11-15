@@ -35,6 +35,8 @@ func install(scene: Node3D, skel: Skeleton3D, ids: Array) -> Dictionary:
             if material == null:
                 result.rejected_surfaces += 1
                 continue
+            var part_name := String(instance.name).to_lower()
+            material.set_shader_parameter("eye_surface", part_name.contains("eye") or part_name.contains("iris") or part_name.contains("pupil"))
             instance.set_surface_override_material(surface, material)
             result.materials.append(material)
             result.covered_surfaces += 1
