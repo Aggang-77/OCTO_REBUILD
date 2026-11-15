@@ -285,7 +285,7 @@ func make_stage() -> void:
     var box := VBoxContainer.new(); box.mouse_filter = Control.MOUSE_FILTER_IGNORE; panel.add_child(box)
     var title := Label.new(); title.mouse_filter = Control.MOUSE_FILTER_IGNORE; title.text = "O C T O  /  SHARED WORLD"; title.add_theme_font_size_override("font_size", 22); box.add_child(title)
     label = Label.new(); label.mouse_filter = Control.MOUSE_FILTER_IGNORE; label.text = "Starting C++ world..."; label.add_theme_font_size_override("font_size", 15); box.add_child(label)
-    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "W / E: front arms   Q / D: side-front\nA / C: side-rear    Z / X: rear arms\nHold arm: reach > contact > pull > release\nShift + arm: keep reaching   Ctrl + arm: brace\nComma / Period + arm: twist\nArrows: staggered crawl assist (body-relative)\nSPACE: release all grips; overrides every input\nTab: select octopus   F5: reset\nLeft drag: force   Right drag: orbit"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
+    var help := Label.new(); help.mouse_filter = Control.MOUSE_FILTER_IGNORE; help.text = "U I O P / Q W E R: independent arm controls\\nHold arm: reach > contact > pull > release\\nShift + arm: grab nearest object / other octopus\\nCtrl + arm: release grabbed object\\nSpace + arm: enable sucker adhesion\\nComma / Period + arm: twist\\nMouse wheel: zoom   Right drag: orbit\\nLeft drag: force   Tab: select octopus   F5: reset"; help.add_theme_font_size_override("font_size", 14); box.add_child(help)
 
 func update_camera() -> void:
     var center := Vector3.ZERO
@@ -563,15 +563,16 @@ func step_command() -> String:
     for i in animals:
         for arm in 8:
             var manual := i == selected and Input.is_physical_key_pressed(ARM_KEYS[arm])
-            var held := manual or test_all_active or (test_actuation and i == 0 and arm == 0)
+            var release_grab := manual and Input.is_physical_key_pressed(KEY_CTRL)
+            var grab_nearest := manual and Input.is_physical_key_pressed(KEY_SHIFT) and not release_grab
+            var held := (manual and not release_grab) or test_all_active or (test_actuation and i == 0 and arm == 0)
             var attached := false
             if not current.is_empty():
                 for grip in current.animals[i].arms[arm].get("attached", []):
                     attached = attached or bool(grip)
             var sign := 1.0
             var cmd: Dictionary = arm_controllers[i].sample(arm, time, held,
-                manual and Input.is_physical_key_pressed(KEY_SHIFT),
-                manual and Input.is_physical_key_pressed(KEY_CTRL), false, attached and suction_on, sign, suction_on)
+                false, false, false, attached and suction_on, sign, suction_on)
             if arm_controllers[i].phases[arm] == "rest":
                 # Symmetric resting configuration, with an active low-force
                 # restoring motor in the C++ world rather than a teleport.
@@ -583,7 +584,8 @@ func step_command() -> String:
                 twist = (float(Input.is_physical_key_pressed(KEY_PERIOD)) - float(Input.is_physical_key_pressed(KEY_COMMA))) * 3.0
             if test_actuation and i == 0 and arm == 0: twist = 3.0
             out += " %d %d %f %f %f %f %f %d %f" % [
-                i, arm, cmd.activation, cmd.curvature, cmd.extension, twist, 0.02, 0, cmd.sweep]
+                i, arm, cmd.activation, cmd.curvature, cmd.extension, twist, 0.02,
+                2 if release_grab else (1 if grab_nearest else 0), cmd.sweep]
     out += " %d %d 0 %f %f %f 30 20 %d" % [
         drag_kind if dragging else 0, drag_index,
         drag_target.x, drag_target.y, drag_target.z,
@@ -732,6 +734,17 @@ func _unhandled_input(event: InputEvent) -> void:
             inbox_lock.lock()
             reset_requested = true
             inbox_lock.unlock()
+    if event is InputEventMouseButton and event.pressed:
+        if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+            distance = clampf(distance * 0.88, 1.7, 30.0)
+            update_camera()
+            get_viewport().set_input_as_handled()
+            return
+        if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+            distance = clampf(distance / 0.88, 1.7, 30.0)
+            update_camera()
+            get_viewport().set_input_as_handled()
+            return
     if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): yaw -= event.relative.x*.005; pitch = clampf(pitch+event.relative.y*.005,.12,1.45)
     if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not current.is_empty():
         dragging = false
